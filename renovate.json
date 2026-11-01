@@ -31,10 +31,15 @@
   ],
   "packageRules": [
     {
-      "description": "Every bump lands as 'build' so it appears under the Dependencies changelog section, which release-please treats as releasable: a bumped module, action or base image is a new binary or image, and it reaches nobody without a release.",
+      "description": "A bump lands as 'chore', a type release-please-config.json hides, so it waits for the next release instead of making one. The rule below types what a release ships; the rest changes neither the binary nor the release image: an action, the tools the Makefile builds, the linter ci.yml hands the reusable workflow, mise's pin, and Dockerfile.full, whose image docker-full.yml publishes whenever the file changes and never at a release. A release made for one of them is not free either: bump-rta.yml in rta-plugins releases every plugin against each rta release.",
       "matchManagers": ["gomod", "github-actions", "dockerfile", "custom.regex", "mise"],
-      "semanticCommitType": "build",
+      "semanticCommitType": "chore",
       "commitMessageTopic": "{{depName}}"
+    },
+    {
+      "description": "What a release ships lands as 'build', which release-please-config.json lists under Dependencies and releases: go.mod's modules are compiled into the binary and Dockerfile builds the release image, so a bump of either reaches nobody until a release carries it.",
+      "matchFileNames": ["go.mod", "Dockerfile"],
+      "semanticCommitType": "build"
     },
     {
       "description": "Non-major Go module bumps land together: one commit and one patch release a week rather than one per module. A vulnerable module skips both the grouping and the schedule through the OSV alerts above.",
@@ -48,9 +53,16 @@
       "groupName": "golangci-lint"
     },
     {
-      "description": "The Go toolchain is the go directive in go.mod, which CI reads through go-version-file, the golang image both Dockerfiles build in, and the pin in mise.toml. One pull request moves all three.",
+      "description": "The Go toolchain is the go directive in go.mod, which CI reads through go-version-file, the golang image both Dockerfiles build in, and the pin in mise.toml. One pull request moves all three, as 'build' whichever of them it moves: Go's runtime and standard library are compiled into the binary, so a Go security release reaches nobody until a release carries it.",
       "matchDepNames": ["go", "golang"],
-      "groupName": "Go toolchain"
+      "groupName": "Go toolchain",
+      "semanticCommitType": "build"
+    },
+    {
+      "description": "A new digest under the same golang tag is the same Go release, and both Dockerfiles build with CGO off, so the binary does not change: the bump waits for a release rather than making one.",
+      "matchDepNames": ["golang"],
+      "matchUpdateTypes": ["digest"],
+      "semanticCommitType": "chore"
     },
     {
       "description": "gcfg moves with go-git, never ahead of it. builtin/git reads config and includes with the reader go-git's own decoder uses, so a file one refuses the other refused already; go-git v5 requires gcfg v1, and gcfg v2 (a new import path) arrives with go-git v6, which moves both together.",
