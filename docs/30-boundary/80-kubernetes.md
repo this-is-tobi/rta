@@ -105,7 +105,7 @@ serverDefaults:
   serviceAccount:
     automountServiceAccountToken: true
   plugins:
-    allow: ["kube", "cnpg"]
+    access: ["kube", "cnpg"]
   env:
     - name: HOME
       value: /home/rta

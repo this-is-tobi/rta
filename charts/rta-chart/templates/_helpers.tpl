@@ -416,11 +416,17 @@ file still carrying it would render, do nothing, and leave whoever wrote it beli
 {{- fail (printf "%s.persistence.seedFromImage no longer exists: the full image keeps its plugins and their trust in /usr/local/lib/rta, outside the data volume, so nothing needs copying into it. Drop the key (and seedSourcePath if set)." $prefix) -}}
 {{- end -}}
 
-{{- /* RTA_ALLOW_PLUGINS is read by rta's docker-entrypoint.sh, which the narrow image does not
+{{- /* The key's old name. The schema lets a server entry carry keys it does not name, so a values
+file still saying `allow` would render nothing and leave every plugin it lists without access. */ -}}
+{{- if hasKey $s.plugins "allow" -}}
+{{- fail (printf "%s.plugins.allow is now %s.plugins.access, named for `rta plugin access add`, which the entrypoint runs for each plugin it lists." $prefix $prefix) -}}
+{{- end -}}
+
+{{- /* RTA_PLUGIN_ACCESS is read by rta's docker-entrypoint.sh, which the narrow image does not
 carry - its entrypoint is rta itself. Refused only for the published narrow image, since a derived
 image may well ship that entrypoint. */ -}}
-{{- if and $s.plugins.allow (include "rta.isNarrowImage" $root) -}}
-{{- fail (printf "%s.plugins.allow is set, but the narrow image's entrypoint is rta itself and never reads RTA_ALLOW_PLUGINS - the setting would be silently ignored. It applies to the full image, or to a derived image shipping rta's docker-entrypoint.sh." $prefix) -}}
+{{- if and $s.plugins.access (include "rta.isNarrowImage" $root) -}}
+{{- fail (printf "%s.plugins.access is set, but the narrow image's entrypoint is rta itself and never reads RTA_PLUGIN_ACCESS - the setting would be silently ignored. It applies to the full image, or to a derived image shipping rta's docker-entrypoint.sh." $prefix) -}}
 {{- end -}}
 
 {{- /* The shipped securityContext default is the whole hardening story for this pod, and unlike
@@ -675,10 +681,10 @@ spec:
       value: {{ printf "%s/config.yaml" $s.paths.configDir | quote }}
     - name: RTA_DATA_DIR
       value: {{ $s.paths.dataDir | quote }}
-    {{- with $s.plugins.allow }}
-    {{- /* Answers `allow` - whether a plugin may reach a credential location - and never `trust`,
+    {{- with $s.plugins.access }}
+    {{- /* Answers access - whether a plugin may reach a credential location - and never `trust`,
     which is a decision about an artifact and is carried by the data volume. */}}
-    - name: RTA_ALLOW_PLUGINS
+    - name: RTA_PLUGIN_ACCESS
       value: {{ join "," . | quote }}
     {{- end }}
     {{- with $s.env }}
