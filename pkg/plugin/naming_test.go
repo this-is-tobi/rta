@@ -560,3 +560,31 @@ func TestAnInputIsGivenWithItsValueTheWayItsSurfaceGivesIt(t *testing.T) {
 			*online, *jobs, flags.Args())
 	}
 }
+
+// HostOf finds the host in every form a connection setting takes one, and
+// never hands back the user or the password a URL carries: the DNS hint built
+// from it is shown to whoever reads the error, an agent among them.
+func TestHostOfNamesTheHostAndNothingElse(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://vault.example.com:8200/v1":         "vault.example.com",
+		"redis://user:s3cret@cache.internal:6379/0": "cache.internal",
+		"postgres://u:p@[2001:db8::1]:5432/app":     "2001:db8::1",
+		"db.example.com:5432":                       "db.example.com",
+		"[::1]:6379":                                "::1",
+		"[::1]":                                     "::1",
+		"::1":                                       "::1",
+		"etcd-0":                                    "etcd-0",
+		"  qdrant.internal:6334 ":                   "qdrant.internal",
+		"unix:///var/run/docker.sock":               "unix:///var/run/docker.sock",
+	} {
+		if got := HostOf(in); got != want {
+			t.Errorf("HostOf(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for _, endpoint := range []string{"https://vault.example.com:8200/v1", "redis://user:s3cret@vault.example.com:6379"} {
+		hint := SurfaceCLI.DNSHint(endpoint)
+		if hint != "`rta net dns vault.example.com` shows what DNS returns" {
+			t.Errorf("DNSHint(%q) = %q, want the lookup of its host alone", endpoint, hint)
+		}
+	}
+}
