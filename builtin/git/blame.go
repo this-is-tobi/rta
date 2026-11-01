@@ -141,13 +141,8 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 			hash = "^" + hash
 			boundary++
 		}
-		t.Rows = append(t.Rows, []string{
-			strconv.Itoa(i + 1),
-			hash,
-			l.commit.Author.Name,
-			l.commit.Author.When.Format("2006-01-02 15:04"),
-			result.text(i),
-		})
+		t.Add(view.Count(i+1), view.Plain(hash), view.Plain(l.commit.Author.Name),
+			view.Time(l.commit.Author.When.Format("2006-01-02 15:04"), l.commit.Author.When), view.Plain(result.text(i)))
 	}
 	t.Total = total
 	if boundary > 0 {

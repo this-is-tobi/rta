@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -154,9 +155,13 @@ func TestGradeRowShowsNotAnnouncedWhenThereIsNoEolFromDate(t *testing.T) {
 	row := gradeRow(r, 90, time.Now())
 	want := []string{"26", "2025-09-15", "26.6.2", "-", "not announced", "-", "ok"}
 	for i := range want {
-		if row[i] != want[i] {
-			t.Errorf("column %d: got %q, want %q (row=%v)", i, row[i], want[i], row)
+		if row[i].Text != want[i] {
+			t.Errorf("column %d: got %q, want %q (row=%v)", i, row[i].Text, want[i], row)
 		}
+	}
+	// A cycle with no end announced has no end to value, and nothing to count down to.
+	if row[1].Value != "2025-09-15T00:00:00Z" || row[4].Value != "" || row[5].Value != "" || row[6].Value != "ok" {
+		t.Errorf("values: released %q, eol %q, in %q, status %q", row[1].Value, row[4].Value, row[5].Value, row[6].Value)
 	}
 }
 
@@ -166,17 +171,21 @@ func TestGradeRowShowsTheDateAndDurationWhenAnnounced(t *testing.T) {
 	r := eolapi.Release{Name: "15", ReleaseDate: "2022-10-13", EolFrom: &eol, IsLts: true}
 	r.Latest.Name = "15.19"
 	row := gradeRow(r, 90, now)
-	if row[3] != "yes" {
-		t.Errorf("LTS column: got %q, want yes", row[3])
+	if row[3].Text != "yes" {
+		t.Errorf("LTS column: got %q, want yes", row[3].Text)
 	}
-	if row[4] != "2027-11-11" {
-		t.Errorf("EOL column: got %q", row[4])
+	if row[4].Text != "2027-11-11" || row[4].Value != "2027-11-11T00:00:00Z" {
+		t.Errorf("EOL column: got %q valued %q", row[4].Text, row[4].Value)
 	}
-	if row[5] == "-" || row[5] == "" {
-		t.Errorf("In column should be a computed duration, got %q", row[5])
+	if row[5].Text == "-" || row[5].Text == "" {
+		t.Errorf("In column should be a computed duration, got %q", row[5].Text)
 	}
-	if row[6] != "ok" {
-		t.Errorf("Status column: got %q, want ok", row[6])
+	// The end is 679 days off, valued in seconds.
+	if want := strconv.Itoa(679 * 24 * 3600); row[5].Value != want {
+		t.Errorf("In column valued %q, want %s", row[5].Value, want)
+	}
+	if row[6].Text != "ok" {
+		t.Errorf("Status column: got %q, want ok", row[6].Text)
 	}
 }
 

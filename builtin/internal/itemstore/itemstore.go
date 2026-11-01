@@ -412,6 +412,16 @@ func Age(t time.Time) string {
 	}
 }
 
+// AgeCell is Age as a table cell for a KindDuration column, valued as the
+// seconds since t (view.Table.Values). A zero t is no moment anybody recorded,
+// and has no value.
+func AgeCell(t time.Time) view.Cell {
+	if t.IsZero() {
+		return view.Plain(Age(t))
+	}
+	return view.Duration(Age(t), time.Since(t))
+}
+
 // --- Completion ---------------------------------------------------------
 //
 // Suggestions come from the store because that is where the answer is: the

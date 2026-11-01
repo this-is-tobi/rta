@@ -128,7 +128,7 @@ func runHostsList(_ context.Context, req plugin.Request) (view.View, error) {
 			state = "disabled"
 		}
 		for _, name := range e.names {
-			t.Rows = append(t.Rows, []string{name, e.ip, state})
+			t.Add(view.Plain(name), view.Plain(e.ip), view.Graded(state))
 		}
 	}
 	t.Total = len(t.Rows)

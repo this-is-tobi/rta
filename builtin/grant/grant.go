@@ -1296,17 +1296,17 @@ func reachTable(caps []plugin.Capability, holds func(plugin.Capability) bool) vi
 		{Name: "Per-record"},
 		{Name: "Summary"},
 	}}
-	for _, c := range caps {
-		if !holds(c) {
-			continue
-		}
+	// Sorted before the rows are added, never after: sorting the rows alone
+	// would leave each value beside another capability's row.
+	held := slices.DeleteFunc(slices.Clone(caps), func(c plugin.Capability) bool { return !holds(c) })
+	slices.SortFunc(held, func(a, b plugin.Capability) int { return strings.Compare(a.ID, b.ID) })
+	for _, c := range held {
 		record := "no"
 		if c.Scope != "" {
 			record = c.Scope
 		}
-		t.Rows = append(t.Rows, []string{c.ID, string(c.Safety), record, c.Summary})
+		t.Add(view.Plain(c.ID), view.Graded(string(c.Safety)), view.Plain(record), view.Plain(c.Summary))
 	}
-	sort.Slice(t.Rows, func(i, j int) bool { return t.Rows[i][0] < t.Rows[j][0] })
 	t.Total = len(t.Rows)
 	return t
 }
@@ -1649,14 +1649,29 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool, states []core
 	}
 	now := time.Now()
 	for i, g := range grants {
-		row := make([]string, len(cols))
+		row := make([]view.Cell, len(cols))
 		for j, c := range cols {
-			row[j] = c.cell(i, g, now)
+			row[j] = rosterCell(c.Column, c.cell(i, g, now), g, now)
 		}
-		t.Rows = append(t.Rows, row)
+		t.Add(row...)
 	}
 	t.Total = len(t.Rows)
 	return t
+}
+
+// rosterCell is one cell of a grant's row with its value (view.Table.Values):
+// the roster's one duration and one timestamp are both its deadline, the time
+// left and the instant, and a status is the word it grades by.
+func rosterCell(c view.Column, text string, g core.Grant, now time.Time) view.Cell {
+	switch c.Kind {
+	case view.KindDuration:
+		return view.Duration(text, g.Expires.Sub(now))
+	case view.KindTimestamp:
+		return view.Time(text, g.Expires)
+	case view.KindStatus:
+		return view.Graded(text)
+	}
+	return view.Plain(text)
 }
 
 // boundBy judges a grant's artifact against the plugin answering for its

@@ -162,7 +162,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 		if err != nil {
 			return nil, view.Errorf("gen.rand.failed", "reading randomness: %v", err)
 		}
-		t.Rows = append(t.Rows, []string{r.use, v, fmt.Sprintf("%.0f", bits)})
+		t.Add(view.Plain(r.use), view.Plain(v), view.Number(fmt.Sprintf("%.0f", bits), bits))
 	}
 	t.Total = len(t.Rows)
 	return t, nil
@@ -219,7 +219,7 @@ func recipeTable(sf plugin.Surface, recipes []recipe) (view.Table, error) {
 		if err != nil {
 			return t, view.Errorf("gen.rand.failed", "reading randomness: %v", err)
 		}
-		t.Rows = append(t.Rows, []string{r.use, v, fmt.Sprintf("%.0f", bits), r.call(sf)})
+		t.Add(view.Plain(r.use), view.Plain(v), view.Number(fmt.Sprintf("%.0f", bits), bits), view.Plain(r.call(sf)))
 	}
 	t.Total = len(t.Rows)
 	return t, nil

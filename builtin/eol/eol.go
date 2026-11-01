@@ -150,7 +150,7 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 		shown = supportedAndLatestEnded(releases, warnDays, now)
 	}
 	for _, r := range shown {
-		t.Rows = append(t.Rows, gradeRow(r, warnDays, now))
+		t.Add(gradeRow(r, warnDays, now)...)
 	}
 	t.Total = len(releases)
 	if left := len(releases) - len(shown); left > 0 {
@@ -294,15 +294,21 @@ func suggestCyclesAt(ctx context.Context, req plugin.Request, base string) []str
 // shared with audit.kube.eol so the two never disagree about whether a
 // cycle is past its end of life; the date column shows the API's own text
 // and the duration is computed only from a date that parses.
-func gradeRow(r eolapi.Release, warnDays int, now time.Time) []string {
-	eolText, inText := "not announced", "-"
+func gradeRow(r eolapi.Release, warnDays int, now time.Time) []view.Cell {
+	eol, in := view.Plain("not announced"), view.Plain("-")
 	if r.EolFrom != nil {
-		eolText = *r.EolFrom
+		eol = view.Plain(*r.EolFrom)
 		if eolDate, ok := eolapi.EolDate(r); ok {
-			inText = humanUntil(eolDate, now)
+			eol = view.Time(*r.EolFrom, eolDate)
+			in = view.Duration(humanUntil(eolDate, now), eolDate.Sub(now))
 		}
 	}
-	return []string{r.Name, r.ReleaseDate, r.Latest.Name, ltsCell(r), eolText, inText, eolStatus(r, warnDays, now)}
+	released := view.Plain(r.ReleaseDate)
+	if date, err := time.Parse("2006-01-02", r.ReleaseDate); err == nil {
+		released = view.Time(r.ReleaseDate, date)
+	}
+	return []view.Cell{view.Plain(r.Name), released, view.Plain(r.Latest.Name), view.Plain(ltsCell(r)), eol, in,
+		view.Graded(eolStatus(r, warnDays, now))}
 }
 
 // ltsCell has three states, not two, because LtsFrom means something

@@ -649,10 +649,9 @@ func planTable(prepared []core.Grant, replaces []string) view.Table {
 		{Name: "Expires In", Kind: view.KindDuration}, {Name: "Budget"}, {Name: "Replaces"},
 	}}
 	for i, g := range prepared {
-		t.Rows = append(t.Rows, []string{
-			g.Target, core.ShownRecord(g.Scope, "—"), dash(g.Profile), format.Duration(g.Expires.Sub(g.Issued)),
-			budgetLeft(g, g.Issued), dash(replaces[i]),
-		})
+		t.Add(view.Plain(g.Target), view.Plain(core.ShownRecord(g.Scope, "—")), view.Plain(dash(g.Profile)),
+			view.Duration(format.Duration(g.Expires.Sub(g.Issued)), g.Expires.Sub(g.Issued)),
+			view.Plain(budgetLeft(g, g.Issued)), view.Plain(dash(replaces[i])))
 	}
 	t.Total = len(t.Rows)
 	return t

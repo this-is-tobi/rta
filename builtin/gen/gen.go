@@ -257,7 +257,7 @@ func runPassword(_ context.Context, req plugin.Request) (view.View, error) {
 		if err != nil {
 			return nil, view.Errorf("gen.rand.failed", "reading randomness: %v", err)
 		}
-		t.Rows = append(t.Rows, []string{pw, fmt.Sprintf("%.1f", spec.bits())})
+		t.Add(view.Plain(pw), view.Number(fmt.Sprintf("%.1f", spec.bits()), spec.bits()))
 	}
 	t.Total = len(t.Rows)
 	return t, nil

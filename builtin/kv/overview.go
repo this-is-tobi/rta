@@ -593,16 +593,16 @@ func (inv inventory) foldersTable(sf plugin.Surface) view.Table {
 		{Name: "Keys", Kind: view.KindNumber},
 		{Name: "Size", Kind: view.KindBytes},
 	}}
-	row := func(label string, f folderTally) []string {
-		return []string{label, strconv.Itoa(f.keys), format.Bytes(f.bytes)}
+	row := func(label string, f folderTally) []view.Cell {
+		return []view.Cell{view.Plain(label), view.Count(f.keys), view.Bytes(f.bytes)}
 	}
 	shown := min(len(inv.top), overviewFolders)
 	for _, f := range inv.top[:shown] {
-		t.Rows = append(t.Rows, row(plugin.ListedName(f.name), f))
+		t.Add(row(plugin.ListedName(f.name), f)...)
 	}
 	t.Total = len(inv.top)
 	if inv.loose.keys > 0 {
-		t.Rows = append(t.Rows, row(noFolder, inv.loose))
+		t.Add(row(noFolder, inv.loose)...)
 		t.Total++
 	}
 	// Advisory: every row there is is right, and the rest is one call away.

@@ -110,13 +110,11 @@ func runListen(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Process"},
 	}}
 	for _, s := range rows {
-		pid := ""
+		pid := view.Plain("")
 		if s.pid != 0 {
-			pid = strconv.Itoa(int(s.pid))
+			pid = view.Count(s.pid)
 		}
-		t.Rows = append(t.Rows, []string{
-			s.proto, s.addr, strconv.Itoa(int(s.port)), s.reach, pid, s.owner,
-		})
+		t.Add(view.Plain(s.proto), view.Plain(s.addr), view.Count(s.port), view.Plain(s.reach), pid, view.Plain(s.owner))
 	}
 	t.Total = len(t.Rows)
 	// The table even when nothing is listed, and the sentence beside it for a

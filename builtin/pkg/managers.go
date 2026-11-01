@@ -48,10 +48,10 @@ func managersTable(ctx context.Context) view.Table {
 		}
 		path, err := lookPath(m.bin)
 		if err != nil {
-			t.Rows = append(t.Rows, []string{m.name, m.bin, "-", "-", root, "absent"})
+			t.Add(view.Plain(m.name), view.Plain(m.bin), view.Plain("-"), view.Plain("-"), view.Plain(root), view.Graded("absent"))
 			continue
 		}
-		t.Rows = append(t.Rows, []string{m.name, m.bin, path, managerVersion(ctx, m), root, "ok"})
+		t.Add(view.Plain(m.name), view.Plain(m.bin), view.Plain(path), view.Plain(managerVersion(ctx, m)), view.Plain(root), view.Graded("ok"))
 	}
 	t.Total = len(t.Rows)
 	return t

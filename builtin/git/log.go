@@ -88,12 +88,8 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 			older = true
 			return storer.ErrStop
 		}
-		t.Rows = append(t.Rows, []string{
-			shortHash(c.Hash),
-			c.Author.Name,
-			c.Author.When.Format("2006-01-02 15:04"),
-			firstLine(c.Message),
-		})
+		t.Add(view.Plain(shortHash(c.Hash)), view.Plain(c.Author.Name),
+			view.Time(c.Author.When.Format("2006-01-02 15:04"), c.Author.When), view.Plain(firstLine(c.Message)))
 		return nil
 	})
 	if err != nil {

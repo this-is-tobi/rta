@@ -445,8 +445,9 @@ func connectedTable(agent string) (view.Table, error) {
 		if s.Consent {
 			missing = "asks"
 		}
-		t.Rows = append(t.Rows, []string{agentOf(s), s.Client, format.Ago(s.Since),
-			strconv.Itoa(calls[s.ID]), missing, strings.Join(s.Roots, ", "), s.ID, s.Dir, s.Ledger})
+		t.Add(view.Plain(agentOf(s)), view.Plain(s.Client), view.Time(format.Ago(s.Since), s.Since),
+			view.Plain(strconv.Itoa(calls[s.ID])), view.Plain(missing), view.Plain(strings.Join(s.Roots, ", ")),
+			view.Plain(s.ID), view.Plain(s.Dir), view.Plain(s.Ledger))
 	}
 	t.Total = len(t.Rows)
 	if len(t.Rows) == 0 {
@@ -984,19 +985,18 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	terse := compact.For(req)
 	cols := logColumns(shown, terse, req.Bool("detail"))
 	stamp := stampFormat(shown, time.Now())
-	rows := make([][]string, 0, len(shown))
-	for _, e := range shown {
-		row := make([]string, len(cols))
-		for i, c := range cols {
-			row[i] = c.cell(e, stamp)
-		}
-		rows = append(rows, row)
-	}
 	columns := make([]view.Column, len(cols))
 	for i, c := range cols {
 		columns[i] = c.Column
 	}
-	table := view.Table{Columns: columns, Rows: rows, Total: total, Tail: true}
+	table := view.Table{Columns: columns, Total: total, Tail: true}
+	for _, e := range shown {
+		row := make([]view.Cell, len(cols))
+		for i, c := range cols {
+			row[i] = c.valued(e, stamp)
+		}
+		table.Add(row...)
+	}
 	if more && len(shown) > 0 {
 		table.Page = &view.Cursor{Next: strconv.FormatInt(shown[len(shown)-1].Seq, 10)}
 	}
@@ -1023,7 +1023,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	// with nothing under them read as a listing that failed, and what a filter
 	// matched nothing of is not the same news as a record with nothing in it.
 	switch {
-	case len(rows) > 0:
+	case len(table.Rows) > 0:
 	case f.any():
 		table.Empty = "no recorded call matches the filters given" + unknownAgentClause(f.agent)
 	default:
@@ -1111,6 +1111,20 @@ func interleaved(shown []agentlog.Entry, outer, inner func(agentlog.Entry) strin
 type logColumn struct {
 	view.Column
 	cell func(e agentlog.Entry, stamp string) string
+}
+
+// valued is the column's cell for e with its value (view.Table.Values): the
+// record's own instant for the one timestamp column, `at`, whichever way its
+// text is written, and the word a status column grades by.
+func (c logColumn) valued(e agentlog.Entry, stamp string) view.Cell {
+	text := c.cell(e, stamp)
+	switch c.Kind {
+	case view.KindTimestamp:
+		return view.Time(text, e.At)
+	case view.KindStatus:
+		return view.Graded(text)
+	}
+	return view.Plain(text)
 }
 
 // logColumns decides which columns the rows shown carry, and in which order.
@@ -1250,7 +1264,7 @@ func pendingTable(sf plugin.Surface, reqs []consent.Request) view.Table {
 			break
 		}
 	}
-	rows := make([][]string, 0, len(reqs))
+	rows := make([][]view.Cell, 0, len(reqs))
 	for _, r := range reqs {
 		left := time.Until(r.Deadline).Truncate(time.Second)
 		if left < 0 {
@@ -1266,12 +1280,12 @@ func pendingTable(sf plugin.Surface, reqs []consent.Request) view.Table {
 		// invisible character in it is shown quoted and named, or the
 		// operator reads the bare record while answering for another
 		// (textclean.Record).
-		row := []string{
-			r.ID, r.Cap, recordsCell(r.Scopes), r.Safety, r.Profile,
-			clip(what), format.Duration(left),
+		row := []view.Cell{
+			view.Plain(r.ID), view.Plain(r.Cap), view.Plain(recordsCell(r.Scopes)), view.Graded(r.Safety),
+			view.Plain(r.Profile), view.Plain(clip(what)), view.Duration(format.Duration(left), left),
 		}
 		if asking {
-			row = slices.Insert(row, 1, r.Agent)
+			row = slices.Insert(row, 1, view.Plain(r.Agent))
 		}
 		rows = append(rows, row)
 	}
@@ -1282,7 +1296,11 @@ func pendingTable(sf plugin.Surface, reqs []consent.Request) view.Table {
 	if asking {
 		cols = slices.Insert(cols, 1, view.Column{Name: "Agent"})
 	}
-	t := view.Table{Columns: cols, Rows: rows, Total: len(rows)}
+	t := view.Table{Columns: cols}
+	for _, row := range rows {
+		t.Add(row...)
+	}
+	t.Total = len(t.Rows)
 	// A sentence on a screen, not an empty bordered table: the queue is the
 	// screen `press w to answer` lands on. The table under it all the same,
 	// for everything that parses it — see view.Table.Empty.

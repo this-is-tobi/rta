@@ -143,7 +143,7 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 			// Anything else — the host unreachable, a 500 — is about the
 			// call, and the whole table would be wrong to show.
 			if verr.Code == "eol.product.notfound" {
-				t.Rows = append(t.Rows, missingRow(product, cycle, "not found"))
+				t.Add(missingRow(product, cycle, "not found")...)
 				continue
 			}
 			return nil, verr
@@ -151,7 +151,7 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 		releases := result.Releases
 		if cycle != "" {
 			if releases = e.sel.pick(releases); len(releases) == 0 {
-				t.Rows = append(t.Rows, missingRow(result.Name, cycle, "no such cycle"))
+				t.Add(missingRow(result.Name, cycle, "no such cycle")...)
 				continue
 			}
 		}
@@ -160,11 +160,11 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 		// one dropped the entry from the table entirely, so a watchlist of
 		// six came back with five rows and nothing to say which had gone.
 		if len(releases) == 0 {
-			t.Rows = append(t.Rows, missingRow(result.Name, cycle, "no release data"))
+			t.Add(missingRow(result.Name, cycle, "no release data")...)
 			continue
 		}
 		for _, r := range releases {
-			t.Rows = append(t.Rows, append([]string{result.Name}, gradeRow(r, warnDays, now)...))
+			t.Add(append([]view.Cell{view.Plain(result.Name)}, gradeRow(r, warnDays, now)...)...)
 		}
 	}
 	t.Total = len(t.Rows)
@@ -174,9 +174,10 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 // missingRow keeps a product on the table when the API cannot grade it, in
 // the Status column where the eye already goes. The cycle cell carries what
 // was asked for, so "no such cycle" says which one.
-func missingRow(product, cycle, status string) []string {
+func missingRow(product, cycle, status string) []view.Cell {
 	if cycle == "" {
 		cycle = "-"
 	}
-	return []string{product, cycle, "-", "-", "-", "-", "-", status}
+	dash := view.Plain("-")
+	return []view.Cell{view.Plain(product), view.Plain(cycle), dash, dash, dash, dash, dash, view.Plain(status)}
 }

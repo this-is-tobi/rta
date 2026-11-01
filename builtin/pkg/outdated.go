@@ -170,7 +170,7 @@ func outdatedTable(l listing) view.Table {
 	}}
 	for _, r := range l.rows {
 		if r.Broken != "" {
-			t.Rows = append(t.Rows, []string{r.Manager, r.Name, "-", "-", "fail " + r.Manager + ": " + r.Broken, "-"})
+			t.Add(view.Plain(r.Manager), view.Plain(r.Name), view.Plain("-"), view.Plain("-"), view.Graded("fail "+r.Manager+": "+r.Broken), view.Plain("-"))
 			continue
 		}
 		m, _ := managerByName(r.Manager)
@@ -178,7 +178,7 @@ func outdatedTable(l listing) view.Table {
 		if r.Target != "" {
 			arg = r.Target
 		}
-		t.Rows = append(t.Rows, []string{r.Manager, r.Name, r.Current, r.Latest, "outdated", upgradeCommand(m, arg)})
+		t.Add(view.Plain(r.Manager), view.Plain(r.Name), view.Plain(r.Current), view.Plain(r.Latest), view.Graded("outdated"), view.Plain(upgradeCommand(m, arg)))
 	}
 	names := make([]string, 0, len(l.failed))
 	for n := range l.failed {
@@ -186,11 +186,11 @@ func outdatedTable(l listing) view.Table {
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		t.Rows = append(t.Rows, []string{n, "-", "-", "-", "fail " + l.failed[n].Message, "-"})
+		t.Add(view.Plain(n), view.Plain("-"), view.Plain("-"), view.Plain("-"), view.Graded("fail "+l.failed[n].Message), view.Plain("-"))
 	}
 	if len(t.Rows) == 0 {
 		for _, m := range l.present {
-			t.Rows = append(t.Rows, []string{m.name, "-", "-", "-", "ok", "-"})
+			t.Add(view.Plain(m.name), view.Plain("-"), view.Plain("-"), view.Plain("-"), view.Graded("ok"), view.Plain("-"))
 		}
 	}
 	t.Total = len(t.Rows)
@@ -413,7 +413,7 @@ func overviewWith(ctx context.Context, req plugin.Request, c *registryClient) (v
 			if u.Restart {
 				restart = "pending reboot"
 			}
-			t.Rows = append(t.Rows, []string{u.Title, u.Version, restart})
+			t.Add(view.Plain(u.Title), view.Plain(u.Version), view.Graded(restart))
 		}
 		t.Total = len(t.Rows)
 		p.PutAs("os-updates", "os updates", t)

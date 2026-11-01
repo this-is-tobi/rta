@@ -63,15 +63,17 @@ func TestQuotedSeqRejectsTruncated(t *testing.T) {
 
 func TestHopRTTCell(t *testing.T) {
 	for name, tc := range map[string]struct {
-		h    hop
-		want string
+		h           hop
+		want, value string
 	}{
-		"silent":  {hop{lost: 3}, "*"},
-		"replied": {hop{rtts: []time.Duration{time.Millisecond * 12}}, "12.0 ms"},
-		"partial": {hop{rtts: []time.Duration{2 * time.Millisecond}, lost: 1}, "2.0 * ms"},
+		"silent":  {hop{lost: 3}, "*", ""},
+		"replied": {hop{rtts: []time.Duration{time.Millisecond * 12}}, "12.0 ms", "0.012"},
+		"partial": {hop{rtts: []time.Duration{2 * time.Millisecond}, lost: 1}, "2.0 * ms", "0.002"},
+		// Valued as the fastest probe, whichever order the replies came in.
+		"several": {hop{rtts: []time.Duration{9 * time.Millisecond, 4 * time.Millisecond}}, "9.0 4.0 ms", "0.004"},
 	} {
-		if got := tc.h.rttCell(); got != tc.want {
-			t.Errorf("%s: rttCell = %q, want %q", name, got, tc.want)
+		if got := tc.h.rttCell(); got.Text != tc.want || got.Value != tc.value {
+			t.Errorf("%s: rttCell = %q valued %q, want %q valued %q", name, got.Text, got.Value, tc.want, tc.value)
 		}
 	}
 }

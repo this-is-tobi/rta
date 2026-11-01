@@ -79,7 +79,7 @@ func runStatus(_ context.Context, req plugin.Request) (view.View, error) {
 		if c < lo || c > hi {
 			continue
 		}
-		t.Rows = append(t.Rows, []string{strconv.Itoa(c), stdhttp.StatusText(c), statusMeaning(c)})
+		t.Add(view.Count(c), view.Plain(stdhttp.StatusText(c)), view.Plain(statusMeaning(c)))
 	}
 	t.Total = len(t.Rows)
 	if len(t.Rows) == 0 {

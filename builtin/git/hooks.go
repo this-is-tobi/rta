@@ -100,6 +100,8 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 		Empty:    "no hooks in " + shownFrom(base, dir),
 		Warnings: warnings,
 	}
+	type hookRow struct{ name, status, path string }
+	var rows []hookRow
 	for _, e := range entries {
 		info, err := e.Info()
 		if err != nil {
@@ -107,18 +109,21 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 		}
 		name := e.Name()
 		mode, at, unfollowed := hookMode(req, look, hooks, name, info)
-		t.Rows = append(t.Rows, []string{
-			strings.TrimSuffix(name, ".sample"),
+		rows = append(rows, hookRow{strings.TrimSuffix(name, ".sample"),
 			hookStatus(name, mode, unfollowed, at.name != "" && mayExecute(at.dir, at.name)),
-			shownFrom(base, filepath.Join(dir, name)),
-		})
+			shownFrom(base, filepath.Join(dir, name))})
 	}
 	// What git would run first, then what it passes over, samples last.
 	// `git init` leaves fourteen samples in every repository, and in the
 	// directory's own order the one hook that runs on every commit was the
 	// seventh row of sixteen: the answer this is asked for, in the middle of
-	// what never runs. Stable, so each kind keeps the directory's order.
-	sort.SliceStable(t.Rows, func(i, j int) bool { return hookRank(t.Rows[i][1]) < hookRank(t.Rows[j][1]) })
+	// what never runs. Stable, so each kind keeps the directory's order; and
+	// ranked before the rows are added, since sorting the rows alone would
+	// leave each value beside another hook's row.
+	sort.SliceStable(rows, func(i, j int) bool { return hookRank(rows[i].status) < hookRank(rows[j].status) })
+	for _, r := range rows {
+		t.Add(view.Plain(r.name), view.Graded(r.status), view.Plain(r.path))
+	}
 	t.Total = len(t.Rows)
 	return t, nil
 }

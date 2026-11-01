@@ -343,7 +343,7 @@ func doctorTable(reg *registry.Registry, detail bool) view.Table {
 		{Name: "Detail"},
 	}}
 	add := func(check, status, detail string) {
-		t.Rows = append(t.Rows, []string{check, status, detail})
+		t.Add(view.Plain(check), view.Graded(status), view.Plain(detail))
 	}
 
 	// One function per group of rows, in the order a person reads the
