@@ -115,3 +115,53 @@ func TestAStrictRefusalNamesTheInputAsItsReaderGaveIt(t *testing.T) {
 		}
 	}
 }
+
+// A file a plugin opens from an input that is not a Path, a CA file a profile
+// fills, gets past namedFile, and the kernel's refusal came back as the
+// plugin's own failure under the plugin's own hint. Where the path in it is
+// one the launch's policy keeps from the plugin, the hint names the setting,
+// and the code and message stay the plugin's. Where the policy allows the
+// path, something else refused it, and nothing changes; nor for a server's
+// own "permission denied", which names no path, or for a failure that is not
+// the plugin's.
+func TestAKernelRefusalUnderStrictNamesTheSetting(t *testing.T) {
+	allows := func(path string) bool { return strings.HasPrefix(path, "/etc/") }
+	const own = "--ca-file is a path on this machine"
+	refused := func(msg string) error {
+		return view.Errorf("prom.tls.ca.unreadable", "%s", msg).WithHint(own)
+	}
+	const inHome = "cannot read the CA file: open /home/op/my certs/ca.pem: permission denied"
+	for _, tc := range []struct {
+		why  string
+		sf   plugin.Surface
+		msg  string
+		hint string
+	}{
+		{"a CA file in the home directory", plugin.SurfaceCLI, inHome,
+			"`confine: strict` keeps prom from opening /home/op/my certs/ca.pem: a plugin under it opens"},
+		{"the same, read by an agent", plugin.SurfaceMCP, inHome,
+			"keeps prom from opening /home/op/my certs/ca.pem; that is the operator's configuration to change"},
+		{"a tool off the policy's PATH", plugin.SurfaceCLI, "fork/exec /home/op/bin/pg_dump: permission denied",
+			"keeps prom from opening /home/op/bin/pg_dump"},
+		{"a file the policy allows", plugin.SurfaceCLI, "open /etc/shadow: permission denied", own},
+		{"a server's own refusal", plugin.SurfaceCLI, "ERROR: permission denied for table users", own},
+	} {
+		got := explainDenied("prom.overview", tc.sf, refused(tc.msg), allows)
+		var verr *view.Error
+		if !errors.As(got, &verr) || !strings.Contains(verr.Hint, tc.hint) ||
+			verr.Code != "prom.tls.ca.unreadable" || verr.Message != tc.msg {
+			t.Errorf("%s: %+v", tc.why, got)
+			continue
+		}
+		if hits := spelling.ForPlugin(plugin.Plugin{Name: "prom"}).Find(verr.Hint, false); tc.sf == plugin.SurfaceMCP && len(hits) > 0 {
+			t.Errorf("%s: the hint an agent reads spells a terminal's: %q", tc.why, hits)
+		}
+	}
+	transport := errors.New("the plugin process exited")
+	if got := explainDenied("prom.overview", plugin.SurfaceCLI, transport, allows); got != transport {
+		t.Errorf("a failure that is not the plugin's became %v", got)
+	}
+	if err := refused(inHome); (DenySet{}).deniedOpen("prom.overview", "", plugin.NewRequest(nil, false, false), err) != err {
+		t.Errorf("without strict, the plugin's failure was changed")
+	}
+}

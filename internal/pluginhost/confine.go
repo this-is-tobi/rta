@@ -1,7 +1,9 @@
 package pluginhost
 
 import (
+	"errors"
 	"path/filepath"
+	"regexp"
 	"slices"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -59,6 +61,62 @@ func (d DenySet) namedFile(id string, inputs []plugin.Field, req plugin.Request)
 	}
 	return nil
 }
+
+// deniedOpen is err with the setting that refused it named, where err is the
+// failure of a plugin, launched from exe, to open a file `confine: strict`
+// keeps from it.
+//
+// namedFile refuses such a file before the call when the input naming it is a
+// Path. One that is not — a TLS file a profile fills, which a Path never is
+// (plugin.ProfileFillable), or a file the plugin finds for itself — reaches
+// the kernel, and its "permission denied" came back as the plugin's own
+// failure under the plugin's own hint, "a path on this machine", which reads
+// as a chmod and says nothing of the setting. The plugin cannot tell the
+// policy's refusal from the file's own mode, and its failure crosses the wire
+// as text, so the path is read from the words Go gives a failed open
+// (pathDenied), and the setting is named only where the launch's policy keeps
+// that path from the plugin. What the policy allows, something else refused,
+// and the plugin's hint stands.
+func (d DenySet) deniedOpen(id, exe string, req plugin.Request, err error) error {
+	if !d.Strict {
+		return err
+	}
+	return explainDenied(id, req.Surface(), err, func(path string) bool { return d.strictAllows(exe, path) })
+}
+
+// explainDenied is deniedOpen's reading of err, with allows standing for the
+// launch's policy.
+func explainDenied(id string, sf plugin.Surface, err error, allows func(path string) bool) error {
+	var verr *view.Error
+	if !errors.As(err, &verr) {
+		return err
+	}
+	for _, m := range pathDenied.FindAllStringSubmatch(verr.Message, -1) {
+		if allows(m[1]) {
+			continue
+		}
+		ns := plugin.Namespace(id)
+		hint := "`confine: strict` keeps " + ns + " from opening " + m[1] + ": a plugin under it opens the " +
+			"system's directories, /etc and /opt among them, its own temporary directory, the tools on its PATH " +
+			"and the credential locations `rta plugin access add` gave it, and nothing else — keep the file in " +
+			"one of those, or leave `confine` unset"
+		if sf == plugin.SurfaceMCP {
+			hint = "this server starts its plugins under `confine: strict`, which keeps " + ns + " from opening " +
+				m[1] + "; that is the operator's configuration to change, not the call's"
+		}
+		out := *verr
+		out.Hint = hint
+		return &out
+	}
+	return err
+}
+
+// pathDenied is the words Go gives an open, a stat or an exec the kernel
+// refused (*fs.PathError), "open /srv/ca.pem: permission denied", with the path
+// as its one group. EACCES is what Landlock answers a path it does not allow
+// with, and a plugin's message keeps the words when it wraps the error with %v,
+// as the official plugins' do.
+var pathDenied = regexp.MustCompile(`\b[a-z]+ (/[^\n]*?): permission denied`)
 
 // readable is whether path is already there under one of Readable, judged by
 // where it leads rather than how it is spelled. The kernel follows a link

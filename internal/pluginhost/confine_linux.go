@@ -168,6 +168,29 @@ func strictPolicy(d DenySet, name string) []string {
 	return out
 }
 
+// strictAllows is whether the policy a strict launch of exe is given lets it
+// open path, judged by where both lead: the kernel follows a link before it
+// looks, and a rule holds the directory its path was opened on. Read off
+// strictPolicy itself, so the two cannot come to disagree. The temporary
+// directory confineLaunch adds for each launch is not on it, and a file there
+// is the plugin's own, never one it was refused.
+func (d DenySet) strictAllows(exe, path string) bool {
+	if at, err := filepath.EvalSymlinks(path); err == nil {
+		path = at
+	}
+	policy := strictPolicy(d, exe)
+	for i := 1; i < len(policy); i += 2 {
+		root := policy[i]
+		if at, err := filepath.EvalSymlinks(root); err == nil {
+			root = at
+		}
+		if inside(path, root) {
+			return true
+		}
+	}
+	return false
+}
+
 // carve is the rules that allow root without anything beneath it that off
 // names: root itself when nothing of off lies inside it, nothing when root
 // is one of off or lies inside one, and otherwise each of its entries, carved
