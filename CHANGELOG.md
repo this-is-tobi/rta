@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.54.0](https://github.com/this-is-tobi/rta/compare/v0.53.0...v0.54.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **docker:** RTA_ALLOW_PLUGINS is now RTA_PLUGIN_ACCESS, and the chart's serverDefaults.plugins.allow (and servers.<name>.plugins.allow) is now plugins.access. Either old name is refused.
+* **plugin:** a plugin manifest with a signature: key is refused, the install and upgrade reports and rta.lock carry no signature, and cosign is no longer an external tool rta runs.
+* **operator:** over the operator channel, grant list shows only the grants naming the server's own agent, grant revoke takes back only those, and grant allow or grant revoke naming another agent is refused.
+
+### Features
+
+* every built-in table fills the values its columns' kinds name ([457eedb](https://github.com/this-is-tobi/rta/commit/457eedb504da5d58f9044d4c5731969dd9a88565))
+* **view:** a table carries each cell's value beside its text ([a31210c](https://github.com/this-is-tobi/rta/commit/a31210c4a1958b34ab0d55bbd9eec2ce4b7bfb09))
+
+
+### Bug Fixes
+
+* **operator:** a server's operators reach its own agent's grants, not another's ([4f9545b](https://github.com/this-is-tobi/rta/commit/4f9545ba3b78b457fe7996cfa0b84de97e4d50e8))
+
+
+### Code Refactoring
+
+* **docker:** the entrypoint's variable and the chart key are named for plugin access ([e289124](https://github.com/this-is-tobi/rta/commit/e28912495e5f54d013c6be531aa1df4deea34fcf))
+* **plugin:** a manifest states no signature, which no plugin could satisfy ([04be6ca](https://github.com/this-is-tobi/rta/commit/04be6cab4d9f46d644eb3d0a08897c3d4d16d30a))
+
 ## [0.53.0](https://github.com/this-is-tobi/rta/compare/v0.52.0...v0.53.0) (2026-11-01)
 
 
