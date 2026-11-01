@@ -114,13 +114,13 @@ func TestCopyTakesTheValueAndThePickerDrawsItCleaned(t *testing.T) {
 		Rows:    [][]string{{secret}, {"other"}},
 	}})
 	pick := press(t, several.(Model), "c")
-	if pick.mode != modeCopyPick {
+	if pick.mode != modePick {
 		t.Fatalf("c did not open the picker: mode = %v", pick.mode)
 	}
-	if pick.copyPick.value != secret {
-		t.Errorf("the picker holds %q, want the value itself", pick.copyPick.value)
+	if pick.pick.value != secret {
+		t.Errorf("the picker holds %q, want the value itself", pick.pick.value)
 	}
-	if strings.ContainsRune(pick.copyPickView(), 0x202e) {
+	if strings.ContainsRune(pick.pickView(), 0x202e) {
 		t.Error("the picker draws the override itself")
 	}
 }

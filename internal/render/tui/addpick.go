@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	huh "charm.land/huh/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/profile"
@@ -32,39 +30,23 @@ import (
 // values are what was typed for one run, seeded from the connection on
 // screen, not the standing inputs of a tile.
 
-// addPickForm holds the connection choice for a tile being added.
-type addPickForm struct {
-	form  *huh.Form
-	value string
-	cap   plugin.Capability
-	// returnTo is where cancelling goes back to: the catalogue or the
-	// dashboard, whichever the key was pressed on. Confirming always lands
-	// on the dashboard, with the new tile selected.
-	returnTo mode
-}
-
 // pinChoice is one connection the picker offers: the reference a tile is
 // pinned to, and how the row reads.
 type pinChoice struct{ ref, label string }
 
-func newAddPickForm(c plugin.Capability, active string, choices []pinChoice, returnTo mode) *addPickForm {
-	ap := &addPickForm{cap: c, returnTo: returnTo}
+// tileOptions are the connections a tile being added can be about, "follows
+// the switch" first, since that is what every automatic tile does.
+func tileOptions(active string, choices []pinChoice) []pickOption {
 	follows := "follows the switch"
 	if active != "" {
 		follows += " — now " + active
 	}
-	opts := make([]huh.Option[string], 0, 1+len(choices))
-	opts = append(opts, huh.NewOption(follows, ""))
+	options := make([]pickOption, 0, 1+len(choices))
+	options = append(options, pickOption{label: follows})
 	for _, ch := range choices {
-		opts = append(opts, huh.NewOption(ch.label, ch.ref))
+		options = append(options, pickOption{label: ch.label, value: ch.ref})
 	}
-	ap.form = huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("which connection is the " + c.ID + " tile about?").
-			Options(opts...).
-			Value(&ap.value),
-	)).WithTheme(formTheme()).WithShowHelp(false).WithShowErrors(false)
-	return ap
+	return options
 }
 
 // offerAdd is `+` on c: refused when a tile of it could never run, written
@@ -78,10 +60,8 @@ func (m Model) offerAdd(c plugin.Capability, returnTo mode) (tea.Model, tea.Cmd)
 	if len(choices) == 0 {
 		return m.addTile(c, "")
 	}
-	m.addPick = newAddPickForm(c, m.active, choices, returnTo)
-	m.mode = modeAddPick
-	m.fitAddPick()
-	return m, m.addPick.form.Init()
+	return m.openPick(newPickForm(pickTile, "which connection is the "+c.ID+" tile about?", "",
+		tileOptions(m.active, choices), c, returnTo))
 }
 
 // addRefusal is why c cannot be a tile at all, in the words `rta dashboard
@@ -202,87 +182,4 @@ func (m Model) addTile(c plugin.Capability, ref string) (tea.Model, tea.Cmd) {
 	m.mode = modeDashboard
 	m.tickGen++
 	return m, tea.Batch(m.syncTiles(), refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor))
-}
-
-// fitAddPick sizes the embedded huh form to the panel frame, mirroring
-// fitCopyPick.
-func (m *Model) fitAddPick() {
-	if m.addPick == nil {
-		return
-	}
-	if m.width > 0 {
-		m.addPick.form = m.addPick.form.WithWidth(formWidth(m.width))
-	}
-	if m.height > 0 {
-		m.addPick.form = m.addPick.form.WithHeight(max(m.height-5, 6))
-	}
-}
-
-// updateAddPick drives the embedded huh form and hands off to
-// afterAddPickUpdate, the drive-then-dispatch shape every form-driven mode
-// shares.
-func (m Model) updateAddPick(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.addPick == nil {
-		m.mode = modeDashboard
-		return m, nil
-	}
-	model, cmd := m.addPick.form.Update(msg)
-	if f, ok := model.(*huh.Form); ok {
-		m.addPick.form = f
-	}
-	return m.afterAddPickUpdate(cmd)
-}
-
-func (m Model) afterAddPickUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	switch m.addPick.form.State {
-	case huh.StateCompleted:
-		return m.confirmAddPick()
-	case huh.StateAborted:
-		return m.closeAddPick()
-	}
-	return m, cmd
-}
-
-// fastSubmitAddPick accepts the highlighted connection: shift+enter means
-// the same as enter on a single-field form, wired so the shortcut means
-// one thing on every form-shaped screen.
-func (m Model) fastSubmitAddPick() (tea.Model, tea.Cmd) {
-	if m.addPick == nil {
-		return m, nil
-	}
-	m.addPick.form = advanceFormBySyntheticEnter(m.addPick.form)
-	return m.afterAddPickUpdate(nil)
-}
-
-// confirmAddPick writes the tile against whichever connection the form
-// landed on.
-func (m Model) confirmAddPick() (tea.Model, tea.Cmd) {
-	c, ref := m.addPick.cap, m.addPick.value
-	m.addPick = nil
-	return m.addTile(c, ref)
-}
-
-// closeAddPick dismisses the picker without writing anything, back to
-// where `+` was pressed — restarting tile refresh when that is the
-// dashboard, as closeCopyPick does.
-func (m Model) closeAddPick() (tea.Model, tea.Cmd) {
-	returnTo := m.addPick.returnTo
-	m.addPick = nil
-	m.mode = returnTo
-	if returnTo == modeDashboard {
-		m.tickGen++
-		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor)
-	}
-	return m, nil
-}
-
-// addPickView frames the picker under the capability's own head, so
-// choosing its connection reads as part of the capability rather than a
-// screen of its own.
-func (m Model) addPickView() string {
-	if m.addPick == nil {
-		return ""
-	}
-	footer := m.footerFor(modeAddPick)
-	return panel(capHead(m.addPick.cap), "\n"+m.addPick.form.View(), m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
 }

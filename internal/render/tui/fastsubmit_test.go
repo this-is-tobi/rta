@@ -416,7 +416,7 @@ func TestShiftEnterOnAnEmptyThemeFormSavesNoOverrides(t *testing.T) {
 	quit(t, tm)
 }
 
-// fastSubmitCopyPick: functionally identical to plain enter for a
+// fastSubmitPick: functionally identical to plain enter for a
 // single-field picker, wired in anyway so the shortcut means the same
 // thing on every form-shaped screen rather than a set someone has to
 // learn.

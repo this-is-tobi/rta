@@ -32,7 +32,7 @@ import (
 // swallowing it, or answering it unannounced.
 func (m Model) helpOffered(screen mode) bool {
 	switch screen {
-	case modeForm, modeTheme, modeCopyPick, modeAddPick:
+	case modeForm, modeTheme, modePick:
 		return false
 	case modeDashboard:
 		return !m.searchEditing
@@ -78,10 +78,8 @@ func screenName(screen mode) string {
 		return "profile plugins"
 	case modeTheme:
 		return "theme editor"
-	case modeCopyPick:
-		return "copy picker"
-	case modeAddPick:
-		return "add picker"
+	case modePick:
+		return "picker"
 	case modeConfirm:
 		return "confirmation"
 	}
@@ -246,6 +244,9 @@ func (m Model) helpView() string {
 	// terminal shorter than the list the bottom is what is cut, and an
 	// overlay that does not say how to leave is the one that must.
 	name := "keys on the " + screenName(m.mode)
+	if m.mode == modePick && m.pick != nil {
+		name = "keys on the " + m.pick.kind.noun()
+	}
 	head := panelHead{Title: name, Right: "esc or ? closes"}
 	width := max(lipgloss.Width(body)+4, lipgloss.Width(head.Title)+lipgloss.Width(head.Right)+9)
 	if m.width > 0 && width > m.width {

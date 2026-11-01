@@ -77,16 +77,16 @@ func plus(m Model) (Model, tea.Cmd) {
 func TestPlusOnACatalogueRowAsksWhichConnectionThenAddsTheTile(t *testing.T) {
 	m := inCatalogue(t, addModel(t, twoInstanceConfig(), config.Dashboard{}), "db.slow")
 	m, _ = plus(m)
-	if m.mode != modeAddPick || m.addPick == nil || m.addPick.cap.ID != "db.slow" {
-		t.Fatalf("+ on a capability taking a connection: mode %v, picker %+v", m.mode, m.addPick)
+	if m.mode != modePick || m.pick == nil || m.pick.cap.ID != "db.slow" {
+		t.Fatalf("+ on a capability taking a connection: mode %v, picker %+v", m.mode, m.pick)
 	}
-	if m.addPick.value != "" {
-		t.Errorf("seeded choice = %q, want following the switch first", m.addPick.value)
+	if m.pick.value != "" {
+		t.Errorf("seeded choice = %q, want following the switch first", m.pick.value)
 	}
-	if m.addPick.returnTo != modeBrowse {
-		t.Errorf("returnTo = %v, want the catalogue the key was pressed on", m.addPick.returnTo)
+	if m.pick.returnTo != modeBrowse {
+		t.Errorf("returnTo = %v, want the catalogue the key was pressed on", m.pick.returnTo)
 	}
-	choices := m.pinChoices(m.addPick.cap)
+	choices := m.pinChoices(m.pick.cap)
 	got := make([]string, 0, len(choices))
 	for _, ch := range choices {
 		got = append(got, ch.ref)
@@ -95,8 +95,8 @@ func TestPlusOnACatalogueRowAsksWhichConnectionThenAddsTheTile(t *testing.T) {
 		t.Errorf("choices = %v, want prod as a whole, its labelled instance, and staging", got)
 	}
 
-	m.addPick.value = "prod"
-	next, cmd := m.confirmAddPick()
+	m.pick.value = "prod"
+	next, cmd := m.confirmPick()
 	m = next.(Model)
 	if m.mode != modeDashboard {
 		t.Fatalf("after confirming, mode = %v, want the dashboard", m.mode)
@@ -124,8 +124,8 @@ func TestPlusOnACatalogueRowAsksWhichConnectionThenAddsTheTile(t *testing.T) {
 func TestPlusOnACapabilityTakingNoConnectionAddsAtOnce(t *testing.T) {
 	m := inCatalogue(t, addModel(t, twoInstanceConfig(), config.Dashboard{}), "clock.now")
 	m, _ = plus(m)
-	if m.mode != modeDashboard || m.addPick != nil {
-		t.Fatalf("mode = %v, picker %v, want the dashboard with nothing asked", m.mode, m.addPick)
+	if m.mode != modeDashboard || m.pick != nil {
+		t.Fatalf("mode = %v, picker %v, want the dashboard with nothing asked", m.mode, m.pick)
 	}
 	if got := strings.Join(tileKeys(m.tiles), " "); !strings.HasSuffix(got, "clock.now") {
 		t.Errorf("tiles = %q, want clock.now on the dashboard", got)
@@ -161,10 +161,10 @@ func TestPlusOnTheHiddenAutomaticTileShowsItAgain(t *testing.T) {
 		t.Fatalf("tiles = %q, want db.status hidden to begin with", got)
 	}
 	m, _ = plus(m)
-	if m.mode != modeAddPick {
+	if m.mode != modePick {
 		t.Fatalf("mode = %v, want the picker, since db.status takes a connection", m.mode)
 	}
-	next, _ := m.confirmAddPick()
+	next, _ := m.confirmPick()
 	m = next.(Model)
 	if !strings.Contains(m.flash, "showing db.status again") {
 		t.Errorf("flash = %q", m.flash)
@@ -184,14 +184,14 @@ func TestPlusFromTheSearchBarAddsTheHighlightedMatch(t *testing.T) {
 	m := addModel(t, twoInstanceConfig(), config.Dashboard{})
 	m.searchEditing, m.query = true, "db.slow"
 	m, _ = plus(m)
-	if m.mode != modeAddPick || m.addPick.cap.ID != "db.slow" || m.addPick.returnTo != modeDashboard {
-		t.Fatalf("mode %v picker %+v", m.mode, m.addPick)
+	if m.mode != modePick || m.pick.cap.ID != "db.slow" || m.pick.returnTo != modeDashboard {
+		t.Fatalf("mode %v picker %+v", m.mode, m.pick)
 	}
 	if m.searchEditing || m.query != "" {
 		t.Error("the query survived the key that spent it")
 	}
 	gen := m.tickGen
-	next, cmd := m.closeAddPick()
+	next, cmd := m.closePick()
 	m = next.(Model)
 	if m.mode != modeDashboard || m.tickGen == gen || cmd == nil {
 		t.Errorf("cancelling: mode %v, refresh restarted %v", m.mode, m.tickGen != gen)
@@ -238,9 +238,9 @@ func TestPlusOnATileAlreadyThereWritesNothing(t *testing.T) {
 			m := inCatalogue(t, addModel(t, twoInstanceConfig(), tc.dash), tc.id)
 			before := savedConfig(t).Dashboard
 			m, _ = plus(m)
-			if m.mode == modeAddPick {
-				m.addPick.value = tc.pick
-				next, _ := m.confirmAddPick()
+			if m.mode == modePick {
+				m.pick.value = tc.pick
+				next, _ := m.confirmPick()
 				m = next.(Model)
 			}
 			if m.mode != modeDashboard || m.flash != tc.want {
@@ -254,14 +254,14 @@ func TestPlusOnATileAlreadyThereWritesNothing(t *testing.T) {
 }
 
 // Resizing while the picker is open must not panic, and must keep it:
-// fitAddPick is the same shape as fitCopyPick, refitted from the same
+// fitPick is the one sizing for every picker, refitted from the same
 // place.
 func TestResizingWhileTheAddPickerIsOpenKeepsIt(t *testing.T) {
 	m := inCatalogue(t, addModel(t, twoInstanceConfig(), config.Dashboard{}), "db.slow")
 	m, _ = plus(m)
 	resized, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
-	if rm := resized.(Model); rm.mode != modeAddPick || rm.addPick == nil {
-		t.Errorf("after a resize: mode %v, picker %v", rm.mode, rm.addPick)
+	if rm := resized.(Model); rm.mode != modePick || rm.pick == nil {
+		t.Errorf("after a resize: mode %v, picker %v", rm.mode, rm.pick)
 	}
 }
 

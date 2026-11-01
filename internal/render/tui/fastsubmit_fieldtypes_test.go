@@ -18,7 +18,7 @@ import (
 // form built from plain Strings. Reported as "shift+enter is not available on
 // every form" — traced by hand first: every mode that opens a huh.Form
 // (modeForm, covering a capability run, a two-stage edit and the plugin
-// config editor alike, plus modeTheme and modeCopyPick) shares exactly one
+// config editor alike, plus modeTheme and modePick) shares exactly one
 // "case \"shift+enter\":" with nothing upstream that could intercept the key
 // first, confirmed against every m.mode = modeForm call site. That left field
 // *shape* as the only place a real gap could still hide — huh gives each
