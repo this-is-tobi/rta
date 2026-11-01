@@ -239,7 +239,8 @@ HARD_FLAGS := -count=1 -race -shuffle=on
 hard: ## Run them with no cache, shuffled, under the race detector
 	go test $(HARD_FLAGS) ./...
 
-# `hard`, in the two pieces CI runs on two machines at once. One package, the
+# `hard`, in the pieces CI runs on machines of their own at once (two packages
+# sliced by SHARD, below, and the rest). One package, the
 # terminal screens' (internal/render/tui), is the longest by a wide margin:
 # hundreds of in-process terminal programs, one after the other, and raced it is
 # expected to take about as long as the rest of the module does on a runner of
@@ -248,15 +249,41 @@ hard: ## Run them with no cache, shuffled, under the race detector
 # them. If the package named here is renamed, `hard-tui` fails and `hard-rest`
 # runs everything, which is slower and still complete.
 HARD_TUI := ./internal/render/tui
+HARD_APP := ./internal/app
 
-hard-tui: ## `hard` over the one package that takes longest
-	go test $(HARD_FLAGS) $(HARD_TUI)
+# SHARD=i/n runs the i-th of n slices of one package's tests, dealt out by name
+# in the order the files list them. The two packages named here are the race
+# pass's longest by a wide margin, and they run serially — their tests set
+# environment variables, which t.Parallel refuses — so the only way to make
+# either shorter is to run part of it on another runner. The names come from
+# the test files and not from `go test -list`, which would build the package
+# once more for no other purpose; a name that does not run on this platform is
+# one -run matches nothing with. Every top-level test, fuzz target and example
+# is dealt into exactly one slice, so the slices together are the package.
+define hard_slice
+	@pattern=; \
+	if [ -n "$(SHARD)" ]; then \
+	  names=$$(grep -h -E '^func (Test|Fuzz|Example)[A-Za-z0-9_]*[(]' $(1)/*_test.go | \
+	    sed -E 's/^func ([A-Za-z0-9_]+).*/\1/' | sort -u); \
+	  slice=$$(printf '%s\n' "$$names" | \
+	    awk -v s="$(SHARD)" 'BEGIN { split(s, p, "/") } (NR - 1) % p[2] == p[1] - 1' | paste -sd'|' -); \
+	  test -n "$$slice" || { echo "SHARD=$(SHARD) of $(1) holds no test"; exit 1; }; \
+	  pattern="^($$slice)$$"; \
+	fi; \
+	go test $(HARD_FLAGS) $${pattern:+-run "$$pattern"} $(1)
+endef
+
+hard-tui: ## `hard` over the one package that takes longest (SHARD=i/n for a slice)
+	$(call hard_slice,$(HARD_TUI))
+
+hard-app: ## `hard` over the command tree's package (SHARD=i/n for a slice)
+	$(call hard_slice,$(HARD_APP))
 
 # -e keeps a package that does not load in the list, so that `go test` fails on
 # it by name instead of the list quietly leaving it out; an empty list is an
 # error and not a pass.
 hard-rest: ## `hard` over every other package
-	pkgs=$$(go list -e ./... | grep -v -x -F "$$(go list -e $(HARD_TUI))"); \
+	pkgs=$$(go list -e ./... | grep -v -x -F "$$(go list -e $(HARD_TUI) $(HARD_APP))"); \
 	test -n "$$pkgs" && go test $(HARD_FLAGS) $$pkgs
 
 # The passes CI makes beside the race pass, on the machines that read the host

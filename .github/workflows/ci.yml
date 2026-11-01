@@ -165,9 +165,10 @@ jobs:
   # Each question goes where it is best asked, and the pipeline takes as long
   # as the longest of them:
   #
-  #   test-race-*    the race detector, on one runner, in two halves that are
-  #                  a partition of the module (`make hard`; the Makefile says
-  #                  which halves and why)
+  #   test-race-*    the race detector, in five jobs that are a partition of
+  #                  the module (`make hard`): the TUI's and the commands'
+  #                  packages in two slices each, and the rest (the Makefile
+  #                  says which packages, how they are sliced, and why)
   #   test-coverage  the profile, from one plain run over the whole module
   #   test-hosts     the suite, plain, on macOS and on arm64 Linux
   #
@@ -188,18 +189,39 @@ jobs:
   # The detector runs here on one machine. race.yml asks the other two every
   # night.
   test-race-tui:
-    name: Test (race detector, the TUI)
+    name: Test (race detector, the TUI ${{ matrix.shard }})
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
+    # The terminal screens' tests are the longest package, and serial: two
+    # runners take half of them each (SHARD in the Makefile).
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/2", "2/2"]
     uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
     permissions:
       contents: read
     with:
       # `make hard` in the catalogue's own words: no cached results, no
       # ordering luck, no data races. All three have caught something real.
-      # The terminal screens' tests are the longest package, so they have a
-      # runner to themselves.
-      TEST_COMMAND: make hard-tui
+      TEST_COMMAND: make hard-tui SHARD=${{ matrix.shard }}
+      RUNNERS: '[["ubuntu-latest"]]'
+
+  test-race-app:
+    name: Test (race detector, the commands ${{ matrix.shard }})
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    # The command tree's package is the second longest, and was most of what
+    # the rest of the module waited for.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/2", "2/2"]
+    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      TEST_COMMAND: make hard-app SHARD=${{ matrix.shard }}
       RUNNERS: '[["ubuntu-latest"]]'
 
   test-race-rest:
@@ -589,6 +611,7 @@ jobs:
     - lint
     - lint-proto
     - test-race-tui
+    - test-race-app
     - test-race-rest
     - test-coverage
     - test-hosts
