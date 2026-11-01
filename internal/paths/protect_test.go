@@ -195,7 +195,7 @@ func TestTheFilesRtaIsPointedAtAreDeniedAsItsOwnDirectoriesAre(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("RTA_KV_IDENTITY", c.env)
-			deny, err := pluginhost.ResolveAllowing(c.granted)
+			deny, err := pluginhost.ResolveAllowing(c.granted, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

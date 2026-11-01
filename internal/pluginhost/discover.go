@@ -327,10 +327,15 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 		// declaration comes from the cache when there is one, and otherwise
 		// from a process launched under the full deny set, which is closed
 		// here rather than left beside the relaxed one it is replaced by.
-		if granted := declaredOnly(trusted.Allowed(id.Digest), c.Declared.Needs); len(granted) > 0 {
+		//
+		// The paths the operator named are relaunched for too, and they need no
+		// declaration: the operator named them, and only where strict allows
+		// rather than denies do they open anything.
+		granted, named := declaredOnly(trusted.Allowed(id.Digest), c.Declared.Needs), trusted.Paths(id.Digest)
+		if len(granted) > 0 || (c.deny.Strict && len(named) > 0) {
 			c.Close()
 			h.forget(c)
-			relaxed, err := ResolveAllowing(granted)
+			relaxed, err := ResolveAllowing(granted, named)
 			if err == nil {
 				c, err = h.openIdentified(ctx, id, relaxed, nil)
 			}

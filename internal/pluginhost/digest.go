@@ -108,10 +108,17 @@ func specHash(d DenySet) string {
 		}
 	}
 	fmt.Fprintf(h, "confined:%t\n", confined)
+	// And what a strict launch is allowed, which the lists above do not say:
+	// a need granted happens to move a location off NoRead, but a path named
+	// for the artifact moves nothing there, and a process launched before it
+	// was named would have been handed back from the cache without it.
+	fmt.Fprintf(h, "strict:%t\n", d.Strict)
 	write("noaccess", d.NoAccess)
 	write("noread", d.NoRead)
 	write("nomove", d.NoMove)
 	write("own", d.Own)
+	write("readable", d.Readable)
+	write("named", d.Named)
 	return hex.EncodeToString(h.Sum(nil))
 }
 

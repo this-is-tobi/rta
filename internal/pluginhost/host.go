@@ -449,7 +449,7 @@ func (h *Host) OpenAllowing(ctx context.Context, name string, allowed []plugin.N
 	if err := available(); err != nil {
 		return nil, err
 	}
-	deny, err := ResolveAllowing(allowed)
+	deny, err := ResolveAllowing(allowed, nil)
 	if err != nil {
 		return nil, err
 	}
