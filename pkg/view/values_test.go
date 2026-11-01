@@ -252,3 +252,52 @@ func TestMapStringsVisitsTheValues(t *testing.T) {
 		t.Errorf("the value reads %q after the walk", got.Values[0][3])
 	}
 }
+
+// A row appended to Rows by hand before an Add is a row with no values, and
+// the rows added after it keep theirs: appended at the end of Values, 3 GiB
+// landed beside the hand-appended row.
+func TestAddAfterAHandAppendedRowKeepsEachValueOnItsRow(t *testing.T) {
+	tbl := Table{Columns: []Column{{Name: "Name"}, {Name: "Size", Kind: KindBytes}}}
+	tbl.Add(Plain("first"), Bytes(int64(1)))
+	tbl.Rows = append(tbl.Rows, []string{"raw", "5.0 GiB"})
+	tbl.Add(Plain("third"), Bytes(int64(3<<30)))
+	tbl.Add(Plain("fourth"), Plain("\u2014"))
+	for i, want := range []string{"1", "", "3221225472", ""} {
+		if got := tbl.Value(i, 1); got != want {
+			t.Errorf("row %d (%s) is valued %q, want %q", i, tbl.Rows[i][0], got, want)
+		}
+	}
+}
+
+// A table with a column of a kind writes its values whatever it holds: [] for
+// no rows, so that `.values[]` yields nothing on an empty list as `.rows[]`
+// does. Left out when no cell had one, `jq '.values[]'` failed on the day the
+// list was empty.
+func TestAnEmptyListOfAKindStillWritesItsValues(t *testing.T) {
+	empty := Table{Columns: []Column{{Name: "ID"}, {Name: "Due", Kind: KindStatus}}}
+	raw, err := Marshal(Envelope{View: empty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"values":[]`) {
+		t.Errorf("an empty list of a kind encodes as %s, want \"values\":[]", raw)
+	}
+	unvalued := Table{Columns: []Column{{Name: "Size", Kind: KindBytes}}, Rows: [][]string{{"1.5 GiB"}}}
+	if raw, _ := Marshal(Envelope{View: unvalued}); !strings.Contains(string(raw), `"values":[[null]]`) {
+		t.Errorf("a size with no value encodes as %s, want a row of null", raw)
+	}
+}
+
+// kubectl's init stage comes off before the word, as the renderer takes it off
+// before it grades: a crash loop in an init container is valued as the crash
+// loop it is drawn as, and the ordinary wait (Init:0/1) as no word at all.
+func TestAnInitStageIsValuedByTheStateAfterIt(t *testing.T) {
+	tbl := Table{Columns: []Column{{Name: "Status", Kind: KindStatus}}, Rows: [][]string{
+		{"Init:CrashLoopBackOff"}, {"Init:Error"}, {"Init:0/1"}, {"init: a stage called done"}, {"Running"},
+	}}
+	for i, want := range []string{"crashloopbackoff", "error", "", "init", "running"} {
+		if got := tbl.Value(i, 0); got != want {
+			t.Errorf("%q is valued %q, want %q", tbl.Rows[i][0], got, want)
+		}
+	}
+}

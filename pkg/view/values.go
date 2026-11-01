@@ -28,6 +28,11 @@ type Cell struct {
 // the wrong row. A row without any value adds none, so a table built only of
 // Plain cells carries no Values at all, and is encoded with only what its
 // text already holds (typedValues).
+//
+// A row appended to Rows by hand before it is a row with no values: they are
+// padded up to it first. Appended at the end of Values, the value of every row
+// added after a hand-appended one landed on the row before it — 3 GiB beside
+// a row that held 5.0 GiB — with nothing to say so.
 func (t *Table) Add(cells ...Cell) {
 	row := make([]string, len(cells))
 	var values []string
@@ -40,13 +45,13 @@ func (t *Table) Add(cells ...Cell) {
 			values[i] = c.Value
 		}
 	}
-	if values != nil && t.Values == nil {
-		t.Values = make([][]string, len(t.Rows), len(t.Rows)+1)
-	}
-	t.Rows = append(t.Rows, row)
-	if t.Values != nil {
+	if values != nil || t.Values != nil {
+		if gap := len(t.Rows) - len(t.Values); gap > 0 {
+			t.Values = append(t.Values, make([][]string, gap)...)
+		}
 		t.Values = append(t.Values, values)
 	}
+	t.Rows = append(t.Rows, row)
 }
 
 // Plain is a cell with no value of its own: a name, a word, a path — or a
@@ -116,7 +121,16 @@ func Status(text, word string) Cell {
 // Cut at the first character that is not a letter, n/a would be valued "n"
 // and upstream.example.com "upstream": a value made of a fragment, where the
 // renderer reads a name and grades nothing.
+//
+// The stage kubectl puts in front of a pod stuck in an init container comes
+// off first, as the renderer takes it off before it grades: Init:CrashLoop
+// BackOff is drawn red for its crash loop, and was valued "init", the word
+// the ordinary wait Init:0/1 would have. A copy of theme's initStageOf, which
+// pkg cannot import, held to it by a test there.
 func leadingWord(text string) string {
+	if rest, ok := strings.CutPrefix(strings.ToLower(text), "init:"); ok && rest != "" && rest[0] != ' ' {
+		text = text[len("init:"):]
+	}
 	word := text
 	if i := strings.IndexAny(text, " \t,;:()—·"); i >= 0 {
 		word = text[:i]
@@ -178,16 +192,18 @@ func ValueOK(kind ColumnKind, value string) bool {
 // column for column: a number as a number, a time and a status as strings,
 // and null where a cell has none or its value is not one its column takes. A
 // cell its producer gave no value is valued as its text, where the text
-// already is one (textValue). Nil when no cell has a value, so that such a
-// table encodes as it always did.
+// already is one (textValue). Nil for a table with no column of a kind and no
+// values, which encodes as it always did.
+//
+// Written for every other table, values or none: an empty
+// list as [] and a row with nothing in it as nulls. Left out where no cell had
+// a value, it was left out of an empty list, and `jq '.values[]'` failed on
+// the day the list had nothing in it, where `.rows[]` yielded nothing.
 func typedValues(t Table) [][]any {
-	if len(t.Values) == 0 && !slices.ContainsFunc(t.Columns, func(c Column) bool {
-		return c.Kind == KindStatus || c.Kind == KindNumber || c.Kind == KindTimestamp
-	}) {
+	if len(t.Values) == 0 && !slices.ContainsFunc(t.Columns, func(c Column) bool { return c.Kind != KindText }) {
 		return nil
 	}
 	out := make([][]any, len(t.Rows))
-	found := false
 	for i := range t.Rows {
 		row := make([]any, len(t.Columns))
 		for j, c := range t.Columns {
@@ -201,12 +217,8 @@ func typedValues(t Table) [][]any {
 			default:
 				row[j] = json.Number(value)
 			}
-			found = true
 		}
 		out[i] = row
-	}
-	if !found {
-		return nil
 	}
 	return out
 }

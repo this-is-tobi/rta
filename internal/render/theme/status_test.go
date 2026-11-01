@@ -1,6 +1,30 @@
 package theme
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/view"
+)
+
+// A status is valued as the word it is graded by: pkg/view takes kubectl's
+// init stage off the way initStageOf does, so the value a program reads and
+// the colour a person sees cannot disagree. A status with no word is graded
+// as nothing.
+func TestAStatusIsValuedByTheWordItIsGradedBy(t *testing.T) {
+	for _, s := range []string{"Init:CrashLoopBackOff", "Init:Error", "Init:OOMKilled", "Init:0/1", "CrashLoopBackOff", "ok — 3 pods", "WARN soon · Oct 31"} {
+		tbl := view.Table{Columns: []view.Column{{Name: "Status", Kind: view.KindStatus}}, Rows: [][]string{{s}}}
+		word := tbl.Value(0, 0)
+		if word == "" {
+			if ClassifyStatus(s) != StatusNeutral {
+				t.Errorf("%q has no value and is graded %v", s, ClassifyStatus(s))
+			}
+			continue
+		}
+		if ClassifyStatus(word) != ClassifyStatus(s) {
+			t.Errorf("%q is valued %q, graded %v, where it is graded %v", s, word, ClassifyStatus(word), ClassifyStatus(s))
+		}
+	}
+}
 
 // Every status word the plugins actually emit is coloured.
 //
