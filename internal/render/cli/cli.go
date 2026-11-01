@@ -204,9 +204,13 @@ func renderCSV(w io.Writer, v view.View, opts Options) error {
 	for i, row := range t.Rows {
 		out := make([]string, len(row))
 		for j, cell := range row {
-			if j < len(t.Columns) && t.Columns[j].Kind != view.KindStatus && i < len(t.Values) &&
-				j < len(t.Values[i]) && view.ValueOK(t.Columns[j].Kind, t.Values[i][j]) {
-				cell = t.Values[i][j]
+			// The value json writes, a value taken from the text among them
+			// (view.Table.Value): read from Values alone, a time written with
+			// its offset stayed as written here and was UTC in json.
+			if j < len(t.Columns) && t.Columns[j].Kind != view.KindStatus {
+				if v := t.Value(i, j); v != "" {
+					cell = v
+				}
 			}
 			out[j] = csvSafeCell(cell)
 		}
