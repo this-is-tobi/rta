@@ -148,7 +148,7 @@ func TestTheOperatorChannelsRefusalsNameTheRemoteCallsInput(t *testing.T) {
 	setup(t)
 	run(t, allowH, map[string]any{"target": "kv.get", "agent": "claude"})
 	allow, revoke := guardCap(t, "grant.allow"), guardCap(t, "grant.revoke")
-	prepare := PrepareRemote(catalog, builtIn)
+	prepare := PrepareRemote("claude", catalog, builtIn)
 	for _, c := range []struct {
 		spec        operatorid.IssueSpec
 		code, input string
@@ -161,7 +161,7 @@ func TestTheOperatorChannelsRefusalsNameTheRemoteCallsInput(t *testing.T) {
 		_, verr := prepare(c.spec, "tobi")
 		namesInput(t, allow, verr, c.code, c.input)
 	}
-	revokeRemote := RevokeRemote(catalog)
+	revokeRemote := RevokeRemote("claude", catalog)
 	for _, c := range []struct {
 		spec        operatorid.RevokeSpec
 		code, input string

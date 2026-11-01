@@ -566,8 +566,8 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						// Secrets: kv.Reveal is below. Preparation
 						// additionally requires the machine's guard in remote
 						// mode, checked per call.
-						Prepare: grantcap.PrepareRemote(reg.Capabilities, reg.Artifact),
-						Revoke:  grantcap.RevokeRemote(reg.Capabilities),
+						Prepare: grantcap.PrepareRemote(agentName, reg.Capabilities, reg.Artifact),
+						Revoke:  grantcap.RevokeRemote(agentName, reg.Capabilities),
 						Pending: agentcap.PendingRemote(agentName),
 						Answer:  agentcap.AnswerRemote(agentName),
 						// The build each grant on the roster is bound to is

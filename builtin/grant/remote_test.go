@@ -145,9 +145,9 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 		t.Fatal(verr)
 	}
 	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{
-		Roster: roster, URL: base,
-		Prepare: PrepareRemote(catalog, builtIn),
-		Revoke:  RevokeRemote(catalog),
+		Roster: roster, URL: base, Agent: "lab-agent",
+		Prepare: PrepareRemote("lab-agent", catalog, builtIn),
+		Revoke:  RevokeRemote("lab-agent", catalog),
 	}))
 	srv.Listener.Close()
 	srv.Listener = ln
@@ -332,11 +332,11 @@ func TestARemoteDryRunShowsTheBuildAndPinTheServerDrafted(t *testing.T) {
 }
 
 // remoteLab serves this process's grant store as the server "lab" over
-// real HTTP, with the operator key unlocked by "correct horse" enrolled on
-// it, and points remotes.yaml at it.
-func remoteLab(t *testing.T) {
+// real HTTP, running as agent, with the operator key unlocked by "correct
+// horse" enrolled on it, and points remotes.yaml at it.
+func remoteLab(t *testing.T, agent string) {
 	t.Helper()
-	remoteLabAs(t, mcp.OperatorConfig{Revoke: RevokeRemote(catalog)})
+	remoteLabAs(t, mcp.OperatorConfig{Agent: agent, Revoke: RevokeRemote(agent, catalog)})
 }
 
 // remoteLabAs is remoteLab serving cfg, its roster and URL filled in.
@@ -403,7 +403,7 @@ func TestRemoteRevokeByRoleTakesThatRoleAlone(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			setup(t)
-			remoteLab(t)
+			remoteLab(t, "lab-agent")
 			seedRoleAndHand(t)
 			values["server"] = "lab"
 			values["passphrase"] = "correct horse"
@@ -430,7 +430,7 @@ func TestRemoteRevokeByRoleTakesThatRoleAlone(t *testing.T) {
 // was narrowed.
 func TestRemoteListByRoleShowsThatRoleAlone(t *testing.T) {
 	setup(t)
-	remoteLab(t)
+	remoteLab(t, "lab-agent")
 	seedRoleAndHand(t)
 	v, err := listCap(t).Run(context.Background(),
 		reqTUI(map[string]any{"server": "lab", "role": "dev", "passphrase": "correct horse"}))

@@ -485,7 +485,7 @@ func TestAGrantOnAnUnusableProfileSaysWhyEveryCallIsRefused(t *testing.T) {
 		t.Errorf("a usable profile is warned about: %q", body)
 	}
 
-	prepared, verr := PrepareRemote(envCatalog, builtIn)(operatorid.IssueSpec{
+	prepared, verr := PrepareRemote("test", envCatalog, builtIn)(operatorid.IssueSpec{
 		Target: "db.query", Profile: "stale", Agent: "test", TTL: "1h"}, "alice")
 	if verr != nil || !slices.Contains(prepared.Notes, cannot) {
 		t.Errorf("the draft for an operator carries %q (%v), want %q", prepared.Notes, verr, cannot)
@@ -804,7 +804,7 @@ func TestABundleCannotBeIssuedToARemoteServer(t *testing.T) {
 			t.Errorf("the help does not say a bundle is local: %q", c.Description)
 		}
 	}
-	prepare := PrepareRemote(envCatalog, builtIn)
+	prepare := PrepareRemote("test", envCatalog, builtIn)
 	_, verr := prepare(operatorid.IssueSpec{Profile: "staging", Agent: "test"}, "alice")
 	if verr == nil || verr.Code != "grant.notarget" {
 		t.Fatalf("a server asked to prepare an environment = %v, want it to find no capability named", verr)

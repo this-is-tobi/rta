@@ -51,7 +51,9 @@ type OperatorConfig struct {
 	// signed calls here: an envelope aimed elsewhere names elsewhere.
 	URL string
 	// Version and Agent answer the status verb: the server's build and the
-	// --as name its grants match against.
+	// --as name its grants match against. Agent is also what the grant,
+	// consent and lock verbs answer for: the grants naming it, the calls
+	// parked under it, and the locks on it.
 	Version string
 	Agent   string
 	// Stderr is where refusal reasons and the per-call operator log line go;
@@ -64,7 +66,9 @@ type OperatorConfig struct {
 	// app layer out of builtin/grant — the kv.Reveal pattern: "this server
 	// mutates grants for operators" is a line somebody typed, never a
 	// transitive import. nil leaves the verb unoffered, refused post-auth
-	// with a message naming what the server was started without.
+	// with a message naming what the server was started without. Both are
+	// built with Agent and act on that agent's grants alone, as Pending and
+	// Answer act on its parked calls.
 	Prepare func(spec operator.IssueSpec, label string) (operator.Prepared, *view.Error)
 	Revoke  func(spec operator.RevokeSpec, write bool) (operator.RevokeOutcome, *view.Error)
 	// Pending and Answer implement the consent verbs, wired the same way
@@ -477,6 +481,7 @@ func statusFor(code string) int {
 	// operator's screen showed), which refuse the answer precisely
 	// because the thing being answered is not what was read.
 	case "core.operator.role", "core.operator.consent", "core.operator.verb", "core.operator.guard",
+		"core.operator.lock.scope",
 		"grant.policy.refused", "core.grant.guard.unsigned", "core.grant.guard.forged",
 		"agent.request.tampered", "agent.answer.failed":
 		return http.StatusForbidden
@@ -523,11 +528,19 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string, role ope
 			Operators:        h.cfg.Roster.Operators(),
 		}, nil
 	case operator.VerbGrantList:
-		grants, verr := grant.Load()
+		stored, verr := grant.Load()
 		if verr != nil {
 			return nil, verr
 		}
-		list := operator.GrantList{Grants: grants, Suppressed: grant.Suppressed()}
+		// This server's own agent's grants, and no other's: see the scope
+		// rule above lockOwned. The rest authorize nothing here.
+		grants := stored[:0]
+		for _, g := range stored {
+			if g.Agent == h.cfg.Agent {
+				grants = append(grants, g)
+			}
+		}
+		list := operator.GrantList{Grants: grants, Suppressed: grant.SuppressedFor(h.cfg.Agent)}
 		// Judged here, by this server's registry, because the plugins that
 		// answer are this server's and the operator reading the roster is
 		// on another machine: the same verdict this machine's own grant
@@ -708,6 +721,18 @@ func (h *operatorHandler) checkSubmitted(g grant.Grant, label string) *view.Erro
 		return view.Errorf("core.operator.issue.server",
 			"the submitted grant is bound to %q, and this server answers for %q", g.Server, bound)
 	}
+	// Prepare refuses another agent's grant first (grantcap.PrepareRemote);
+	// this is the same rule held against a submission that skipped it. The
+	// guard's signing set is the machine's, so its signature alone would
+	// honour a grant for any agent here.
+	if g.Agent != h.cfg.Agent {
+		verr := view.Errorf("core.operator.issue.agent",
+			"the submitted grant is for the agent %q, and this server answers for %q alone", g.Agent, h.cfg.Agent)
+		if g.Agent != "" {
+			verr = verr.WithHint("issue it through the server that runs as " + g.Agent + ", or at that machine's terminal")
+		}
+		return verr
+	}
 	if g.From != grant.FromOperatorPrefix+label {
 		// The attribution is part of the signed authority, so an operator
 		// cannot submit a grant prepared for — and signed by — someone else
@@ -751,6 +776,14 @@ func (h *operatorHandler) checkSubmitted(g grant.Grant, label string) *view.Erro
 // operators; a lock on every agent or on a credential is machine-wide, and it
 // applies here as much as anywhere, so it may be placed through any server
 // and is lifted only through the one that placed it, or at the terminal.
+//
+// The grant file is the same kind of file, and the grant verbs answer for this
+// server's own agent alone: grant.list shows the grants naming it, and
+// prepare, issue and revoke refuse a grant naming another. A grant's agent is
+// matched exactly, with no wildcard (grant.Grant.Agent), so a grant naming
+// another agent authorizes nothing here, and listing one handed staging's
+// operator a map of prod's records and agents. There is no machine-wide grant
+// to carve out the way a lock on every agent is carved out above.
 
 // lockOwned reports whether l names this server's own agent or an operator of
 // its roster.

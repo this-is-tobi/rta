@@ -692,11 +692,12 @@ func stillCovering(live []core.Grant, spec operatorid.RevokeSpec) *core.Grant {
 // one the operator channel reaches: the revoke that would take the nearest
 // grant back is then said with the `--server` it needs, since the sentence is
 // read where the command is typed and the server that answers is not this
-// machine.
+// machine. within is revokeOutcome's: the agent whose grants are asked, the
+// server's own over the channel, empty for every agent's here.
 func unknownRevokeTarget(sf plugin.Surface, server any, catalog func() []plugin.Capability,
-	spec operatorid.RevokeSpec, out operatorid.RevokeOutcome) *view.Error {
+	spec operatorid.RevokeSpec, out operatorid.RevokeOutcome, within string) *view.Error {
 	if spec.Target == "" || out.NoneActive || out.Revoked > 0 || out.Still != nil ||
-		targetExists(catalog, spec.Target) || holdsUnder(spec.Target) {
+		targetExists(catalog, spec.Target) || holdsUnder(spec.Target, within) {
 		return nil
 	}
 	hint := sf.CapabilityName("grant.list") + " shows what is currently allowed"
@@ -704,7 +705,7 @@ func unknownRevokeTarget(sf plugin.Surface, server any, catalog func() []plugin.
 		hint = "`" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: server}) +
 			"` shows what is currently allowed there"
 	}
-	if nearest := nearestStandingTarget(spec.Target); nearest != "" {
+	if nearest := nearestStandingTarget(spec.Target, within); nearest != "" {
 		args := []plugin.Arg{{Name: "target", Value: nearest, Positional: true}}
 		if server != nil {
 			args = append(args, plugin.Arg{Name: "server", Value: server})
@@ -716,8 +717,9 @@ func unknownRevokeTarget(sf plugin.Surface, server any, catalog func() []plugin.
 }
 
 // holdsUnder reports whether an active grant names target, or lies inside it
-// when it names a plugin, whatever else a revoke narrowed itself by.
-func holdsUnder(target string) bool {
+// when it names a plugin, whatever else a revoke narrowed itself by — among
+// the grants of within when it is set (revokeOutcome).
+func holdsUnder(target, within string) bool {
 	stored, verr := core.Load()
 	if verr != nil {
 		return false
@@ -725,7 +727,7 @@ func holdsUnder(target string) bool {
 	named := selector{target: target}
 	now := time.Now()
 	for _, g := range stored {
-		if g.Active(now) && named.matches(g) {
+		if g.Active(now) && named.matches(g) && (within == "" || g.Agent == within) {
 			return true
 		}
 	}
@@ -752,7 +754,9 @@ func nearestTarget(catalog func() []plugin.Capability, typed string) string {
 // was most likely meant for, or "" when none is close enough to be worth
 // saying. Never the name that was typed: a hint that offers back what the
 // operator just wrote reads as advice and is the one sentence that cannot help.
-func nearestStandingTarget(typed string) string {
+// Among the grants of within when it is set (revokeOutcome): over the operator
+// channel, "did you mean" naming another agent's grant is that grant disclosed.
+func nearestStandingTarget(typed, within string) string {
 	stored, verr := core.Load()
 	if verr != nil {
 		return ""
@@ -761,7 +765,7 @@ func nearestStandingTarget(typed string) string {
 	var targets []string
 	seen := map[string]bool{typed: true}
 	for _, g := range stored {
-		if g.Active(now) && !seen[g.Target] {
+		if g.Active(now) && !seen[g.Target] && (within == "" || g.Agent == within) {
 			seen[g.Target] = true
 			targets = append(targets, g.Target)
 		}
@@ -1194,9 +1198,19 @@ func unusableProfileNote(catalog func() []plugin.Capability, artifact func(strin
 // grants" is a line somebody typed, never a transitive import). label is
 // the enrolled operator the envelope verified; it lands in the grant's From
 // as attribution the roster promised — one label, one person.
-func PrepareRemote(catalog func() []plugin.Capability,
+//
+// agent is the serving process's own --as name, and a draft for any other
+// agent is refused (elsewhere): the grant file is every server's of this
+// account while a roster is one server's, and the guard's signing set is the
+// machine's, so without this an operator enrolled on staging issued grants for
+// prod's agent through staging's channel. The name is still never filled in,
+// for buildGrant's reason: the operator types it, and this only checks it.
+func PrepareRemote(agent string, catalog func() []plugin.Capability,
 	artifact func(string) (string, bool)) func(spec operatorid.IssueSpec, label string) (operatorid.Prepared, *view.Error) {
 	return func(spec operatorid.IssueSpec, label string) (operatorid.Prepared, *view.Error) {
+		if asked := strings.TrimSpace(spec.Agent); asked != "" && asked != agent {
+			return operatorid.Prepared{}, elsewhere(asked, agent)
+		}
 		// No surface crosses the operator channel, so the draft's refusals
 		// are worded for the command line most operators issue from — the
 		// known limit pkg/plugin/naming.go records.
@@ -1241,7 +1255,14 @@ func PrepareRemote(catalog func() []plugin.Capability,
 // the grant still standing — and on a shared server, which is the revoke made
 // in a hurry with other people's agents on it, the hurry is greater. Only this
 // side can say whether the name is one of its plugins.
-func RevokeRemote(catalog func() []plugin.Capability) func(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
+//
+// agent is the serving process's own --as name, PrepareRemote's: a revoke
+// naming another agent is refused, and one naming none takes back this agent's
+// grants alone, --all included. Everything the outcome says is said of those
+// grants too — whether any is active, which one still covers the target, the
+// name a typo was likely meant for — since each would otherwise tell this
+// server's operator something about another server's.
+func RevokeRemote(agent string, catalog func() []plugin.Capability) func(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
 	return func(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
 		spec.Target = core.Normalize(spec.Target)
 		if verr := revokeSelector(spec).check(plugin.SurfaceUnknown); verr != nil {
@@ -1264,15 +1285,32 @@ func RevokeRemote(catalog func() []plugin.Capability) func(spec operatorid.Revok
 		if verr := givenRecord(plugin.SurfaceUnknown, spec.Scope); verr != nil {
 			return operatorid.RevokeOutcome{}, verr
 		}
-		out, verr := revokeOutcome(spec, write)
+		// Narrowed after the checks above, which read the revoke as it was
+		// sent: filled in before them, a revoke naming nothing would pass as
+		// one naming this agent, and take back every grant it holds.
+		if spec.Agent != "" && spec.Agent != agent {
+			return operatorid.RevokeOutcome{}, elsewhere(spec.Agent, agent)
+		}
+		spec.Agent = agent
+		out, verr := revokeOutcome(spec, write, agent)
 		if verr != nil {
 			return operatorid.RevokeOutcome{}, verr
 		}
-		if verr := unknownRevokeTarget(plugin.SurfaceUnknown, plugin.Placeholder("name"), catalog, spec, out); verr != nil {
+		if verr := unknownRevokeTarget(plugin.SurfaceUnknown, plugin.Placeholder("name"), catalog, spec, out, agent); verr != nil {
 			return operatorid.RevokeOutcome{}, verr
 		}
+		out.Agent = agent
 		return out, nil
 	}
+}
+
+// elsewhere refuses an operator-channel grant verb naming an agent other than
+// the server's own.
+func elsewhere(asked, agent string) *view.Error {
+	return view.Errorf("grant.agent.elsewhere",
+		"this server answers for the grants of the agent %q alone, and this one names %q", agent, asked).
+		WithHint("reach it through the server that runs as " + asked + ", or at that machine's terminal").
+		WithInput("agent")
 }
 
 // revokeOutcome runs one revocation under the store's lock. The count, the
@@ -1281,8 +1319,13 @@ func RevokeRemote(catalog func() []plugin.Capability) func(spec operatorid.Revok
 // over — deriving them from an unlocked read let an operator be told
 // "revoked 1 grant" while a Reserve running at that instant put the
 // grant back.
-func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
-	out, _, verr := revokeDetailed(spec, write)
+//
+// within is the agent whose grants the revoke answers for, the server's own
+// over the operator channel; a grant naming any other is left as it is and
+// counted for nothing. Empty is this machine's own revoke, which answers for
+// every agent's.
+func revokeOutcome(spec operatorid.RevokeSpec, write bool, within string) (operatorid.RevokeOutcome, *view.Error) {
+	out, _, verr := revokeDetailed(spec, write, within)
 	return out, verr
 }
 
@@ -1290,7 +1333,7 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 // they stood: the operator channel's answer is a count and stays one, and the
 // person at this machine is told which grants went, from the same snapshot the
 // count was taken from.
-func revokeDetailed(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, []core.Grant, *view.Error) {
+func revokeDetailed(spec operatorid.RevokeSpec, write bool, within string) (operatorid.RevokeOutcome, []core.Grant, *view.Error) {
 	// Said back, so a client that asked for exact can tell this revoke
 	// matched it from one by a server that never heard of it.
 	out := operatorid.RevokeOutcome{Exact: spec.Exact}
@@ -1306,6 +1349,10 @@ func revokeDetailed(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOu
 		var live []core.Grant
 		gone = nil
 		for _, g := range stored {
+			if within != "" && g.Agent != within {
+				kept = append(kept, g)
+				continue
+			}
 			// Revoking a plugin takes back every grant inside it: the point of
 			// `rta grant revoke kv` in a hurry is that nothing kv-shaped survives
 			// it, not that grants naming a capability slip through. The rule,
@@ -1394,10 +1441,16 @@ func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, server string, ou
 		}
 		return stillCovered(msg)
 	}
-	if dry {
-		return stillCovered("would revoke " + format.Count(out.Revoked, "grant", "grants") + goneLines(sf, gone, true))
+	// A server's outcome lists nothing (goneLines), so its count says whose
+	// grants they were: its own agent's, the only ones it takes back.
+	count := format.Count(out.Revoked, "grant", "grants")
+	if server != "" && spec.Agent != "" {
+		count += " for agent " + spec.Agent
 	}
-	taken := "revoked " + format.Count(out.Revoked, "grant", "grants") + goneLines(sf, gone, false)
+	if dry {
+		return stillCovered("would revoke " + count + goneLines(sf, gone, true))
+	}
+	taken := "revoked " + count + goneLines(sf, gone, false)
 	if bundle != "" {
 		taken += "\nall of them are what `" + bundle + "` issues: one call puts the set back, for a new window"
 	}

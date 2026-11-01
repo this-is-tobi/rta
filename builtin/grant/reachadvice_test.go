@@ -110,7 +110,7 @@ func TestARoleSaysHowFarItReachesBeforeAfterAndInsteadOfIssuing(t *testing.T) {
 // catalogue's count.
 func TestTheReceiptOfARemoteGrantSaysHowFarItReaches(t *testing.T) {
 	setup(t)
-	p, verr := PrepareRemote(reachCatalog, builtIn)(operatorid.IssueSpec{Target: "kv", Agent: "work"}, "alice")
+	p, verr := PrepareRemote("work", reachCatalog, builtIn)(operatorid.IssueSpec{Target: "kv", Agent: "work"}, "alice")
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -120,7 +120,7 @@ func TestTheReceiptOfARemoteGrantSaysHowFarItReaches(t *testing.T) {
 			t.Errorf("the prepared grant's notes read\n%s\nwant %q", got, want)
 		}
 	}
-	one, verr := PrepareRemote(reachCatalog, builtIn)(operatorid.IssueSpec{Target: "kv.get", Scope: "db-password", Agent: "work"}, "alice")
+	one, verr := PrepareRemote("work", reachCatalog, builtIn)(operatorid.IssueSpec{Target: "kv.get", Scope: "db-password", Agent: "work"}, "alice")
 	if verr != nil {
 		t.Fatal(verr)
 	}

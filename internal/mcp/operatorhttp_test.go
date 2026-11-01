@@ -128,7 +128,7 @@ func TestTheOperatorChannelAnswersASignedCall(t *testing.T) {
 	signer, roster := enrolled(t, "tobi")
 	now := time.Now()
 	if verr := grant.Issue(grant.Grant{
-		Target: "demo.item.reveal", Issued: now, Expires: now.Add(time.Hour),
+		Target: "demo.item.reveal", Agent: "demo-agent", Issued: now, Expires: now.Add(time.Hour),
 	}, true); verr != nil {
 		t.Fatal(verr)
 	}
@@ -184,7 +184,7 @@ func TestTheGrantListVerbJudgesEachBuildOnTheServer(t *testing.T) {
 	}
 	list := func(cfg OperatorConfig) operator.GrantList {
 		t.Helper()
-		cfg.Roster = roster
+		cfg.Roster, cfg.Agent = roster, "claude"
 		addr := startOperatorWith(t, cfg)
 		status, body := postEnvelope(t, addr, signer.Sign("http://"+addr, fetchChallenge(t, addr), operator.VerbGrantList, nil))
 		if status != http.StatusOK {
@@ -304,7 +304,7 @@ func TestSubmittedGrantsAreHeldToTheirShape(t *testing.T) {
 	base := func() grant.Grant {
 		now := time.Now()
 		return grant.Grant{
-			Target: "demo.item.reveal", From: grant.FromOperatorPrefix + "tobi",
+			Target: "demo.item.reveal", Agent: "demo-agent", From: grant.FromOperatorPrefix + "tobi",
 			Issued: now, Expires: now.Add(15 * time.Minute), Server: at,
 		}
 	}
@@ -348,6 +348,16 @@ func TestSubmittedGrantsAreHeldToTheirShape(t *testing.T) {
 	grant.SignWith(signer.GrantSigner(), &elsewhere)
 	if _, body := submit(elsewhere); errCode(t, body) != "core.operator.issue.server" {
 		t.Fatalf("bound elsewhere: %s", body)
+	}
+
+	// Signed by a key the machine's guard trusts, for an agent another server
+	// on it runs as: the guard's signing set is the machine's, and this
+	// server's operators issue for its own agent alone.
+	another := base()
+	another.Agent = "prod-agent"
+	grant.SignWith(signer.GrantSigner(), &another)
+	if _, body := submit(another); errCode(t, body) != "core.operator.issue.agent" {
+		t.Fatalf("for another agent: %s", body)
 	}
 
 	good := base()
@@ -471,11 +481,14 @@ func TestRefusalsAreClassifiedNotPaged(t *testing.T) {
 		"core.lock.note":                    http.StatusBadRequest,
 		"agent.request.unknown":             http.StatusBadRequest,
 		"agent.answer.elsewhere":            http.StatusBadRequest,
+		"grant.agent.elsewhere":             http.StatusBadRequest,
+		"core.operator.issue.agent":         http.StatusBadRequest,
 		// authorization, policy, and the tamper defenses saying no
-		"grant.policy.refused":    http.StatusForbidden,
-		"core.grant.guard.forged": http.StatusForbidden,
-		"agent.request.tampered":  http.StatusForbidden,
-		"agent.answer.failed":     http.StatusForbidden,
+		"grant.policy.refused":     http.StatusForbidden,
+		"core.grant.guard.forged":  http.StatusForbidden,
+		"agent.request.tampered":   http.StatusForbidden,
+		"agent.answer.failed":      http.StatusForbidden,
+		"core.operator.lock.scope": http.StatusForbidden,
 		// unnamed stays a page — real failures belong on the error rate
 		"core.grant.store": http.StatusInternalServerError,
 	} {

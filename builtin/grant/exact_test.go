@@ -160,7 +160,7 @@ func TestAnExactRevokeNamesTheGrantStillCoveringExactly(t *testing.T) {
 // a call.
 func TestARemoteRevokeNamesTheGrantStillCoveringOnItsServer(t *testing.T) {
 	setup(t)
-	remoteLab(t)
+	remoteLab(t, "claude")
 	neighbours(t)
 	for _, c := range []struct {
 		exact bool
@@ -200,7 +200,7 @@ func TestAnExactSelectorThatCanNameNoGrantIsRefused(t *testing.T) {
 			t.Errorf("%s: %v, want %s", name, err, c.code)
 		}
 	}
-	if _, verr := RevokeRemote(catalog)(operatorid.RevokeSpec{Exact: true, Agent: "claude"}, true); verr == nil ||
+	if _, verr := RevokeRemote("claude", catalog)(operatorid.RevokeSpec{Exact: true, Agent: "claude"}, true); verr == nil ||
 		verr.Code != "grant.exact.target" {
 		t.Errorf("the operator channel's exact revoke with no target: %v, want grant.exact.target", verr)
 	}
@@ -213,7 +213,7 @@ func TestAnExactSelectorThatCanNameNoGrantIsRefused(t *testing.T) {
 // roster's row took back each grant on its target and agent.
 func TestAnExactRemoteRevokeIsRefusedByAServerThatIgnoresIt(t *testing.T) {
 	setup(t)
-	remoteLab(t)
+	remoteLab(t, "claude")
 	neighbours(t)
 	values := map[string]any{"target": "kv.get", "agent": "claude", "exact": true,
 		"server": "lab", "passphrase": "correct horse"}
@@ -230,11 +230,11 @@ func TestAnExactRemoteRevokeIsRefusedByAServerThatIgnoresIt(t *testing.T) {
 
 	setup(t)
 	var wrote bool
-	remoteLabAs(t, mcp.OperatorConfig{Revoke: func(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
+	remoteLabAs(t, mcp.OperatorConfig{Agent: "claude", Revoke: func(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
 		// As an older server answers: the field unread, so no Exact said back.
 		wrote = wrote || write
 		spec.Exact = false
-		out, verr := RevokeRemote(catalog)(spec, false)
+		out, verr := RevokeRemote("claude", catalog)(spec, false)
 		out.Exact = false
 		return out, verr
 	}})

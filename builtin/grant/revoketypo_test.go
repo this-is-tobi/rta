@@ -123,7 +123,7 @@ func TestARevokeNarrowedPastAGrantForAnUnregisteredNameIsNotToldNoGrantIsHeld(t 
 func TestTheOperatorChannelsRevokeRefusesAMistypedNameToo(t *testing.T) {
 	setup(t)
 	run(t, allowH, map[string]any{"target": "kv.get", "agent": "claude"})
-	revoke := RevokeRemote(catalog)
+	revoke := RevokeRemote("claude", catalog)
 
 	for _, write := range []bool{true, false} {
 		_, verr := revoke(operatorid.RevokeSpec{Target: "kv.gett"}, write)
