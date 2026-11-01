@@ -130,12 +130,18 @@ func newPluginAccessCommand(opts *globalOpts) *cobra.Command {
 // nobody requested, and the request is the only reason there is anything to
 // weigh.
 func newPluginAccessAddCommand(opts *globalOpts) *cobra.Command {
-	return &cobra.Command{
+	var named []string
+	cmd := &cobra.Command{
 		Use:   "add <name> [location...]",
-		Short: "Let a plugin read a credential location it declares it needs",
+		Short: "Let a plugin read a credential location it declares it needs, or a path you name",
 		Long: "With no location, the plugin may read everything it declares; with\n" +
 			"some, those, beside what it already had. Only `rta plugin access rm`\n" +
-			"takes access back.",
+			"takes access back.\n\n" +
+			"--path names a directory or a file for it to read under `confine: strict`,\n" +
+			"which otherwise lets it open nothing in your home directory: a CA kept in\n" +
+			"~/certs. Read only, and never rta's own state, a credential location\n" +
+			"(those are a plugin's to ask for), or the home directory itself. Given\n" +
+			"alone, it adds the path and nothing the plugin declares.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := opts.format()
@@ -145,6 +151,9 @@ func newPluginAccessAddCommand(opts *globalOpts) *cobra.Command {
 			c, verr := loadedByName(args[0])
 			if verr != nil {
 				return verr
+			}
+			if len(named) > 0 && len(args) == 1 {
+				return addPaths(cmd, opts, format, c, named)
 			}
 			declared := c.Declared.Needs
 			if len(declared) == 0 {
@@ -171,6 +180,11 @@ func newPluginAccessAddCommand(opts *globalOpts) *cobra.Command {
 			} else if verr := plugintrust.Allow(c.Identity.Digest, union); verr != nil {
 				return verr
 			}
+			if len(named) > 0 {
+				if verr := recordPaths(opts, c, named); verr != nil {
+					return verr
+				}
+			}
 			pairs := []view.Pair{
 				{Key: label, Value: c.Declared.Name},
 				{Key: "digest", Value: c.Identity.Digest},
@@ -178,6 +192,7 @@ func newPluginAccessAddCommand(opts *globalOpts) *cobra.Command {
 			for _, loc := range union {
 				pairs = append(pairs, view.Pair{Key: "may read", Value: needLine(plugin.Need(loc))})
 			}
+			pairs = append(pairs, pathPairs(c, named)...)
 			pairs = append(pairs, view.Pair{Key: "next", Value: next})
 			return cli.Render(cmd.OutOrStdout(), view.KeyValue{Pairs: pairs}, renderOptions(cmd, format, opts.noColor))
 		},
@@ -207,6 +222,9 @@ func newPluginAccessAddCommand(opts *globalOpts) *cobra.Command {
 			return out, cobra.ShellCompDirectiveNoFileComp
 		},
 	}
+	cmd.Flags().StringSliceVar(&named, "path", nil,
+		"a directory or file it may read under confine: strict (repeatable)")
+	return cmd
 }
 
 // newPluginAccessRmCommand takes it back.
@@ -220,12 +238,14 @@ func newPluginAccessAddCommand(opts *globalOpts) *cobra.Command {
 // declaration: a record can hold a location a newer build no longer declares,
 // and the way to clear one is to name it.
 func newPluginAccessRmCommand(opts *globalOpts) *cobra.Command {
-	return &cobra.Command{
+	var named []string
+	cmd := &cobra.Command{
 		Use:   "rm <name> [location...]",
 		Short: "Take back a plugin's access to the locations it was given",
 		Long: "The plugin keeps running — this takes back only what `rta plugin access add`\n" +
 			"gave it, so the next call that wanted the file fails and says so. With no\n" +
-			"location, everything it was given; with some, those.",
+			"location, everything it was given, the paths named for it included; with\n" +
+			"some, those. --path takes back a path named for it, and only that.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := opts.format()
@@ -236,7 +256,13 @@ func newPluginAccessRmCommand(opts *globalOpts) *cobra.Command {
 			if verr != nil {
 				return verr
 			}
+			if len(named) > 0 {
+				return removePaths(cmd, opts, format, c, named)
+			}
 			had := plugintrust.Load().Allowed(c.Identity.Digest)
+			if len(had) == 0 && len(args) == 1 && len(plugintrust.Load().Paths(c.Identity.Digest)) > 0 {
+				return removePaths(cmd, opts, format, c, nil)
+			}
 			if len(had) == 0 {
 				return view.Errorf("plugin.access.empty",
 					"%s has no access to any credential location", args[0]).
@@ -266,6 +292,16 @@ func newPluginAccessRmCommand(opts *globalOpts) *cobra.Command {
 			} else if verr := plugintrust.Allow(c.Identity.Digest, kept); verr != nil {
 				return verr
 			}
+			// Everything it was given, with no location named, is the paths too.
+			var dropped []string
+			if len(args) == 1 {
+				dropped = plugintrust.Load().Paths(c.Identity.Digest)
+				if !opts.dryRun && len(dropped) > 0 {
+					if verr := plugintrust.AllowPaths(c.Identity.Digest, nil); verr != nil {
+						return verr
+					}
+				}
+			}
 			pairs := []view.Pair{
 				{Key: label, Value: c.Declared.Name},
 				{Key: "digest", Value: c.Identity.Digest},
@@ -275,6 +311,9 @@ func newPluginAccessRmCommand(opts *globalOpts) *cobra.Command {
 			}
 			for _, loc := range kept {
 				pairs = append(pairs, view.Pair{Key: "still reads", Value: needLine(plugin.Need(loc))})
+			}
+			for _, p := range dropped {
+				pairs = append(pairs, view.Pair{Key: "no longer reads", Value: p})
 			}
 			pairs = append(pairs, view.Pair{Key: "next", Value: next})
 			return cli.Render(cmd.OutOrStdout(), view.KeyValue{Pairs: pairs}, renderOptions(cmd, format, opts.noColor))
@@ -302,6 +341,18 @@ func newPluginAccessRmCommand(opts *globalOpts) *cobra.Command {
 			return out, cobra.ShellCompDirectiveNoFileComp
 		},
 	}
+	cmd.Flags().StringSliceVar(&named, "path", nil, "a path named for it to take back (repeatable)")
+	completeFlag(cmd, "path", func(_ *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		c, verr := loadedByName(args[0])
+		if verr != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return plugintrust.Load().Paths(c.Identity.Digest), cobra.ShellCompDirectiveNoFileComp
+	})
+	return cmd
 }
 
 // needsInventory is every loaded plugin that asks for a credential location,
@@ -316,8 +367,18 @@ func needsInventory() view.View {
 		{Name: "Plugin"}, {Name: "Asks For"}, {Name: "Status", Kind: view.KindStatus},
 		{Name: "Next"},
 	}}
+	// And the paths named for a plugin, in a column of their own once any
+	// plugin has one: an operator's decision is as much what a plugin may
+	// read as its own request is, and this is the page that answers it.
+	named := slices.ContainsFunc(loadedPlugins, func(c *pluginhost.Client) bool {
+		return len(set.Paths(c.Identity.Digest)) > 0
+	})
+	if named {
+		t.Columns = append(t.Columns, view.Column{Name: "Named Paths"})
+	}
 	for _, c := range loadedPlugins {
-		if len(c.Declared.Needs) == 0 {
+		paths := set.Paths(c.Identity.Digest)
+		if len(c.Declared.Needs) == 0 && len(paths) == 0 {
 			continue
 		}
 		allowed := set.Allowed(c.Identity.Digest)
@@ -325,7 +386,15 @@ func needsInventory() view.View {
 		if len(ungranted(c.Declared.Needs, allowed)) == 0 {
 			status, action = "ok", "—"
 		}
-		t.Add(view.Plain(c.Declared.Name), view.Plain(needNames(c.Declared.Needs)), view.Graded(status), view.Plain(action))
+		asks := needNames(c.Declared.Needs)
+		if len(c.Declared.Needs) == 0 {
+			asks = "—"
+		}
+		row := []view.Cell{view.Plain(c.Declared.Name), view.Plain(asks), view.Graded(status), view.Plain(action)}
+		if named {
+			row = append(row, view.Plain(dashIfNone(strings.Join(paths, ", "))))
+		}
+		t.Add(row...)
 	}
 	t.Total = len(t.Rows)
 	// The table even when nothing asks, and the sentence beside it for a
@@ -1347,7 +1416,7 @@ func confinementLine(allowed ...plugin.Need) string {
 	if !pluginhost.Confined() {
 		return "none on this platform — see `rta doctor`"
 	}
-	d, err := pluginhost.ResolveAllowing(allowed)
+	d, err := pluginhost.ResolveAllowing(allowed, nil)
 	if err != nil {
 		return "unavailable: " + err.Error()
 	}
@@ -1359,4 +1428,125 @@ func confinementLine(allowed ...plugin.Need) string {
 func sandboxedLine(d pluginhost.DenySet) string {
 	return fmt.Sprintf("sandboxed: %s denied read+write, %d denied read (`rta doctor` lists them)",
 		format.Count(len(d.NoAccess), "path", "paths"), len(d.NoRead))
+}
+
+// addPaths is `access add <name> --path` with no location: the paths named for
+// the plugin to read under strict confinement, and nothing it declares.
+func addPaths(cmd *cobra.Command, opts *globalOpts, format cli.Format, c *pluginhost.Client, named []string) error {
+	if verr := recordPaths(opts, c, named); verr != nil {
+		return verr
+	}
+	label, next := "access added", "it applies on your next `rta` command — the plugin is relaunched able to read it"
+	if opts.dryRun {
+		label, next = "would add access", "run without --dry-run to actually add it"
+	}
+	pairs := append([]view.Pair{{Key: label, Value: c.Declared.Name}, {Key: "digest", Value: c.Identity.Digest}},
+		pathPairs(c, named)...)
+	pairs = append(pairs, view.Pair{Key: "next", Value: next})
+	return cli.Render(cmd.OutOrStdout(), view.KeyValue{Pairs: pairs}, renderOptions(cmd, format, opts.noColor))
+}
+
+// recordPaths checks each path named for c and adds it to those it may read,
+// unless this is a dry run.
+func recordPaths(opts *globalOpts, c *pluginhost.Client, named []string) *view.Error {
+	had := plugintrust.Load().Paths(c.Identity.Digest)
+	union := slices.Clone(had)
+	for _, raw := range named {
+		p, verr := pluginhost.CheckPath(raw)
+		if verr != nil {
+			return verr
+		}
+		if !slices.Contains(union, p) {
+			union = append(union, p)
+		}
+	}
+	if opts.dryRun {
+		return nil
+	}
+	return plugintrust.AllowPaths(c.Identity.Digest, union)
+}
+
+// pathPairs is the receipt's lines for the paths named for c: each it may read
+// now, and on a platform that does not confine strictly, what they change there.
+func pathPairs(c *pluginhost.Client, named []string) []view.Pair {
+	if len(named) == 0 {
+		return nil
+	}
+	var pairs []view.Pair
+	for _, raw := range named {
+		if p, verr := pluginhost.CheckPath(raw); verr == nil {
+			pairs = append(pairs, view.Pair{Key: "may read", Value: p + " (under confine: strict)"})
+		}
+	}
+	if strict, _, err := pluginhost.Strict(); err != nil || !strict {
+		pairs = append(pairs, view.Pair{Key: "here", Value: "a path matters where `confine: strict` confines " +
+			c.Declared.Name + ", which is not here: " + strictElsewhere()})
+	}
+	return pairs
+}
+
+// strictElsewhere says why a path named here changes nothing on this run.
+func strictElsewhere() string {
+	if pluginhost.Confined() {
+		return "this platform confines plugins with a deny list, which already lets them read everything but " +
+			"rta's own state and the credential locations"
+	}
+	return "the configuration leaves `confine` unset, so plugins already read it"
+}
+
+// removePaths is `access rm <name> --path`: the paths named taken back, or
+// every one when none is.
+func removePaths(cmd *cobra.Command, opts *globalOpts, format cli.Format, c *pluginhost.Client, named []string) error {
+	had := plugintrust.Load().Paths(c.Identity.Digest)
+	if len(had) == 0 {
+		return view.Errorf("plugin.access.empty", "%s has no path named for it to read", c.Declared.Name).
+			WithHint("nothing to take back")
+	}
+	gone, kept := had, []string(nil)
+	if len(named) > 0 {
+		gone, kept = nil, nil
+		want := make([]string, 0, len(named))
+		for _, raw := range named {
+			p := filepath.Clean(plugin.ExpandHome(raw))
+			if abs, err := filepath.Abs(p); err == nil {
+				p = abs
+			}
+			if !slices.Contains(had, p) {
+				return view.Errorf("plugin.access.unheld", "%s has no access to %s", c.Declared.Name, p).
+					WithHint("the paths named for it: " + strings.Join(had, ", ")).WithInput("path")
+			}
+			want = append(want, p)
+		}
+		for _, h := range had {
+			if slices.Contains(want, h) {
+				gone = append(gone, h)
+			} else {
+				kept = append(kept, h)
+			}
+		}
+	}
+	label, next := "access removed", "it applies on your next `rta` command"
+	if opts.dryRun {
+		label, next = "would remove access", "run without --dry-run to actually remove it"
+	} else if verr := plugintrust.AllowPaths(c.Identity.Digest, kept); verr != nil {
+		return verr
+	}
+	pairs := []view.Pair{{Key: label, Value: c.Declared.Name}, {Key: "digest", Value: c.Identity.Digest}}
+	for _, p := range gone {
+		pairs = append(pairs, view.Pair{Key: "no longer reads", Value: p})
+	}
+	for _, p := range kept {
+		pairs = append(pairs, view.Pair{Key: "still reads", Value: p})
+	}
+	pairs = append(pairs, view.Pair{Key: "next", Value: next})
+	return cli.Render(cmd.OutOrStdout(), view.KeyValue{Pairs: pairs}, renderOptions(cmd, format, opts.noColor))
+}
+
+// dashIfNone is s, or a dash for an empty cell that would otherwise read as
+// one nobody filled in.
+func dashIfNone(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
 }

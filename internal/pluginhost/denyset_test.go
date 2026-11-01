@@ -287,7 +287,7 @@ func TestAGrantRemovesOnlyWhatItNames(t *testing.T) {
 	if !containsPath(base.NoRead, kube) {
 		t.Fatalf("the kubeconfig is not denied by default, so there is nothing to grant")
 	}
-	granted, err := ResolveAllowing([]plugin.Need{plugin.NeedKubeconfig})
+	granted, err := ResolveAllowing([]plugin.Need{plugin.NeedKubeconfig}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestAGrantRemovesOnlyWhatItNames(t *testing.T) {
 // tier1, so no combination of grants reaches rta's own directories — the
 // property that bounds the worst case of this whole mechanism.
 func TestNoGrantCanReachRtasOwnState(t *testing.T) {
-	everything, err := ResolveAllowing(plugin.Needs())
+	everything, err := ResolveAllowing(plugin.Needs(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,12 +378,12 @@ func TestTheDenySetIsStableAcrossCalls(t *testing.T) {
 		}
 	}
 	// And with a grant, which is the path that iterates the keyed set.
-	granted, err := ResolveAllowing([]plugin.Need{plugin.NeedKubeconfig})
+	granted, err := ResolveAllowing([]plugin.Need{plugin.NeedKubeconfig}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 8; i++ {
-		again, err := ResolveAllowing([]plugin.Need{plugin.NeedKubeconfig})
+		again, err := ResolveAllowing([]plugin.Need{plugin.NeedKubeconfig}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -164,7 +164,33 @@ func strictPolicy(d DenySet, name string) []string {
 	add("--rx", offList, pathDirs(d)...)
 	add("--ro", offList, systemRead...)
 	add("--ro", own, d.Readable...)
+	// What the operator named, less rta's own and the credential locations
+	// this artifact was not given: a named ~/.config holds ~/.config/gcloud,
+	// which is a need's to open, never a path's.
+	notGiven := append(slices.Clone(own), d.NoRead...)
+	add("--ro", notGiven, d.Named...)
+	// And the CA bundle rta hands every plugin by name (allowedEnv): a
+	// corporate SSL_CERT_FILE kept outside the system's directories was
+	// unreadable, and Go then verified against the system's bundle alone, so
+	// the failure read "certificate signed by unknown authority" — about the
+	// server — with nothing to name the setting that refused the file.
+	add("--ro", notGiven, certPaths()...)
 	add("--rw", offList, systemWrite...)
+	return out
+}
+
+// certPaths is where SSL_CERT_FILE and SSL_CERT_DIR point, each as given and
+// where it leads: the file, and each directory of the list.
+func certPaths() []string {
+	var out []string
+	if f := os.Getenv("SSL_CERT_FILE"); filepath.IsAbs(f) {
+		out = append(out, withTarget(f)...)
+	}
+	for _, dir := range filepath.SplitList(os.Getenv("SSL_CERT_DIR")) {
+		if filepath.IsAbs(dir) {
+			out = append(out, withTarget(dir)...)
+		}
+	}
 	return out
 }
 

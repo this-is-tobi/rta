@@ -206,6 +206,14 @@ type DenySet struct {
 	Strict   bool
 	Readable []string
 	Shim     string
+	// Named is what of this machine the operator named for the artifact to
+	// read (plugintrust.Entry.Paths), each with where it leads. Read only,
+	// and only where strict allows rather than denies: the macOS profile
+	// already lets a plugin read anything but the locations it names, and a
+	// named path is never one of those (CheckPath). Under strict, what of
+	// rta's own and of the credential locations this artifact was not given
+	// lies inside one is carved out of it, as it is out of /etc.
+	Named []string
 }
 
 // Resolve builds the deny set for this machine.
@@ -221,17 +229,17 @@ type DenySet struct {
 // It may be created while the plugin runs, and a rule naming a path that never
 // appears costs nothing. What it must not do is name a path the kernel never
 // produces, which is what a missing component used to cause.
-func Resolve() (DenySet, error) { return ResolveAllowing(nil) }
+func Resolve() (DenySet, error) { return ResolveAllowing(nil, nil) }
 
 // ResolveAllowing builds it for one artifact, leaving out the locations that
-// artifact has been granted.
+// artifact has been granted, with the paths its operator named (Named).
 //
 // A grant subtracts from the deny list and can do nothing else — it cannot add
 // a path, cannot reach tier1, and cannot name anything outside the closed set
 // tier2 is keyed by. That is the same shape team policy has: a mechanism that
 // can only ever narrow is one whose worst case is bounded by what it started
 // from.
-func ResolveAllowing(granted []plugin.Need) (DenySet, error) {
+func ResolveAllowing(granted []plugin.Need, named []string) (DenySet, error) {
 	allowed := map[plugin.Need]bool{}
 	for _, n := range granted {
 		allowed[n] = true
@@ -285,7 +293,10 @@ func ResolveAllowing(granted []plugin.Need) (DenySet, error) {
 			d.NoRead = append(d.NoRead, withTarget(p)...)
 		}
 	}
-	d.NoAccess, d.NoRead = dedupe(d.NoAccess), dedupe(d.NoRead)
+	for _, p := range named {
+		d.Named = append(d.Named, withTarget(p)...)
+	}
+	d.NoAccess, d.NoRead, d.Named = dedupe(d.NoAccess), dedupe(d.NoRead), dedupe(d.Named)
 	d.NoMove = ancestors(append(append([]string{}, d.NoAccess...), d.NoRead...))
 	if err := validate(append(append(append([]string{}, d.NoAccess...), d.NoRead...), d.NoMove...)); err != nil {
 		return DenySet{}, err
@@ -325,9 +336,11 @@ func (d DenySet) Launching(exe string) (DenySet, error) {
 }
 
 // inside reports whether p is root or lies below it, by path components —
-// a prefix test on the string alone would put /data-old inside /data.
+// a prefix test on the string alone would put /data-old inside /data. The
+// root directory is the one whose own name ends in the separator: with the
+// separator added again, nothing at all lay inside /.
 func inside(p, root string) bool {
-	return p == root || strings.HasPrefix(p, root+string(filepath.Separator))
+	return p == root || strings.HasPrefix(p, strings.TrimSuffix(root, string(filepath.Separator))+string(filepath.Separator))
 }
 
 // ancestors is every directory above each path, up to the root.

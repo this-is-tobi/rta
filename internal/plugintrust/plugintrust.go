@@ -60,6 +60,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -111,6 +112,20 @@ type Entry struct {
 	// worth stopping for, and it is the more so when what was allowed is a
 	// credential store.
 	Allow []string `json:"allow,omitempty"`
+	// Paths is what of this machine the operator named for this artifact to
+	// read under `confine: strict` (`rta plugin access add <name> --path`):
+	// directories and files, absolute, read only. The third decision on the key,
+	// and the one Allow's closed set cannot make: a CA kept in ~/certs is no
+	// credential location rta knows of, and strict fixes what a plugin may
+	// open before any call names a file, so a call cannot bring it in either.
+	//
+	// **The operator asks here, where Allow is the plugin asking.** Allow holds
+	// only what a declaration named, so that the widest a plugin reaches is what
+	// it said it needed; a path is named by the person who knows where their
+	// files are, and a credential location is never one (pluginhost.CheckPath):
+	// those stay a need's, so that a plugin's own request is the only way to
+	// one. Attached to the digest for Allow's reason.
+	Paths []string `json:"paths,omitempty"`
 	// System marks an entry read from the system root's record (paths.System)
 	// rather than the operator's: trusted by whoever built the image or the
 	// package, read by rta and never written by it. Not serialised — it is a
@@ -330,7 +345,7 @@ func loadSystem() map[string]Entry {
 	}
 	for _, e := range readQuietly(p) {
 		e.System = true
-		e.Allow = nil
+		e.Allow, e.Paths = nil, nil
 		out[e.Digest] = e
 	}
 	return out
@@ -372,6 +387,7 @@ func Add(digest, name, path string) *view.Error {
 		// said. The digest is what both decisions hang on; while it stands,
 		// both stand.
 		e.Allow = append([]string{}, existing.Allow...)
+		e.Paths = slices.Clone(existing.Paths)
 	}
 	if name != "" {
 		// Appended after dropping any earlier occurrence, so the list stays in
@@ -399,6 +415,29 @@ func (s Set) Allowed(digest string) []string {
 	return nil
 }
 
+// Paths is what of this machine an artifact may read under strict confinement,
+// the paths the operator named for it (Entry.Paths), empty for one given none.
+func (s Set) Paths(digest string) []string {
+	for _, e := range s.entries {
+		if e.Digest == digest {
+			return slices.Clone(e.Paths)
+		}
+	}
+	return nil
+}
+
+// AllowPaths records the paths an artifact may read under strict confinement,
+// replacing those it had, for Allow's reasons; the caller checks each path
+// (pluginhost.CheckPath) before it is recorded.
+func AllowPaths(digest string, paths []string) *view.Error {
+	return update(digest, func(e *Entry) {
+		e.Paths = slices.Clone(paths)
+		if len(e.Paths) == 0 {
+			e.Paths = nil
+		}
+	})
+}
+
 // Allow records that an artifact may read the named locations, replacing
 // whatever it was allowed before rather than adding to it.
 //
@@ -412,6 +451,18 @@ func (s Set) Allowed(digest string) []string {
 // credential store while they are not even allowed to run is a record that
 // means nothing and would outlive the reason it was written.
 func Allow(digest string, locations []string) *view.Error {
+	return update(digest, func(e *Entry) {
+		e.Allow = append([]string{}, locations...)
+		if len(e.Allow) == 0 {
+			e.Allow = nil
+		}
+	})
+}
+
+// update changes the access an artifact's entry records, under the record's
+// lock: in the operator's entry for it, or, for an artifact only the system
+// root trusts, in a copy of that entry made the operator's.
+func update(digest string, change func(*Entry)) *view.Error {
 	if digest == "" {
 		return view.Errorf("plugin.access.nodigest", "cannot give access to an artifact with no digest")
 	}
@@ -431,10 +482,7 @@ func Allow(digest string, locations []string) *view.Error {
 	for _, e := range f.Trusted {
 		if e.Digest == digest {
 			found = true
-			e.Allow = append([]string{}, locations...)
-			if len(e.Allow) == 0 {
-				e.Allow = nil
-			}
+			change(&e)
 		}
 		out = append(out, e)
 	}
@@ -452,10 +500,7 @@ func Allow(digest string, locations []string) *view.Error {
 					"that comes before reading anything")
 		}
 		sys.System = false
-		sys.Allow = append([]string{}, locations...)
-		if len(sys.Allow) == 0 {
-			sys.Allow = nil
-		}
+		change(&sys)
 		out = append(out, sys)
 	}
 	return write(file{Trusted: out})

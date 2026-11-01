@@ -1492,6 +1492,17 @@ func doctorLoadedPlugins(add func(check, status, detail string)) {
 				detail += fmt.Sprintf(" — may read %s; `rta plugin access rm %s` takes it back",
 					needNames(p.Declared.Needs), p.Declared.Name)
 			}
+			// And the paths named for it, the operator's own decision, said as
+			// the granted needs are, and said to change nothing where strict
+			// does not confine: a path named on a laptop is read anyway there.
+			if named := trust.Paths(p.Identity.Digest); len(named) > 0 {
+				where := "under confine: strict"
+				if strict, _, err := pluginhost.Strict(); err != nil || !strict {
+					where = "where confine: strict confines it, which is not here"
+				}
+				detail += fmt.Sprintf(" — may read %s %s; `rta plugin access rm %s --path <path>` takes one back",
+					strings.Join(named, ", "), where, p.Declared.Name)
+			}
 			add("plugin "+p.Declared.Name, status, detail)
 		}
 	}

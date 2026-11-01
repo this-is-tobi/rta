@@ -97,9 +97,9 @@ func explainDenied(id string, sf plugin.Surface, err error, allows func(path str
 		}
 		ns := plugin.Namespace(id)
 		hint := "`confine: strict` keeps " + ns + " from opening " + m[1] + ": a plugin under it opens the " +
-			"system's directories, /etc and /opt among them, its own temporary directory, the tools on its PATH " +
-			"and the credential locations `rta plugin access add` gave it, and nothing else — keep the file in " +
-			"one of those, or leave `confine` unset"
+			"system's directories, /etc and /opt among them, its own temporary directory, the tools on its PATH, " +
+			"the credential locations `rta plugin access add` gave it and the paths you named for it, and " +
+			"nothing else — `rta plugin access add " + ns + " --path <its directory>` lets it read the file where it is"
 		if sf == plugin.SurfaceMCP {
 			hint = "this server starts its plugins under `confine: strict`, which keeps " + ns + " from opening " +
 				m[1] + "; that is the operator's configuration to change, not the call's"
@@ -141,9 +141,17 @@ func (d DenySet) readable(path string) bool {
 	if slices.ContainsFunc(d.ownFiles(), func(own string) bool { return inside(at, own) }) {
 		return false
 	}
-	return slices.ContainsFunc(d.Readable, func(granted string) bool {
-		return slices.ContainsFunc(withTarget(granted), func(form string) bool { return inside(at, form) })
-	})
+	under := func(roots []string) bool {
+		return slices.ContainsFunc(roots, func(granted string) bool {
+			return slices.ContainsFunc(withTarget(granted), func(form string) bool { return inside(at, form) })
+		})
+	}
+	if under(d.Readable) {
+		return true
+	}
+	// A path the operator named, less the credential locations this artifact
+	// was not given, which the policy carves out of it.
+	return under(d.Named) && !under(d.NoRead)
 }
 
 // ownFiles is rta's own state as strict keeps it out of every location it
