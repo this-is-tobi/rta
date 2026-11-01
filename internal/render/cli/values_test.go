@@ -33,3 +33,13 @@ func TestCSVWritesACellsValueAndPrettyItsText(t *testing.T) {
 		t.Errorf("a redacted size reached csv:\n%s", got)
 	}
 }
+
+// A value taken from the text is the one csv writes, as json does: a time a
+// plugin wrote with its offset and gave no value is valued in UTC, and csv
+// wrote the text as written while json had it in UTC.
+func TestCSVWritesTheValueATextHolds(t *testing.T) {
+	tbl := view.Table{Columns: []view.Column{{Name: "At", Kind: view.KindTimestamp}}, Rows: [][]string{{"2026-10-31T14:02:00+01:00"}}}
+	if got, want := render(t, tbl, CSV), "At\n2026-10-31T13:02:00Z\n"; got != want {
+		t.Errorf("csv:\n%s\nwant:\n%s", got, want)
+	}
+}
