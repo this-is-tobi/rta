@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -35,19 +34,18 @@ import (
 // Report is what one install computed, for the CLI to render — every field
 // observed by rta except the ones labelled claims.
 type Report struct {
-	Name      string
-	Version   string // the index's claim
-	Index     string
-	URL       string
-	Digest    string // computed by rta from the binary
-	Signature string
-	Path      string
-	Declared  plugin.Plugin
+	Name     string
+	Version  string // the index's claim
+	Index    string
+	URL      string
+	Digest   string // computed by rta from the binary
+	Path     string
+	Declared plugin.Plugin
 }
 
 // Install resolves spec ("name" or "index/name"), verifies, and places.
-func Install(ctx context.Context, spec string, stderr io.Writer) (Report, *view.Error) {
-	return install(ctx, spec, stderr, false)
+func Install(ctx context.Context, spec string) (Report, *view.Error) {
+	return install(ctx, spec, false)
 }
 
 // PreviewInstall runs everything Install does — resolve, fetch, verify the
@@ -56,11 +54,11 @@ func Install(ctx context.Context, spec string, stderr io.Writer) (Report, *view.
 // store, the trust entry, rta.lock. For `rta plugin install --dry-run`,
 // where the point is finding out whether an install would succeed without
 // yet deciding to trust the artifact.
-func PreviewInstall(ctx context.Context, spec string, stderr io.Writer) (Report, *view.Error) {
-	return install(ctx, spec, stderr, true)
+func PreviewInstall(ctx context.Context, spec string) (Report, *view.Error) {
+	return install(ctx, spec, true)
 }
 
-func install(ctx context.Context, spec string, stderr io.Writer, dryRun bool) (Report, *view.Error) {
+func install(ctx context.Context, spec string, dryRun bool) (Report, *view.Error) {
 	listed, verr := Resolve(spec)
 	if verr != nil {
 		return Report{}, verr
@@ -75,7 +73,7 @@ func install(ctx context.Context, spec string, stderr io.Writer, dryRun bool) (R
 			WithHint("`rta plugin upgrade " + m.Name + "` moves it; " +
 				"`rta plugin rm " + m.Name + "` takes it out")
 	}
-	return installFrom(ctx, listed, stderr, dryRun, nil)
+	return installFrom(ctx, listed, dryRun, nil)
 }
 
 // installFrom is the shared half of Install and Upgrade: everything after
@@ -88,7 +86,7 @@ func install(ctx context.Context, spec string, stderr io.Writer, dryRun bool) (R
 // launched, so what they declare is known, and nothing durable has happened
 // yet, so a refusal costs the operator nothing. Install passes nil — an
 // operator naming a plugin has nothing to compare it against.
-func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bool,
+func installFrom(ctx context.Context, listed Listed, dryRun bool,
 	gate func(declared plugin.Plugin) *view.Error) (Report, *view.Error) {
 	m := listed.Manifest
 	plat, ok := m.PlatformFor(runtime.GOOS, runtime.GOARCH)
@@ -206,8 +204,6 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 		}
 	}
 
-	sig := checkSignature(ctx, m, staging, staged, stderr)
-
 	if dryRun {
 		// Named the same way place would, without moving anything there —
 		// the path is a deterministic function of name and digest, both
@@ -215,7 +211,7 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 		dest := filepath.Join(StoreDir(), m.Name, digest, pluginhost.BinaryName(m.Name))
 		return Report{
 			Name: m.Name, Version: m.Version, Index: listed.Index, URL: plat.URL,
-			Digest: digest, Signature: sig, Path: dest, Declared: declared,
+			Digest: digest, Path: dest, Declared: declared,
 		}, nil
 	}
 
@@ -233,7 +229,7 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 	defer shutdown.Hold()()
 	entry := LockEntry{
 		Name: m.Name, Digest: digest, Version: m.Version,
-		Index: listed.Index, URL: plat.URL, Signature: sig,
+		Index: listed.Index, URL: plat.URL,
 		InstalledAt: time.Now().UTC().Truncate(time.Second),
 	}
 	var dest string
@@ -253,7 +249,7 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 	}
 	return Report{
 		Name: m.Name, Version: m.Version, Index: listed.Index, URL: plat.URL,
-		Digest: digest, Signature: sig, Path: dest, Declared: declared,
+		Digest: digest, Path: dest, Declared: declared,
 	}, nil
 }
 
@@ -487,59 +483,6 @@ func verifyClaims(listed Listed, declared plugin.Plugin) *view.Error {
 	return nil
 }
 
-// cosignBin is overridable in tests; signature checking is recorded, never
-// required.
-var cosignBin = "cosign"
-
-// checkSignature verifies the manifest's detached signature when one is
-// stated and cosign is installed, and reports the outcome as a sentence for
-// the lockfile and the install report. It never refuses anything: a valid
-// signature on a worse plugin verifies perfectly, so the mechanism that does
-// the work is the digest and the declaration check — this records provenance
-// for the operator who wants it. A failure is spelled loudly all the same.
-//
-// The signature and the key are fetched into the install's staging directory,
-// beside the binary they are checked against, and not into a temporary
-// directory of their own. Its removal was a deferred call, which a forced exit
-// skips, and the fetch is not held off one: a file:// signature that never
-// ends kept it under way past the grace, and the exit left the directory in
-// $TMPDIR for good. The staging directory is one the exit removes, with
-// whatever is in it (installFrom).
-func checkSignature(ctx context.Context, m Manifest, staging, binary string, stderr io.Writer) string {
-	if m.Signature == nil {
-		return "none stated"
-	}
-	if _, err := exec.LookPath(cosignBin); err != nil {
-		return "not checked (cosign not installed)"
-	}
-	fetchTo := func(name, url string) (string, bool) {
-		f, err := os.Create(filepath.Join(staging, name))
-		if err != nil {
-			return "", false
-		}
-		_, verr := fetchArtifact(ctx, url, f)
-		if cerr := f.Close(); cerr != nil || verr != nil {
-			return "", false
-		}
-		return f.Name(), true
-	}
-	sig, ok := fetchTo("artifact.sig", m.Signature.Sig)
-	if !ok {
-		return "not checked (signature unfetchable)"
-	}
-	key, ok := fetchTo("key.pub", m.Signature.Key)
-	if !ok {
-		return "not checked (key unfetchable)"
-	}
-	cmd := exec.CommandContext(ctx, cosignBin, "verify-blob",
-		"--key", key, "--signature", sig, "--", binary)
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
-		return "FAILED verification"
-	}
-	return "verified"
-}
-
 // Removed is what an uninstall leaves for the CLI to say: what went, and the
 // statements elsewhere that now point at nothing — named rather than
 // silently orphaned, because nothing else knows an uninstall happened
@@ -643,21 +586,21 @@ type Upgraded struct {
 // rollback stays a re-link rather than a re-download; its trust entry stands
 // with it, because the operator's approval named that artifact and the
 // artifact has not changed.
-func Upgrade(ctx context.Context, name string, stderr io.Writer) (Upgraded, *view.Error) {
-	return upgrade(ctx, name, stderr, false, false)
+func Upgrade(ctx context.Context, name string) (Upgraded, *view.Error) {
+	return upgrade(ctx, name, false, false)
 }
 
 // PreviewUpgrade is Upgrade without the durable writes — see PreviewInstall,
 // which it shares installFrom's dryRun branch with.
-func PreviewUpgrade(ctx context.Context, name string, stderr io.Writer) (Upgraded, *view.Error) {
-	return upgrade(ctx, name, stderr, true, false)
+func PreviewUpgrade(ctx context.Context, name string) (Upgraded, *view.Error) {
+	return upgrade(ctx, name, true, false)
 }
 
 // upgrade is Upgrade's body. guard asks it to refuse, before anything lands,
 // when the new declaration hands the plugin more than the old one had — what a
 // sweep needs and what an operator naming a single plugin does not, since they
 // are already reading the diff this would be protecting them from.
-func upgrade(ctx context.Context, name string, stderr io.Writer, dryRun, guard bool) (Upgraded, *view.Error) {
+func upgrade(ctx context.Context, name string, dryRun, guard bool) (Upgraded, *view.Error) {
 	locked, held, verr := lockedForChange(name)
 	if verr != nil {
 		return Upgraded{}, verr
@@ -699,7 +642,7 @@ func upgrade(ctx context.Context, name string, stderr io.Writer, dryRun, guard b
 		}
 	}
 
-	report, verr := installFrom(ctx, listed, stderr, dryRun, gate)
+	report, verr := installFrom(ctx, listed, dryRun, gate)
 	if verr != nil {
 		if len(grew) == 0 {
 			return Upgraded{}, verr
@@ -752,17 +695,7 @@ func namesLocalFile(rawURL string) bool {
 // leaves the machine: the checksum gate returns before anything is launched,
 // and plugindist is not reachable over MCP. What is left is a read rta had no
 // business making, and two oracles — the mismatch message's sha256 prefix, and
-// ENOENT against a mismatch — that land on the operator's terminal and in
-// rta.lock.
-//
-// The signature pair is worse, and is why this covers all three URLs rather
-// than sitting beside the checksum: checkSignature fetches the sig and the key
-// with no checksum to compare them against at all, so that read is
-// unconditional, and its outcome string is itself an existence oracle that
-// gets recorded. Deliberately not pushed down into checkSignature, which
-// refuses nothing by design — a refusal recorded as a signature verdict would
-// read as "this artifact failed verification" when what happened is that an
-// index asked rta to open a file.
+// ENOENT against a mismatch — that land on the operator's terminal.
 //
 // **What this does not buy, said plainly:** the question it answers is "was
 // this index attached from a path on this machine", not "did somebody local
@@ -778,11 +711,7 @@ func namesLocalFile(rawURL string) bool {
 // read it refuses: "I could not tell where this came from" belongs on the
 // closed side of a question about reading the operator's files.
 func checkLocalArtifacts(ctx context.Context, listed Listed, plat Platform) *view.Error {
-	local := namesLocalFile(plat.URL)
-	if s := listed.Manifest.Signature; s != nil {
-		local = local || namesLocalFile(s.Sig) || namesLocalFile(s.Key)
-	}
-	if !local {
+	if !namesLocalFile(plat.URL) {
 		return nil
 	}
 	ix, ok := IndexByName(listed.Index)

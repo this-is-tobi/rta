@@ -24,7 +24,7 @@ The pane bands its rows by provenance, because that is the fact that changes how
 | Band | What it means |
 | --- | --- |
 | **built in** | Compiled into the rta binary you are running, which is why these need no digest |
-| **installed by rta** | rta placed these bytes from an index you attached; the row carries the version, the index and what the signature check found |
+| **installed by rta** | rta placed these bytes from an index you attached; the row carries the version and the index |
 | **in the system root** | What an image or a package put in the read-only system root, which rta reads and never writes: not yours to remove or upgrade, and the root's own `rta.lock` says where each came from, which the row carries as an installed one does |
 | **found on $PATH** | Binaries rta did not place and holds no record of |
 | **failed to start** | Approved and launched, and did not come up: the row carries how it ended and the command that takes it out of the way, and no key acts on it, because nothing of it is registered |

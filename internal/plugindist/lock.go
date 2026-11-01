@@ -16,9 +16,9 @@ import (
 )
 
 // rta.lock records what rta computed, per installed plugin — never what a
-// manifest claimed. Every field is either observed by rta (the
-// digest it hashed, the time, the signature check's outcome) or chosen by the
-// operator (which index, which URL was fetched). The version is the one
+// manifest claimed. Every field is either observed by rta (the digest it
+// hashed, the time) or chosen by the operator (which index, which URL was
+// fetched). The version is the one
 // labelled exception: it is the index's claim, recorded *as* the claim so
 // upgrade can print "0.1.0 → 0.2.0", and nothing resolves through it.
 //
@@ -43,11 +43,6 @@ type LockEntry struct {
 	// Index and URL are where the operator chose to fetch from.
 	Index string `json:"index"`
 	URL   string `json:"url"`
-	// Signature is the outcome of the recorded-never-required check:
-	// "none stated", "not checked (cosign not installed)", "verified", or
-	// "FAILED verification" — the loud spelling, because this records rather
-	// than gates and a failure must at least be unmissable.
-	Signature string `json:"signature"`
 	// InstalledAt is when rta placed the bytes.
 	InstalledAt time.Time `json:"installedAt"`
 }

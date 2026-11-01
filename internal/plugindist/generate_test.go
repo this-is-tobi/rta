@@ -2,7 +2,6 @@ package plugindist
 
 import (
 	"context"
-	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -73,7 +72,7 @@ func TestAGeneratedManifestInstalls(t *testing.T) {
 	}
 
 	attach(t, string(doc))
-	rep, verr := Install(context.Background(), "hello", io.Discard)
+	rep, verr := Install(context.Background(), "hello")
 	if verr != nil {
 		t.Fatalf("installing the generated manifest: %v (hint: %s)", verr, verr.Hint)
 	}

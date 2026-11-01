@@ -156,9 +156,9 @@ const (
 // anything.
 //
 // What rta genuinely knows is narrower and more useful: whether it placed
-// these bytes itself. A managed artifact has an rta.lock row naming the index,
-// the version claimed at install time and what the signature check found; one
-// found on $PATH has none of that, and the difference is exactly the one an
+// these bytes itself. A managed artifact has an rta.lock row naming the index
+// and the version claimed at install time; one found on $PATH has none of
+// that, and the difference is exactly the one an
 // operator auditing their machine is looking for.
 type pluginGroup int
 
@@ -697,12 +697,11 @@ func (m Model) pluginsView() string {
 // for one rta placed itself, or one that an image or a package placed in the
 // system root — what was recorded about placing it.
 //
-// The lock's three facts are here rather than only in `rta doctor` because
-// this is the pane somebody opens to ask what a plugin *is*, and until now the
-// answer for an installed one was the same "$PATH: …" a stray binary got. The
+// The lock's facts are here rather than only in `rta doctor` because this is
+// the pane somebody opens to ask what a plugin *is*, and until now the answer
+// for an installed one was the same "$PATH: …" a stray binary got. The
 // version is the index's claim at install time and nothing resolves through
-// it; the signature line is the outcome of a check rta records and never
-// requires, which is why it is stated in full rather than reduced to a tick.
+// it.
 //
 // A managed artifact with no matching lock row says so plainly rather than
 // borrowing the row that shares its name. That state is real — an upgrade that
@@ -720,11 +719,11 @@ func pluginOrigin(row pluginRow) string {
 				" — rta.lock has no record of these bytes; `" + plugin.SurfaceTUI.Call("audit.doctor") +
 				"` says what drifted"
 		}
-		// The same three facts `rta doctor` prints for a managed plugin, in
+		// The same facts `rta doctor` prints for a managed plugin, in
 		// the same words. Two screens describing one artifact differently is
 		// how an operator ends up unsure which of them to believe.
-		return fmt.Sprintf("%s · %s from index %q · signature: %s · %s", plugindist.SourceInstalled,
-			row.lock.Version, row.lock.Index, row.lock.Signature, row.origin.Short())
+		return fmt.Sprintf("%s · %s from index %q · %s", plugindist.SourceInstalled,
+			row.lock.Version, row.lock.Index, row.origin.Short())
 	case groupSystem:
 		// The root's own record, read the same way: by digest, and never by
 		// the name an entry shares with a row. Nothing is said to be drifting,
@@ -734,8 +733,8 @@ func pluginOrigin(row pluginRow) string {
 			return plugindist.SourceSystem + " · " + row.origin.Short() +
 				" — the root's rta.lock has no record of these bytes"
 		}
-		return fmt.Sprintf("%s · %s from index %q · signature: %s · %s", plugindist.SourceSystem,
-			row.lock.Version, row.lock.Index, row.lock.Signature, row.origin.Short())
+		return fmt.Sprintf("%s · %s from index %q · %s", plugindist.SourceSystem,
+			row.lock.Version, row.lock.Index, row.origin.Short())
 	}
 	return "$PATH: " + row.origin.Path + " · " + row.origin.Short()
 }

@@ -250,7 +250,7 @@ func TestTheIndexesPageNamesTheRowsOfTheInstallReportThatSayWhatAPluginDeclaresA
 	const rel = "docs/40-plugins/12-indexes-and-upgrades.md"
 	report := installView(plugindist.Report{
 		Name: "kube", Index: "ix", URL: "https://example.test/rta-plugin-kube", Version: "1.0.0",
-		Digest: strings.Repeat("ab", 32), Signature: "none stated", Path: "/store/kube/rta-plugin-kube",
+		Digest: strings.Repeat("ab", 32), Path: "/store/kube/rta-plugin-kube",
 		Declared: plugin.Plugin{
 			Name: "kube", Needs: []plugin.Need{plugin.NeedKubeconfig},
 			Capabilities: []plugin.Capability{{ID: "kube.pod.list", Safety: plugin.Read}},

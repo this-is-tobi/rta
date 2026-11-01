@@ -484,7 +484,7 @@ func TestTheDoctorDoesNotCallAManagedCopyShadowedForTheSpellingOfItsDirectory(t 
 	if err := os.MkdirAll(filepath.Dir(plugindist.LockPath()), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	lock := `{"plugins":[{"name":"pg","digest":"` + digest + `","version":"v1","index":"local","signature":"none stated"}]}`
+	lock := `{"plugins":[{"name":"pg","digest":"` + digest + `","version":"v1","index":"local"}]}`
 	if err := os.WriteFile(plugindist.LockPath(), []byte(lock), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +591,7 @@ func TestTheDoctorSaysWhenTheCopyShadowingAManagedPluginIsTheSystemRoots(t *test
 	if err := os.MkdirAll(filepath.Dir(plugindist.LockPath()), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	lock := `{"plugins":[{"name":"pg","digest":"` + digest + `","version":"v1","index":"local","signature":"none stated"}]}`
+	lock := `{"plugins":[{"name":"pg","digest":"` + digest + `","version":"v1","index":"local"}]}`
 	if err := os.WriteFile(plugindist.LockPath(), []byte(lock), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -2,7 +2,6 @@ package plugindist
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,7 +19,7 @@ func installHello(t *testing.T) Report {
 	if verr := AddIndex(context.Background(), "lab", repo); verr != nil {
 		t.Fatal(verr)
 	}
-	r, verr := Install(context.Background(), "hello", io.Discard)
+	r, verr := Install(context.Background(), "hello")
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -56,7 +55,7 @@ func TestUpgradeRefusesStoreBytesThatAreNotTheLockedDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, verr := Upgrade(context.Background(), "hello", io.Discard)
+	_, verr := Upgrade(context.Background(), "hello")
 	if verr == nil {
 		t.Fatal("an upgrade ran bytes nobody had approved")
 	}
@@ -77,7 +76,7 @@ func TestUpgradeWillNotRunAnUntrustedInstalledBinary(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	_, verr := Upgrade(context.Background(), "hello", io.Discard)
+	_, verr := Upgrade(context.Background(), "hello")
 	if verr == nil {
 		t.Fatal("an upgrade ran an artifact the operator had withdrawn")
 	}
@@ -131,7 +130,7 @@ func TestUpgradeRefusesALockfileDigestThatIsAPath(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = recordInstall(orig, nil) })
 
-			_, verr := Upgrade(context.Background(), "hello", io.Discard)
+			_, verr := Upgrade(context.Background(), "hello")
 			if verr == nil {
 				t.Fatal("a lockfile digest that is not a digest was accepted")
 			}
@@ -149,7 +148,7 @@ func TestUpgradeRefusesALockfileDigestThatIsAPath(t *testing.T) {
 	if e, held := LockedFor("hello"); !held || e.Digest != first.Digest {
 		t.Fatalf("the lockfile did not survive the mutations: %v", e)
 	}
-	if _, verr := Upgrade(context.Background(), "hello", io.Discard); verr != nil {
+	if _, verr := Upgrade(context.Background(), "hello"); verr != nil {
 		t.Errorf("an untouched install no longer upgrades: %v", verr)
 	}
 }

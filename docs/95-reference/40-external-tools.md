@@ -14,7 +14,6 @@ Nothing here is required to install or run rta. A missing tool costs you exactly
 | `mariadb-dump`, `mariadb` | `mariadb.dump` and `mariadb.restore`, same split. The legacy `mysqldump`/`mysql` symlinks every distribution still ships are accepted too | Those two refuse, naming both spellings                                                                                      |
 | `docker`                  | the `docker` plugin                                                                                                                       | Those capabilities refuse                                                                                                    |
 | `ssh`                     | `ssh:` tunnel targets                                                                                                                     | Those targets cannot be resolved                                                                                             |
-| `cosign`                  | verifying a plugin artifact's signature, when an index states one                                                                         | The outcome is recorded as unverifiable; **an install is never blocked, because a signature is recorded and never required** |
 
 Version policy is the same for all of them: rta uses what is on your `$PATH` and adopts none of their maintenance. There is no preflight check — a capability looks its tool up when you run it, and refuses by name if it is not there.
 

@@ -140,9 +140,9 @@ func TestAnImagesPluginsGetABandAndTheirRootsRecord(t *testing.T) {
 	t.Setenv("RTA_SYSTEM_DIR", root)
 	const recorded, unrecorded = storeDigest, pathDigest
 	writeLockAt(t, plugindist.SystemLockPath(), plugindist.LockEntry{
-		Name: "imaged", Digest: recorded, Version: "0.3.0", Index: "official", Signature: "verified"})
+		Name: "imaged", Digest: recorded, Version: "0.3.0", Index: "official"})
 	writeLock(t, plugindist.LockEntry{
-		Name: "imaged", Digest: recorded, Version: "9.9.9", Index: "mine", Signature: "none stated"})
+		Name: "imaged", Digest: recorded, Version: "9.9.9", Index: "mine"})
 
 	reg := registry.New()
 	// Beside a built-in: one band is not a grouping, and draws no rule.
@@ -170,7 +170,7 @@ func TestAnImagesPluginsGetABandAndTheirRootsRecord(t *testing.T) {
 		got := pluginOrigin(row)
 		switch row.plugin.Name {
 		case "imaged":
-			for _, want := range []string{"in the system root", "0.3.0", "official", "verified"} {
+			for _, want := range []string{"in the system root", "0.3.0", "official"} {
 				if !strings.Contains(got, want) {
 					t.Errorf("the image's row says %q, missing %q", got, want)
 				}
@@ -196,7 +196,7 @@ func TestAnImagesPluginsGetABandAndTheirRootsRecord(t *testing.T) {
 func TestAnInstalledArtifactAndAStrayOneAreNotTheSameKindOfThing(t *testing.T) {
 	m := bandModel(t, plugindist.LockEntry{
 		Name: "managed", Digest: storeDigest, Version: "0.2.0",
-		Index: "community", Signature: "verified",
+		Index: "community",
 	})
 
 	var installed, stray string
@@ -208,7 +208,7 @@ func TestAnInstalledArtifactAndAStrayOneAreNotTheSameKindOfThing(t *testing.T) {
 			stray = pluginOrigin(row)
 		}
 	}
-	for _, want := range []string{"installed by rta", "0.2.0", "community", "verified"} {
+	for _, want := range []string{"installed by rta", "0.2.0", "community"} {
 		if !strings.Contains(installed, want) {
 			t.Errorf("the installed row says %q, missing %q", installed, want)
 		}
@@ -229,7 +229,7 @@ func TestAnInstalledArtifactAndAStrayOneAreNotTheSameKindOfThing(t *testing.T) {
 func TestALockRecordForOtherBytesIsNotBorrowedByName(t *testing.T) {
 	m := bandModel(t, plugindist.LockEntry{
 		Name: "managed", Digest: strings.Repeat("9", 64), Version: "0.2.0",
-		Index: "community", Signature: "verified",
+		Index: "community",
 	})
 
 	for _, row := range m.plugins {

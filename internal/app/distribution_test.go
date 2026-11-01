@@ -18,7 +18,7 @@ import (
 func TestTheInstallReportSaysWhereTheKeysGoInASentence(t *testing.T) {
 	rep := plugindist.Report{
 		Name: "hello", Version: "v0.1.0", Index: "local", URL: "file:///x",
-		Digest: "6db7eaeebf84" + strings.Repeat("0", 52), Signature: "none stated", Path: "/store/hello",
+		Digest: "6db7eaeebf84" + strings.Repeat("0", 52), Path: "/store/hello",
 		Declared: plugin.Plugin{Name: "hello", Capabilities: []plugin.Capability{{ID: "hello.greet", Safety: plugin.Read,
 			Inputs: []plugin.Field{{Name: "greeting", Type: plugin.String, Config: "greeting"}}}}},
 	}
@@ -44,7 +44,7 @@ func TestTheInstallReportSaysWhereTheKeysGoInASentence(t *testing.T) {
 func TestTheInstallReportDoesNotSendAPluginWithNoKeysToTheConfig(t *testing.T) {
 	rep := plugindist.Report{
 		Name: "hello", Version: "v0.1.0", Index: "local", URL: "file:///x",
-		Digest: "6db7eaeebf84" + strings.Repeat("0", 52), Signature: "none stated", Path: "/store/hello",
+		Digest: "6db7eaeebf84" + strings.Repeat("0", 52), Path: "/store/hello",
 		Declared: plugin.Plugin{Name: "hello", Capabilities: []plugin.Capability{{ID: "hello.greet", Safety: plugin.Read,
 			Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Required: true}}}}},
 	}
@@ -81,7 +81,7 @@ func TestTheInstallReportSaysTheArtifactIsApprovedToRun(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			rep := plugindist.Report{
 				Name: "hello", Version: "v0.1.0", Index: "local", URL: "file:///x",
-				Digest: "6db7eaeebf84" + strings.Repeat("0", 52), Signature: "none stated", Path: "/store/hello",
+				Digest: "6db7eaeebf84" + strings.Repeat("0", 52), Path: "/store/hello",
 				Declared: declared,
 			}
 			rows := func(dryRun bool) map[string]string {

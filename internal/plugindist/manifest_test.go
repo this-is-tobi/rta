@@ -31,9 +31,6 @@ capabilities:
   - id: pg.query
     safety: write
     grant: true
-signature:
-  sig: https://example.com/pg.sig
-  key: https://example.com/pg.pub
 `
 
 // The cap on a manifest's bytes is not a cap on what those bytes expand into.
@@ -95,6 +92,18 @@ func TestAManifestParsesAndItsClaimsAreLegible(t *testing.T) {
 	}
 	if m.Offered() != "darwin/arm64, linux/amd64" {
 		t.Fatalf("Offered = %q", m.Offered())
+	}
+}
+
+// One manifest names a binary per platform, so a single detached signature
+// verified one of them at most, and every plugin's record read "none stated".
+// The key is gone, and an index that still states one is told, rather than
+// left believing rta checks it.
+func TestAManifestStatingASignatureIsRefused(t *testing.T) {
+	doc := goodManifest + "signature:\n  sig: https://example.com/pg.sig\n  key: https://example.com/pg.pub\n"
+	_, verr := ParseManifest([]byte(doc))
+	if verr == nil || verr.Code != "plugin.index.manifest" || !strings.Contains(verr.Message, `"signature"`) {
+		t.Fatalf("a manifest stating a signature: %v, want plugin.index.manifest naming the key", verr)
 	}
 }
 

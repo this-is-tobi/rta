@@ -69,7 +69,7 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, dryRun bool) (view.Vie
 	}
 
 	t := view.Table{Columns: []view.Column{{Name: "Plugin"}, {Name: "Version"},
-		{Name: "Digest"}, {Name: "Signature"}, {Name: "Result"}}}
+		{Name: "Digest"}, {Name: "Result"}}}
 	var warnings []view.Error
 	var heldNames, failedNames []string
 
@@ -77,29 +77,24 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, dryRun bool) (view.Vie
 		switch {
 		case o.Problem != nil:
 			failedNames = append(failedNames, o.Name)
-			t.Rows = append(t.Rows, []string{o.Name, "—", "—", "—", "failed"})
+			t.Rows = append(t.Rows, []string{o.Name, "—", "—", "failed"})
 			warnings = append(warnings, *o.Problem)
 		case o.Skipped():
 			heldNames = append(heldNames, o.Name)
-			// No signature: nothing was verified into the record, because
-			// nothing was recorded. An empty cell here would read as "not
-			// signed", which is a claim about the artifact rather than about
-			// what rta did with it.
 			t.Rows = append(t.Rows, []string{o.Name,
 				o.FromVersion + " → " + o.Version,
-				shortDigest(o.FromDigest) + " (kept)", "—", held})
+				shortDigest(o.FromDigest) + " (kept)", held})
 			warnings = append(warnings, *view.Errorf("plugin.upgrade.authority",
 				"%s was not upgraded: %s", o.Name, strings.Join(o.Widenings, "; ")).
 				WithHint("`rta plugin upgrade " + o.Name + " --dry-run` shows the whole declaration " +
 					"diff; the same command without it upgrades once you have read the change"))
 		case o.UpToDate:
 			t.Rows = append(t.Rows, []string{o.Name, o.Version,
-				shortDigest(o.Digest), o.Signature, "up to date"})
+				shortDigest(o.Digest), "up to date"})
 		default:
 			t.Rows = append(t.Rows, []string{o.Name,
 				o.FromVersion + " → " + o.Version,
-				shortDigest(o.FromDigest) + " → " + shortDigest(o.Digest),
-				o.Signature, moved})
+				shortDigest(o.FromDigest) + " → " + shortDigest(o.Digest), moved})
 		}
 	}
 
@@ -141,7 +136,7 @@ func runPluginUpgradeAll(cmd *cobra.Command, opts *globalOpts, index string) err
 	if opts.dryRun {
 		sweep = plugindist.PreviewUpgradeAll
 	}
-	v, verr := upgradeAllView(sweep(cmd.Context(), index, cmd.ErrOrStderr()), opts.dryRun)
+	v, verr := upgradeAllView(sweep(cmd.Context(), index), opts.dryRun)
 	if renderErr := renderView(cmd, opts, v); renderErr != nil {
 		return renderErr
 	}

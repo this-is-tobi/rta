@@ -2,7 +2,6 @@ package plugindist
 
 import (
 	"context"
-	"io"
 	"strings"
 	"testing"
 	"time"
@@ -51,7 +50,7 @@ func TestAnExitWaitsForARemoveToLandWhole(t *testing.T) {
 	testData(t)
 	bin := hello(t)
 	attach(t, helloManifest(t, bin, ""))
-	rep, verr := Install(context.Background(), "hello", io.Discard)
+	rep, verr := Install(context.Background(), "hello")
 	if verr != nil {
 		t.Fatal(verr)
 	}

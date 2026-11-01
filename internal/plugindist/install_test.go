@@ -160,7 +160,7 @@ func TestARemotelyAttachedIndexMayNotNameALocalFile(t *testing.T) {
 		t.Fatal("the index did not attach")
 	}
 	// It still installs while the origin is the path it was attached from.
-	if _, verr := Install(ctx, "hello", io.Discard); verr != nil {
+	if _, verr := Install(ctx, "hello"); verr != nil {
 		t.Fatalf("a locally attached index was refused its own file:// artifact: %v", verr)
 	}
 	if _, verr := Remove("hello"); verr != nil {
@@ -173,7 +173,7 @@ func TestARemotelyAttachedIndexMayNotNameALocalFile(t *testing.T) {
 		t.Fatalf("re-pointing the origin: %v: %s", err, out)
 	}
 
-	_, verr := Install(ctx, "hello", io.Discard)
+	_, verr := Install(ctx, "hello")
 	if verr == nil {
 		t.Fatal("an index attached from a network URL opened a local file")
 	}
@@ -202,16 +202,13 @@ func TestInstallVerifiesPlacesTrustsAndRecords(t *testing.T) {
 			}
 			attach(t, helloManifest(t, artifact, member))
 
-			rep, verr := Install(context.Background(), "hello", io.Discard)
+			rep, verr := Install(context.Background(), "hello")
 			if verr != nil {
 				t.Fatalf("install: %v (hint: %s)", verr, verr.Hint)
 			}
 			wantDigest := sha256Of(t, bin)
 			if rep.Digest != wantDigest {
 				t.Fatalf("digest = %s, want the binary's own %s", rep.Digest, wantDigest)
-			}
-			if rep.Signature != "none stated" {
-				t.Fatalf("signature = %q", rep.Signature)
 			}
 			if rep.Declared.Name != "hello" || len(rep.Declared.Capabilities) != 2 {
 				t.Fatalf("declared = %+v", rep.Declared)
@@ -246,7 +243,7 @@ func TestInstallVerifiesPlacesTrustsAndRecords(t *testing.T) {
 			}
 
 			// Installing what is installed points at upgrade instead.
-			if _, verr := Install(context.Background(), "hello", io.Discard); verr == nil ||
+			if _, verr := Install(context.Background(), "hello"); verr == nil ||
 				verr.Code != "plugin.install.installed" {
 				t.Fatalf("second install: %v", verr)
 			}
@@ -279,7 +276,7 @@ func TestAnExitWaitsForAnInstallToLandWhole(t *testing.T) {
 		}
 		return original(target, name)
 	}
-	if _, verr := Install(context.Background(), "hello", io.Discard); verr != nil {
+	if _, verr := Install(context.Background(), "hello"); verr != nil {
 		t.Fatalf("install: %v", verr)
 	}
 	if between {
@@ -303,7 +300,7 @@ func TestPreviewInstallWritesNothing(t *testing.T) {
 	bin := hello(t)
 	attach(t, helloManifest(t, bin, ""))
 
-	rep, verr := PreviewInstall(context.Background(), "hello", io.Discard)
+	rep, verr := PreviewInstall(context.Background(), "hello")
 	if verr != nil {
 		t.Fatalf("preview install: %v", verr)
 	}
@@ -326,7 +323,7 @@ func TestPreviewInstallWritesNothing(t *testing.T) {
 
 	// The real install still works afterwards — the preview left nothing
 	// behind that a later install would trip over.
-	if _, verr := Install(context.Background(), "hello", io.Discard); verr != nil {
+	if _, verr := Install(context.Background(), "hello"); verr != nil {
 		t.Fatalf("install after preview: %v", verr)
 	}
 	if !plugintrust.Load().Trusts(wantDigest) {
@@ -344,7 +341,7 @@ func TestAChecksumLieIsRefusedNamingTheIndex(t *testing.T) {
 	doc = strings.Replace(doc, sha256Of(t, bin), strings.Repeat("ab", 32), 1)
 	attach(t, doc)
 
-	_, verr := Install(context.Background(), "hello", io.Discard)
+	_, verr := Install(context.Background(), "hello")
 	if verr == nil || verr.Code != "plugin.install.checksum" {
 		t.Fatalf("verr = %v", verr)
 	}
@@ -388,7 +385,7 @@ func TestADeclarationLieIsRefused(t *testing.T) {
 			testData(t)
 			bin := hello(t)
 			attach(t, lie.edit(helloManifest(t, bin, "")))
-			_, verr := Install(context.Background(), "hello", io.Discard)
+			_, verr := Install(context.Background(), "hello")
 			if verr == nil || verr.Code != "plugin.install.claims" {
 				t.Fatalf("verr = %v", verr)
 			}
@@ -495,7 +492,7 @@ func TestRemoveUninstallsAndNamesOrphans(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	bin := hello(t)
 	attach(t, helloManifest(t, bin, ""))
-	rep, verr := Install(context.Background(), "hello", io.Discard)
+	rep, verr := Install(context.Background(), "hello")
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -545,7 +542,7 @@ func TestPreviewRemoveWithdrawsNothing(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	bin := hello(t)
 	attach(t, helloManifest(t, bin, ""))
-	rep, verr := Install(context.Background(), "hello", io.Discard)
+	rep, verr := Install(context.Background(), "hello")
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -584,12 +581,12 @@ func TestUpgradeMovesKeepsRollbackAndReportsUpToDate(t *testing.T) {
 	if verr := AddIndex(context.Background(), "lab", repo); verr != nil {
 		t.Fatal(verr)
 	}
-	first, verr := Install(context.Background(), "hello", io.Discard)
+	first, verr := Install(context.Background(), "hello")
 	if verr != nil {
 		t.Fatal(verr)
 	}
 
-	up, verr := Upgrade(context.Background(), "hello", io.Discard)
+	up, verr := Upgrade(context.Background(), "hello")
 	if verr != nil {
 		t.Fatalf("upgrade against an unchanged index: %v", verr)
 	}
@@ -614,7 +611,7 @@ func TestUpgradeMovesKeepsRollbackAndReportsUpToDate(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	up, verr = Upgrade(context.Background(), "hello", io.Discard)
+	up, verr = Upgrade(context.Background(), "hello")
 	if verr != nil {
 		t.Fatalf("upgrade: %v", verr)
 	}
@@ -639,7 +636,7 @@ func TestUpgradeMovesKeepsRollbackAndReportsUpToDate(t *testing.T) {
 		t.Fatalf("lock digest = %s", e.Digest)
 	}
 
-	if _, verr := Upgrade(context.Background(), "ghost", io.Discard); verr == nil ||
+	if _, verr := Upgrade(context.Background(), "ghost"); verr == nil ||
 		verr.Code != "plugin.upgrade.unknown" {
 		t.Fatalf("upgrading the unmanaged: %v", verr)
 	}
@@ -674,72 +671,6 @@ func TestTheDeclarationDiffSpeaksInSafetyTerms(t *testing.T) {
 	}
 }
 
-// Signature outcomes are recorded, never gates: a stated signature verified
-// by a present cosign says so, a failing one says so loudly, an absent
-// cosign says why nothing was checked — and none of them stops an install.
-func TestSignatureOutcomesAreRecordedNeverRequired(t *testing.T) {
-	sigBlock := func(dir string) string {
-		for _, name := range []string{"artifact.sig", "key.pub"} {
-			if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		return fmt.Sprintf("signature:\n  sig: %s\n  key: %s\n",
-			fileURL(filepath.Join(dir, "artifact.sig")), fileURL(filepath.Join(dir, "key.pub")))
-	}
-	// A cosign that decides, without cosign being installed.
-	fakeCosign := func(t *testing.T, exit int) {
-		t.Helper()
-		path := filepath.Join(t.TempDir(), "cosign")
-		if err := os.WriteFile(path,
-			[]byte(fmt.Sprintf("#!/bin/sh\nexit %d\n", exit)), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		saved := cosignBin
-		cosignBin = path
-		t.Cleanup(func() { cosignBin = saved })
-	}
-
-	cases := []struct {
-		name  string
-		setup func(t *testing.T) string // returns extra manifest lines
-		want  string
-	}{
-		{"none stated", func(t *testing.T) string { return "" }, "none stated"},
-		{"cosign absent", func(t *testing.T) string {
-			saved := cosignBin
-			cosignBin = "cosign-that-is-not-installed-anywhere"
-			t.Cleanup(func() { cosignBin = saved })
-			return sigBlock(t.TempDir())
-		}, "not checked (cosign not installed)"},
-		{"verified", func(t *testing.T) string {
-			fakeCosign(t, 0)
-			return sigBlock(t.TempDir())
-		}, "verified"},
-		{"failed", func(t *testing.T) string {
-			fakeCosign(t, 1)
-			return sigBlock(t.TempDir())
-		}, "FAILED verification"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			testData(t)
-			bin := hello(t)
-			attach(t, helloManifest(t, bin, "")+tc.setup(t))
-			rep, verr := Install(context.Background(), "hello", io.Discard)
-			if verr != nil {
-				t.Fatalf("an install was gated on its signature outcome: %v", verr)
-			}
-			if rep.Signature != tc.want {
-				t.Fatalf("signature = %q, want %q", rep.Signature, tc.want)
-			}
-			if e, _ := LockedFor("hello"); e.Signature != tc.want {
-				t.Fatalf("lock records %q", e.Signature)
-			}
-		})
-	}
-}
-
 // The artifact cap is a bound, not a suggestion.
 func TestAnOversizedArtifactIsRefused(t *testing.T) {
 	testData(t)
@@ -764,7 +695,7 @@ capabilities:
     safety: read
 `, runtimeGOOS(), runtimeGOARCH(), fileURL(big), sha256Of(t, big))
 	attach(t, doc)
-	_, verr := Install(context.Background(), "hello", io.Discard)
+	_, verr := Install(context.Background(), "hello")
 	if verr == nil || !strings.Contains(verr.Message, "cap") {
 		t.Fatalf("verr = %v", verr)
 	}

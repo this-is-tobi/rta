@@ -57,11 +57,12 @@ type Manifest struct {
 	// informed one.
 	Needs []plugin.Need `yaml:"needs,omitempty"`
 
-	// Signature names a detached signature for the artifact, verified when
-	// present and recorded — never required, never a gate: a
-	// valid signature on a worse plugin verifies perfectly, and the campaigns
-	// Shipped malware has carried valid provenance before now.
-	Signature *SignatureClaim `yaml:"signature,omitempty"`
+	// There is no signature field. One manifest names an artifact per
+	// platform, each a different binary, so one detached signature could
+	// verify one of them at most, and a check that never gated an install
+	// recorded "none stated" for every plugin there was. yaml.Strict refuses
+	// the key, so an index still stating one hears so rather than believing
+	// it is checked.
 }
 
 // Platform is where the artifact for one os/arch lives and what the index
@@ -96,12 +97,6 @@ type CapabilityClaim struct {
 	Summary string `yaml:"summary,omitempty"`
 	Safety  string `yaml:"safety"`
 	Grant   bool   `yaml:"grant,omitempty"`
-}
-
-// SignatureClaim names the detached signature and the key to verify it with.
-type SignatureClaim struct {
-	Sig string `yaml:"sig"`
-	Key string `yaml:"key"`
 }
 
 // manifestCap bounds one manifest file. A hostile index is a threat model
@@ -224,14 +219,6 @@ func (m Manifest) check() *view.Error {
 			return bad("%s asks for %s twice", m.Name, n)
 		}
 		seenNeed[n] = true
-	}
-
-	if s := m.Signature; s != nil {
-		for what, ref := range map[string]string{"sig": s.Sig, "key": s.Key} {
-			if verr := checkArtifactURL(m.Name, "signature "+what, ref); verr != nil {
-				return verr
-			}
-		}
 	}
 	return nil
 }

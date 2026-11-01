@@ -1669,8 +1669,7 @@ func doctorManagedPlugins(add func(check, status, detail string)) {
 			short = short[:12]
 		}
 		name, status := "managed "+e.Name, "ok"
-		detail := fmt.Sprintf("%s from index %q (%s) — signature: %s",
-			e.Version, e.Index, short, e.Signature)
+		detail := fmt.Sprintf("%s from index %q (%s)", e.Version, e.Index, short)
 		current, linked := plugindist.CurrentDigest(e.Name)
 		switch {
 		case !linked:

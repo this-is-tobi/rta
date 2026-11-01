@@ -2,7 +2,6 @@ package plugindist
 
 import (
 	"context"
-	"io"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -39,17 +38,17 @@ func (o UpgradeOutcome) Skipped() bool { return len(o.Widenings) > 0 }
 // One plugin's failure never ends the run — the rule Manifests and LoadInto
 // already follow, applied to an action rather than a listing. An index
 // detached months ago must not be why the other nine went un-upgraded.
-func UpgradeAll(ctx context.Context, index string, stderr io.Writer) []UpgradeOutcome {
-	return upgradeAll(ctx, index, stderr, false)
+func UpgradeAll(ctx context.Context, index string) []UpgradeOutcome {
+	return upgradeAll(ctx, index, false)
 }
 
 // PreviewUpgradeAll is UpgradeAll without the durable writes: every fetch,
 // every launch, every verdict, and nothing recorded.
-func PreviewUpgradeAll(ctx context.Context, index string, stderr io.Writer) []UpgradeOutcome {
-	return upgradeAll(ctx, index, stderr, true)
+func PreviewUpgradeAll(ctx context.Context, index string) []UpgradeOutcome {
+	return upgradeAll(ctx, index, true)
 }
 
-func upgradeAll(ctx context.Context, index string, stderr io.Writer, dryRun bool) []UpgradeOutcome {
+func upgradeAll(ctx context.Context, index string, dryRun bool) []UpgradeOutcome {
 	var out []UpgradeOutcome
 	// ReadLock sorts by name, so the report's order is the operator's own
 	// alphabetical one rather than whatever order the file happens to hold.
@@ -57,7 +56,7 @@ func upgradeAll(ctx context.Context, index string, stderr io.Writer, dryRun bool
 		if index != "" && e.Index != index {
 			continue
 		}
-		up, verr := upgrade(ctx, e.Name, stderr, dryRun, true)
+		up, verr := upgrade(ctx, e.Name, dryRun, true)
 		if verr != nil && len(up.Widenings) > 0 {
 			// A refusal by the guard, not a failure: the run did what it was
 			// asked to and the answer was no. Carrying the *view.Error along
