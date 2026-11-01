@@ -170,7 +170,7 @@ func outdatedTable(l listing) view.Table {
 	}}
 	for _, r := range l.rows {
 		if r.Broken != "" {
-			t.Add(view.Plain(r.Manager), view.Plain(r.Name), view.Plain("-"), view.Plain("-"), view.Graded("fail "+r.Manager+": "+r.Broken), view.Plain("-"))
+			t.Add(view.Plain(r.Manager), view.Plain(r.Name), view.Plain("-"), view.Plain("-"), view.Plain("fail "+r.Manager+": "+r.Broken), view.Plain("-"))
 			continue
 		}
 		m, _ := managerByName(r.Manager)
@@ -178,7 +178,7 @@ func outdatedTable(l listing) view.Table {
 		if r.Target != "" {
 			arg = r.Target
 		}
-		t.Add(view.Plain(r.Manager), view.Plain(r.Name), view.Plain(r.Current), view.Plain(r.Latest), view.Graded("outdated"), view.Plain(upgradeCommand(m, arg)))
+		t.Add(view.Plain(r.Manager), view.Plain(r.Name), view.Plain(r.Current), view.Plain(r.Latest), view.Plain("outdated"), view.Plain(upgradeCommand(m, arg)))
 	}
 	names := make([]string, 0, len(l.failed))
 	for n := range l.failed {
@@ -186,11 +186,11 @@ func outdatedTable(l listing) view.Table {
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		t.Add(view.Plain(n), view.Plain("-"), view.Plain("-"), view.Plain("-"), view.Graded("fail "+l.failed[n].Message), view.Plain("-"))
+		t.Add(view.Plain(n), view.Plain("-"), view.Plain("-"), view.Plain("-"), view.Plain("fail "+l.failed[n].Message), view.Plain("-"))
 	}
 	if len(t.Rows) == 0 {
 		for _, m := range l.present {
-			t.Add(view.Plain(m.name), view.Plain("-"), view.Plain("-"), view.Plain("-"), view.Graded("ok"), view.Plain("-"))
+			t.Add(view.Plain(m.name), view.Plain("-"), view.Plain("-"), view.Plain("-"), view.Plain("ok"), view.Plain("-"))
 		}
 	}
 	t.Total = len(t.Rows)
@@ -413,7 +413,7 @@ func overviewWith(ctx context.Context, req plugin.Request, c *registryClient) (v
 			if u.Restart {
 				restart = "pending reboot"
 			}
-			t.Add(view.Plain(u.Title), view.Plain(u.Version), view.Graded(restart))
+			t.Add(view.Plain(u.Title), view.Plain(u.Version), view.Plain(restart))
 		}
 		t.Total = len(t.Rows)
 		p.PutAs("os-updates", "os updates", t)

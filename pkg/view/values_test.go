@@ -166,6 +166,61 @@ func TestAMalformedValueIsWrittenAsNone(t *testing.T) {
 	}
 }
 
+// A status, a count or a time its producer gave no value is valued as its
+// text, where the text is one, so a plugin that fills nothing still hands a
+// program its grades, its counts and its times. Nothing else is read back from
+// a cell's text, a value the producer gave wins, and a masked cell's text is no
+// value.
+func TestAStatusACountOrATimeWithNoValueIsValuedAsItsText(t *testing.T) {
+	pods := Table{Columns: []Column{
+		{Name: "Name"}, {Name: "Status", Kind: KindStatus}, {Name: "Restarts", Kind: KindNumber}, {Name: "Size", Kind: KindBytes},
+		{Name: "Started", Kind: KindTimestamp},
+	}}
+	pods.Rows = [][]string{
+		{"web", "Running", "3", "12", "2026-03-04T06:06:07+01:00"},
+		{"db", "WARN lagging · 40s", "1,024", "1.2 GiB", "Mar 4 06:06"},
+		{"job", "—", "-", "", "0001-01-01T00:00:00Z"},
+		{"api", "n/a", "007", "0", "2026-03-04"},
+	}
+	pods.Add(Plain("cron"), Status("did not answer", "did not answer"), Count(5), Bytes(2048),
+		Time("yesterday", time.Date(2026, 3, 3, 0, 0, 0, 0, time.UTC)))
+	raw, err := Marshal(Envelope{View: pods})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Values [][]any `json:"values"`
+	}
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	if err := dec.Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]any{
+		{nil, "running", json.Number("3"), nil, "2026-03-04T05:06:07Z"},
+		{nil, "warn", nil, nil, nil},
+		{nil, nil, nil, nil, nil},
+		{nil, nil, nil, nil, nil},
+		{nil, "did not answer", json.Number("5"), json.Number("2048"), "2026-03-03T00:00:00Z"},
+	}
+	if len(got.Values) != len(want) {
+		t.Fatalf("values = %v in %s", got.Values, raw)
+	}
+	for i := range want {
+		if !slices.Equal(got.Values[i], want[i]) {
+			t.Errorf("row %d (%q) is valued %v, want %v", i, pods.Rows[i], got.Values[i], want[i])
+		}
+	}
+
+	pods.Redacted = []string{"Status", "Restarts", "Started"}
+	masked := typedValues(Redact(pods).(Table))
+	for i, row := range masked {
+		if row[1] != nil || row[2] != nil || row[4] != nil {
+			t.Errorf("row %d's masked cells are valued %v, %v and %v", i, row[1], row[2], row[4])
+		}
+	}
+}
+
 // A masked cell's value goes with it, and values are cut to the columns and
 // rows the cells are: a secret's size is the secret's to keep.
 func TestRedactDropsAMaskedCellsValue(t *testing.T) {

@@ -785,7 +785,7 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 		if n := len(profile.ThemeStanding(cfg, name)); n > 0 {
 			colours = format.CountOf(n, "colour")
 		}
-		t.Add(view.Plain(plugin.ListedName(name)), view.Plain(strings.Join(p.Namespaces(), " ")), view.Graded(status),
+		t.Add(view.Plain(plugin.ListedName(name)), view.Plain(strings.Join(p.Namespaces(), " ")), view.Plain(status),
 			view.Plain(p.Dashboard.Describe()), view.Plain(colours), view.Plain(note))
 	}
 	t.Total = len(t.Rows)

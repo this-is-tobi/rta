@@ -324,7 +324,7 @@ probing:
 		if addr == "" {
 			addr = "*"
 		}
-		t.Add(view.Count(h.ttl), view.Plain(addr), view.Plain(h.name), h.rttCell(), view.Graded(h.status()))
+		t.Add(view.Count(h.ttl), view.Plain(addr), view.Plain(h.name), h.rttCell(), view.Plain(h.status()))
 	}
 	t.Total = len(t.Rows)
 

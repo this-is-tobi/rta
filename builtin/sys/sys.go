@@ -526,7 +526,7 @@ func runDisk(ctx context.Context, req plugin.Request) (view.View, error) {
 		cell, status := diskUsage(u.UsedPercent)
 		t.Add(view.Plain(p.Mountpoint), view.Plain(p.Fstype),
 			view.Bytes(u.Total), view.Bytes(u.Used), view.Bytes(u.Free),
-			view.Number(cell, u.UsedPercent), view.Graded(status))
+			view.Number(cell, u.UsedPercent), view.Plain(status))
 	}
 	t.Total = len(t.Rows)
 	if len(unread) > 0 {
@@ -1062,7 +1062,7 @@ func runTemp(ctx context.Context, _ plugin.Request) (view.View, error) {
 		case s.Temperature >= 85:
 			status = "WARN high"
 		}
-		t.Add(view.Plain(s.SensorKey), view.Number(fmt.Sprintf("%.0f", s.Temperature), s.Temperature), view.Graded(status))
+		t.Add(view.Plain(s.SensorKey), view.Number(fmt.Sprintf("%.0f", s.Temperature), s.Temperature), view.Plain(status))
 	}
 	if len(t.Rows) == 0 {
 		return nil, view.Errorf("sys.temp.none", "no readable temperature sensors").

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,7 +26,8 @@ type Cell struct {
 // step: Values is row for row and cell for cell with Rows, and a table that
 // appended to one and forgot the other would put every value after the gap on
 // the wrong row. A row without any value adds none, so a table built only of
-// Plain cells carries no Values at all and encodes as it always did.
+// Plain cells carries no Values at all, and is encoded with only what its
+// text already holds (typedValues).
 func (t *Table) Add(cells ...Cell) {
 	row := make([]string, len(cells))
 	var values []string
@@ -47,7 +49,8 @@ func (t *Table) Add(cells ...Cell) {
 	}
 }
 
-// Plain is a cell that is its own value: a name, a word, a path.
+// Plain is a cell with no value of its own: a name, a word, a path — or a
+// status or a count, which the encoder values from its text (typedValues).
 func Plain(text string) Cell { return Cell{Text: text} }
 
 // integer is every type a count turns up in: pkg/format's, which Bytes hands
@@ -88,9 +91,12 @@ func Time(text string, t time.Time) Cell {
 	return Cell{Text: text, Value: t.UTC().Format(time.RFC3339Nano)}
 }
 
-// Status is a status shown as text says ("WARN soon · Oct 31"), valued as the
-// one word it grades by ("warn"), for a KindStatus column. A word outside
-// ValueOK's grammar for a status has no value.
+// Status is a status shown as text says, valued as the word it grades by, for
+// a KindStatus column whose text does not lead with that word: "did not
+// answer", which is three, or "Init:CrashLoopBackOff", valued
+// "crashloopbackoff". A status that leads with its word ("WARN soon · Oct 31")
+// needs no Status, since the encoder values it as that word already
+// (leadingWord). A word outside ValueOK's grammar for a status has no value.
 func Status(text, word string) Cell {
 	if !statusWord.MatchString(word) {
 		return Cell{Text: text}
@@ -98,21 +104,27 @@ func Status(text, word string) Cell {
 	return Cell{Text: text, Value: word}
 }
 
-// Graded is a status valued as the first word it is shown with, in lower
-// case: "WARN >80%" is valued "warn", "ok" is "ok". The common shape, where
-// the word a status grades by leads its text; Status names the word where it
-// does not.
-func Graded(text string) Cell {
+// leadingWord is the word text leads with, in lower case — "warn" for "WARN
+// >80%", "ok" for "ok — 3 pods" — and "" where it leads with anything that is
+// not a word: "—", "1/1", "n/a". What a status with no value of its own is
+// valued as: the word it grades by, in the shape every status here is written
+// in, which is the shape the renderer reads its grade from
+// (theme.ClassifyStatus).
+//
+// The word ends where the renderer ends it, at a space or at the punctuation
+// a status line puts after its word, and the whole of it has to be a word.
+// Cut at the first character that is not a letter, n/a would be valued "n"
+// and upstream.example.com "upstream": a value made of a fragment, where the
+// renderer reads a name and grades nothing.
+func leadingWord(text string) string {
 	word := text
-	if i := strings.IndexFunc(text, func(r rune) bool { return !wordRune(r) }); i >= 0 {
+	if i := strings.IndexAny(text, " \t,;:()—·"); i >= 0 {
 		word = text[:i]
 	}
-	return Status(text, strings.ToLower(word))
-}
-
-// wordRune is a character the word leading a status is made of.
-func wordRune(r rune) bool {
-	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_'
+	if word = strings.ToLower(word); !statusWord.MatchString(word) {
+		return ""
+	}
+	return word
 }
 
 func decimal[T integer](n T) string {
@@ -164,30 +176,40 @@ func ValueOK(kind ColumnKind, value string) bool {
 
 // typedValues is t's values as JSON writes them, row for row with Rows and
 // column for column: a number as a number, a time and a status as strings,
-// and null where a cell has none or its value is not one its column takes.
-// Nil when t carries no value at all, so that such a table encodes as it
-// always did.
+// and null where a cell has none or its value is not one its column takes. A
+// cell its producer gave no value is valued as its text, where the text
+// already is one (textValue). Nil when no cell has a value, so that such a
+// table encodes as it always did.
 func typedValues(t Table) [][]any {
-	if len(t.Values) == 0 {
+	if len(t.Values) == 0 && !slices.ContainsFunc(t.Columns, func(c Column) bool {
+		return c.Kind == KindStatus || c.Kind == KindNumber || c.Kind == KindTimestamp
+	}) {
 		return nil
 	}
 	out := make([][]any, len(t.Rows))
 	found := false
-	for i := range t.Rows {
+	for i, cells := range t.Rows {
 		row := make([]any, len(t.Columns))
 		var values []string
 		if i < len(t.Values) {
 			values = t.Values[i]
 		}
 		for j, c := range t.Columns {
-			if j >= len(values) || !ValueOK(c.Kind, values[j]) {
+			var value string
+			if j < len(values) {
+				value = values[j]
+			}
+			if value == "" && j < len(cells) {
+				value = textValue(c.Kind, cells[j])
+			}
+			if !ValueOK(c.Kind, value) {
 				continue
 			}
 			switch c.Kind {
 			case KindTimestamp, KindStatus:
-				row[j] = values[j]
+				row[j] = value
 			default:
-				row[j] = json.Number(values[j])
+				row[j] = json.Number(value)
 			}
 			found = true
 		}
@@ -197,4 +219,34 @@ func typedValues(t Table) [][]any {
 		return nil
 	}
 	return out
+}
+
+// textValue is the value a cell's text already is, for a cell whose producer
+// gave it none: a status's leading word, a count written as a number, and a
+// moment written in RFC 3339, in UTC as every time is valued.
+//
+// **Only these three, because only for these is the text the value.** A
+// status is graded by the word it leads with on every surface already, a count
+// written as a JSON number is that number, and an RFC 3339 time names its own
+// zone. A size shown as `926.4 GiB`, a percentage and a length of time are
+// rounded or spelled for a person, and reading one back is the guess the
+// values exist to replace: only the producer holds what it was made from. So
+// a plugin that fills nothing still hands a program its statuses, its counts
+// and its times, and fills the rest through the cell helpers; a value it gives
+// always wins, and a malformed one is written as none rather than replaced by
+// this. The zero time is none, as Time has it.
+func textValue(kind ColumnKind, text string) string {
+	switch kind {
+	case KindStatus:
+		return leadingWord(text)
+	case KindNumber:
+		if number.MatchString(text) {
+			return text
+		}
+	case KindTimestamp:
+		if t, err := time.Parse(time.RFC3339Nano, text); err == nil {
+			return Time(text, t).Value
+		}
+	}
+	return ""
 }

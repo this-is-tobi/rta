@@ -159,9 +159,11 @@ func TestGradeRowShowsNotAnnouncedWhenThereIsNoEolFromDate(t *testing.T) {
 			t.Errorf("column %d: got %q, want %q (row=%v)", i, row[i].Text, want[i], row)
 		}
 	}
-	// A cycle with no end announced has no end to value, and nothing to count down to.
-	if row[1].Value != "2025-09-15T00:00:00Z" || row[4].Value != "" || row[5].Value != "" || row[6].Value != "ok" {
-		t.Errorf("values: released %q, eol %q, in %q, status %q", row[1].Value, row[4].Value, row[5].Value, row[6].Value)
+	// A cycle with no end announced has no end to value, and nothing to count
+	// down to. Its status is valued from its text, as the encoder values any
+	// status that leads with its word.
+	if row[1].Value != "2025-09-15T00:00:00Z" || row[4].Value != "" || row[5].Value != "" {
+		t.Errorf("values: released %q, eol %q, in %q", row[1].Value, row[4].Value, row[5].Value)
 	}
 }
 

@@ -45,6 +45,7 @@ The words this documentation uses in one particular way, and the acronyms it ass
 - **RBAC** — role-based access control; in Kubernetes, what decides who may read which resource, and what rta's `kube` plugin leaves to the cluster. [Kubernetes](../30-boundary/80-kubernetes.md)
 - **RESP** — the REdis Serialization Protocol; the `redis` plugin speaks it itself rather than linking a client library.
 - **REST** — the style of HTTP API that names a thing by its URL and acts on it with `GET`, `POST`, `PUT` and `DELETE`; `rta http` is a client for one.
+- **RFC** — Request for Comments, the numbered series the internet's standards are published in; RFC 3339 is how a table's times are valued in `-o json`, `2026-10-31T13:02:00Z`.
 - **RTA** — short for *Rule Them All*, the name of the project; `rta` is the binary and how it is typed.
 - **RWX** — ReadWriteMany, a volume that several pods mount at once. The chart refuses it: two rta processes on one data directory would disagree about the grants. [Kubernetes](../30-boundary/80-kubernetes.md)
 - **SBOM** — software bill of materials, the list of what a build contains; `rta audit deps` reads one, and a release publishes its own.

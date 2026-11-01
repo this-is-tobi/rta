@@ -1029,10 +1029,10 @@ feed:
 // status grades by. A host that could not be checked has no end to value.
 func (r expiryResult) valued() []view.Cell {
 	if r.notAfter.IsZero() {
-		return []view.Cell{view.Plain(r.cells[0]), view.Plain(r.cells[1]), view.Plain(r.cells[2]), view.Graded(r.cells[3])}
+		return []view.Cell{view.Plain(r.cells[0]), view.Plain(r.cells[1]), view.Plain(r.cells[2]), view.Plain(r.cells[3])}
 	}
 	return []view.Cell{view.Plain(r.cells[0]), view.Duration(r.cells[1], time.Until(r.notAfter)),
-		view.Time(r.cells[2], r.notAfter), view.Graded(r.cells[3])}
+		view.Time(r.cells[2], r.notAfter), view.Plain(r.cells[3])}
 }
 
 // expiryResult is one target's row and what orders it among the others.

@@ -438,7 +438,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	listOrder(shown)
 	for _, it := range shown {
 		row := []view.Cell{
-			view.Count(it.ID), view.Graded(statusOf(it)), view.Graded(dueCell(it.Due, it.Done, now)),
+			view.Count(it.ID), view.Plain(statusOf(it)), view.Plain(dueCell(it.Due, it.Done, now)),
 			itemstore.AgeCell(it.Created), view.Plain(titleCell(s, it, detail)),
 		}
 		if detail {
@@ -491,7 +491,7 @@ func runSearch(_ context.Context, req plugin.Request) (view.View, error) {
 		if it.Parent != 0 && it.Parent != it.ID {
 			title = "↳ " + title // a quiet nod that this is a sub-note
 		}
-		t.Add(view.Count(it.ID), view.Graded(statusOf(it)), view.Plain(title),
+		t.Add(view.Count(it.ID), view.Plain(statusOf(it)), view.Plain(title),
 			view.Plain(strings.Join(itemstore.CleanTags(it.Tags), ", ")))
 	}
 	t.Total = len(t.Rows)
@@ -546,7 +546,7 @@ func showSections(sf plugin.Surface, s itemstore.Store, it itemstore.Item) view.
 			{Name: "Sub-note"},
 		}}
 		for _, c := range children {
-			t.Add(view.Count(c.ID), view.Graded(statusOf(c)), view.Plain(c.Title))
+			t.Add(view.Count(c.ID), view.Plain(statusOf(c)), view.Plain(c.Title))
 		}
 		t.Total = len(t.Rows)
 		sec.Items = append(sec.Items, view.Section{ID: "sub-notes", Title: "sub-notes", View: t})
