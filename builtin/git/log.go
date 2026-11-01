@@ -89,7 +89,7 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 			return storer.ErrStop
 		}
 		t.Add(view.Plain(shortHash(c.Hash)), view.Plain(c.Author.Name),
-			view.Time(c.Author.When.Format("2006-01-02 15:04"), c.Author.When), view.Plain(firstLine(c.Message)))
+			view.Time(c.Author.When.Local().Format("2006-01-02 15:04"), c.Author.When), view.Plain(firstLine(c.Message)))
 		return nil
 	})
 	if err != nil {
