@@ -426,8 +426,8 @@ func keyOf(t view.Table, i, col int) sortKey {
 		n, err := strconv.ParseFloat(t.Value(i, col), 64)
 		k.by, k.number, k.missing = byNumber, n, err != nil
 	case view.KindTimestamp:
-		at, err := time.Parse(time.RFC3339Nano, t.Value(i, col))
-		k.by, k.at, k.missing = byTime, at, err != nil
+		at, ok := view.TimeOf(t.Value(i, col))
+		k.by, k.at, k.missing = byTime, at, !ok
 	case view.KindStatus:
 		grade := theme.ClassifyStatus(text)
 		// What is over and done with (done, closed, disabled) is what neither

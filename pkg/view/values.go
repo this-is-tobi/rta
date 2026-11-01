@@ -113,6 +113,31 @@ func Time(text string, t time.Time) Cell {
 	return Cell{Text: text, Value: t.UTC().Format(time.RFC3339Nano)}
 }
 
+// Zoneless is a time whose source gives no zone shown as text says, valued as
+// the clock it reads with no offset (2026-10-31T14:02:05), for a
+// KindTimestamp column: a database's DATETIME or `timestamp without time
+// zone`, which say when on a wall clock and not where. t's location is not
+// written: a driver hands such a time back in UTC (pgx) or in this machine's
+// zone, and either would be a zone the database never gave. The zero time has
+// no value.
+func Zoneless(text string, t time.Time) Cell {
+	if t.IsZero() {
+		return Cell{Text: text}
+	}
+	return Cell{Text: text, Value: t.Format(zonelessLayout)}
+}
+
+// Date is a calendar date shown as text says, valued as the day
+// (2026-10-31), for a KindTimestamp column: a day, not the instant its
+// midnight is in UTC, which is what Time would make of it. The zero date has
+// no value.
+func Date(text string, t time.Time) Cell {
+	if t.IsZero() {
+		return Cell{Text: text}
+	}
+	return Cell{Text: text, Value: t.Format(dateLayout)}
+}
+
 // Status is a status shown as text says, valued as the word it grades by, for
 // a KindStatus column whose text does not lead with that word: "did not
 // answer", which is three, or "Init:CrashLoopBackOff", valued
@@ -196,10 +221,34 @@ var number = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?
 // answer"), so single spaces are allowed between them.
 var statusWord = regexp.MustCompile(`^[a-z][a-z0-9_-]*( [a-z0-9_-]+)*$`)
 
+// The two forms a time with no zone is valued in, ISO 8601's local date-time
+// and calendar date, beside RFC 3339 for one that has a zone. Read, the first
+// takes a fraction of a second or none; written, it keeps what is not zero.
+const (
+	zonelessLayout = "2006-01-02T15:04:05.999999999"
+	dateLayout     = "2006-01-02"
+)
+
+// TimeOf is the time a KindTimestamp value names, for a reader that orders or
+// compares them, as the TUI's sort does: an RFC 3339 value's instant, and a
+// value with no zone, a wall-clock time or a date, read in UTC. That orders a
+// column of them by what they say without placing them anywhere; a column
+// holds one kind of time, and a time with no zone beside instants falls
+// where its clock would be in UTC. False for anything that is not a value.
+func TimeOf(value string) (time.Time, bool) {
+	for _, layout := range []string{time.RFC3339Nano, zonelessLayout, dateLayout} {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
 // ValueOK reports whether value is a well-formed value for a column of kind:
-// a JSON number for a count, a size, a percentage or a duration in seconds, an
-// RFC 3339 time for a timestamp, a lower-case word for a status. A text column
-// has no values, so nothing is one.
+// a JSON number for a count, a size, a percentage or a duration in seconds; a
+// time for a timestamp, in RFC 3339 or, for one whose source gives no zone,
+// as a wall-clock time or a date with none (TimeOf); a lower-case word for a
+// status. A text column has no values, so nothing is one.
 //
 // What a value from a plugin is held to (pkg/sdk/wire), since what is written
 // here reaches JSON as a number without being quoted: a value that is not one
@@ -212,8 +261,8 @@ func ValueOK(kind ColumnKind, value string) bool {
 	case KindNumber, KindBytes, KindPercent, KindUsage, KindDuration:
 		return number.MatchString(value)
 	case KindTimestamp:
-		_, err := time.Parse(time.RFC3339Nano, value)
-		return err == nil
+		_, ok := TimeOf(value)
+		return ok
 	case KindStatus:
 		return statusWord.MatchString(value)
 	}
@@ -283,13 +332,19 @@ func (t Table) Value(row, col int) string {
 }
 
 // textValue is the value a cell's text already is, for a cell whose producer
-// gave it none: a status's leading word, a count written as a number, and a
-// moment written in RFC 3339, in UTC as every time is valued.
+// gave it none: a status's leading word, a count written as a number, a
+// moment written in RFC 3339, in UTC as every instant is valued, and a time
+// or a date written with no zone, valued with none.
 //
 // **Only these three, because only for these is the text the value.** A
 // status is graded by the word it leads with on every surface already, a count
-// written as a JSON number is that number, and an RFC 3339 time names its own
-// zone. A size shown as `926.4 GiB`, a percentage and a length of time are
+// written as a JSON number is that number, and a time written in full says
+// what it is: an RFC 3339 time names its own zone, and `2026-10-31 14:02:05`
+// or `2026-10-31`, as a database prints a DATETIME or a DATE, says it has
+// none. A space between the day and the time is read as the T, the way both
+// RFC 3339 and those databases allow, and nothing shorter or looser is read:
+// a time written for a person (`Oct 31 14:02`, `14:02 UTC`) is not one. A
+// size shown as `926.4 GiB`, a percentage and a length of time are
 // rounded or spelled for a person, and reading one back is the guess the
 // values exist to replace: only the producer holds what it was made from. So
 // a plugin that fills nothing still hands a program its statuses, its counts
@@ -307,6 +362,12 @@ func textValue(kind ColumnKind, text string) string {
 	case KindTimestamp:
 		if t, err := time.Parse(time.RFC3339Nano, text); err == nil {
 			return Time(text, t).Value
+		}
+		if t, err := time.Parse(zonelessLayout, strings.Replace(text, " ", "T", 1)); err == nil {
+			return Zoneless(text, t).Value
+		}
+		if t, err := time.Parse(dateLayout, text); err == nil {
+			return Date(text, t).Value
 		}
 	}
 	return ""

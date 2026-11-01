@@ -87,6 +87,38 @@ func TestEachKindSortsByWhatItsCellsAre(t *testing.T) {
 
 func first(t view.Table, _ []int) view.Table { return t }
 
+// A database's DATETIME and DATE carry no zone, and a time was valued only in
+// RFC 3339, so the picker left a query's time columns out and nothing put a
+// result in date order. Written as a database prints them, with no value
+// given, they are valued without a zone and sort by the time or the day they
+// say, the empty cell last.
+func TestATimeOrADateWithNoZoneIsOfferedAndSorts(t *testing.T) {
+	rows := view.Table{
+		Columns: []view.Column{{Name: "id"}, {Name: "created_at", Kind: view.KindTimestamp}, {Name: "day", Kind: view.KindTimestamp}},
+		Rows: [][]string{
+			{"1", "2026-03-04 06:00:00", "2026-03-04"},
+			{"2", "2026-03-04 06:00:00.5", "2026-02-28"},
+			{"3", "", ""},
+			{"4", "2025-12-31 23:59:59", "2026-03-05"},
+		},
+	}
+	var labels []string
+	for _, o := range orderOptions(rows) {
+		labels = append(labels, o.label)
+	}
+	for _, want := range []string{"created_at — newest first", "day — oldest first"} {
+		if !slices.Contains(labels, want) {
+			t.Errorf("orders offered: %q, want %q among them", labels, want)
+		}
+	}
+	if got := firstColumn(first(sortTable(rows, 1, true))); !slices.Equal(got, []string{"2", "1", "4", "3"}) {
+		t.Errorf("created_at newest first: %v", got)
+	}
+	if got := firstColumn(first(sortTable(rows, 2, false))); !slices.Equal(got, []string{"2", "1", "4", "3"}) {
+		t.Errorf("day oldest first: %v", got)
+	}
+}
+
 // The picker offers each column both ways, the way a person wants it first
 // leading, and never a masked column: sorting by it would say how the values
 // nobody may see compare.

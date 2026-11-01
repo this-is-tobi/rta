@@ -161,8 +161,9 @@ func TestGradeRowShowsNotAnnouncedWhenThereIsNoEolFromDate(t *testing.T) {
 	}
 	// A cycle with no end announced has no end to value, and nothing to count
 	// down to. Its status is valued from its text, as the encoder values any
-	// status that leads with its word.
-	if row[1].Value != "2025-09-15T00:00:00Z" || row[4].Value != "" || row[5].Value != "" {
+	// status that leads with its word. A release date is a day, valued as one
+	// and not as the instant its midnight is in UTC.
+	if row[1].Value != "2025-09-15" || row[4].Value != "" || row[5].Value != "" {
 		t.Errorf("values: released %q, eol %q, in %q", row[1].Value, row[4].Value, row[5].Value)
 	}
 }
@@ -176,7 +177,7 @@ func TestGradeRowShowsTheDateAndDurationWhenAnnounced(t *testing.T) {
 	if row[3].Text != "yes" {
 		t.Errorf("LTS column: got %q, want yes", row[3].Text)
 	}
-	if row[4].Text != "2027-11-11" || row[4].Value != "2027-11-11T00:00:00Z" {
+	if row[4].Text != "2027-11-11" || row[4].Value != "2027-11-11" {
 		t.Errorf("EOL column: got %q valued %q", row[4].Text, row[4].Value)
 	}
 	if row[5].Text == "-" || row[5].Text == "" {
