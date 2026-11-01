@@ -1,6 +1,7 @@
 package agentlog
 
 import (
+	"encoding/json"
 	"os"
 	"runtime"
 	"strings"
@@ -54,6 +55,17 @@ func TestCallsSeesWhatReadSees(t *testing.T) {
 // apart; the claim is that the live heap at the last entry of the walk has not
 // grown with the record. Counted in bytes the collector reports as live after
 // a collection, never in time, so a loaded machine cannot fail it.
+//
+// **After two collections, never one.** A sync.Pool hands what it holds to a
+// victim cache at one collection and drops it at the next, so a pooled buffer
+// is live after the first and gone after the second. encoding/json pools the
+// buffer of the largest value it has encoded, and every write below takes that
+// buffer out and puts it back. Measured after one collection, a 6 MiB one that
+// TestAnOversizedRowIsBoundedAndAnOldOneIsReadPast had left was live in before
+// and freed by the time held was read: the record held, and the live heap 4
+// MiB smaller. The control failed on CI whenever the shuffle ran that test
+// first on the same processor. A buffer is pooled here on purpose, so a
+// measure that counts one fails on every run and not on one in a hundred.
 func TestCallsKeepsNothingOfTheRecordItWalks(t *testing.T) {
 	isolate(t)
 	const total = 400
@@ -63,11 +75,17 @@ func TestCallsKeepsNothingOfTheRecordItWalks(t *testing.T) {
 	}
 	live := func() int64 {
 		runtime.GC()
+		runtime.GC()
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		return int64(m.HeapAlloc)
 	}
 
+	// A pooled buffer, left where a measure taken after one collection would
+	// count it in before and not in held, on any number of processors.
+	if _, err := json.Marshal(strings.Repeat("x", 6<<20)); err != nil {
+		t.Fatal(err)
+	}
 	before := live()
 	entries, err := Read(0)
 	if err != nil || len(entries) != total {
