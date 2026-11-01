@@ -53,6 +53,17 @@ func (t *Table) Add(cells ...Cell) {
 // status or a count, which the encoder values from its text (typedValues).
 func Plain(text string) Cell { return Cell{Text: text} }
 
+// PlainRow is a row of Plain cells, for a table filled through Add whose row
+// is text alone: the row that stands in for the ones a limit left out, or a
+// member whose figures could not be read. Three plugins carried this loop.
+func PlainRow(texts ...string) []Cell {
+	cells := make([]Cell, len(texts))
+	for i, text := range texts {
+		cells[i] = Plain(text)
+	}
+	return cells
+}
+
 // integer is every type a count turns up in: pkg/format's, which Bytes hands
 // its count to.
 type integer interface {
@@ -63,6 +74,12 @@ type integer interface {
 // Bytes is a byte count, shown as pkg/format writes one (1.3 MiB) and valued
 // as the count, for a KindBytes column.
 func Bytes[T integer](n T) Cell { return Cell{Text: format.Bytes(n), Value: decimal(n)} }
+
+// Size is a byte count shown as text says and valued as the count, for a
+// KindBytes column whose text is somebody else's spelling: docker's `1.6GB`,
+// kept so a table of images reads beside `docker images`. Bytes is the one
+// for a count whose text is rta's to write.
+func Size[T integer](text string, n T) Cell { return Cell{Text: text, Value: decimal(n)} }
 
 // Count is a whole number shown as itself, for a KindNumber column.
 func Count[T integer](n T) Cell {
@@ -102,6 +119,21 @@ func Status(text, word string) Cell {
 		return Cell{Text: text}
 	}
 	return Cell{Text: text, Value: word}
+}
+
+// CouldNotRead is how a page says one of its facts could not be read, beside
+// the ones it could: "could not be read — " and why, or the words alone when
+// there is no why to give. The renderer draws a line that leads with those
+// words amber (theme.ClassifyStatus), since the answer is partial and the
+// page still worth reading, so the wording is what grades it: spelled any
+// other way ("couldn't be read"), the partial answer is drawn plain beside the
+// green. Thirty-odd lines across rta's overviews and the plugins' wrote it by
+// hand.
+func CouldNotRead(why string) string {
+	if why = strings.TrimSpace(why); why == "" {
+		return "could not be read"
+	}
+	return "could not be read — " + why
 }
 
 // leadingWord is the word text leads with, in lower case — "warn" for "WARN

@@ -470,14 +470,14 @@ func nothingWaiting(sf plugin.Surface) string {
 func connectedView(agent string) view.View {
 	t, err := connectedTable(agent)
 	if err != nil {
-		return view.Text{Body: couldNotRead(err.Error())}
+		return view.Text{Body: view.CouldNotRead(err.Error())}
 	}
 	return t
 }
 
 func waitingView(sf plugin.Surface, reqs []consent.Request, err error) view.View {
 	if err != nil {
-		return view.Text{Body: couldNotRead(err.Error())}
+		return view.Text{Body: view.CouldNotRead(err.Error())}
 	}
 	return pendingTable(sf, reqs)
 }
@@ -525,7 +525,6 @@ var tileKeys = map[string]string{
 
 // couldNotRead is a row the page could not fill, in the words every overview
 // uses for one, which the theme draws as a warning.
-func couldNotRead(why string) string { return "could not be read — " + why }
 
 // isTile reports whether this is the dashboard's run of the overview: the
 // compact answer on the TUI, in a box a third of the screen wide. The page
@@ -589,7 +588,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	nowWaiting := fmt.Sprintf("%d", len(waiting))
 	switch {
 	case pendingErr != nil:
-		nowWaiting = couldNotRead(pendingErr.Error())
+		nowWaiting = view.CouldNotRead(pendingErr.Error())
 		found.Warn("waiting queue could not be read")
 	case len(waiting) > 0 && sf == plugin.SurfaceTUI:
 		nowWaiting += " — press w to answer"
@@ -661,7 +660,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	connected, n, connErr := connectedFor(agent)
 	switch {
 	case connErr != nil:
-		connected = couldNotRead(connErr.Error())
+		connected = view.CouldNotRead(connErr.Error())
 		found.Warn("connected clients could not be read")
 	case n == 0 && tile:
 		connected = "none"
@@ -678,7 +677,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	locked, lockErr := lockedLine(sf, tile)
 	switch {
 	case lockErr != nil:
-		locked = couldNotRead(lockErr.Message)
+		locked = view.CouldNotRead(lockErr.Message)
 		found.Warn("locks could not be read")
 	case locked == "":
 		locked = "nothing"
@@ -688,7 +687,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	roles, rolesErr := rolesLine()
 	switch {
 	case rolesErr != nil:
-		roles = couldNotRead(rolesErr.Message)
+		roles = view.CouldNotRead(rolesErr.Message)
 		found.Warn("roles could not be read")
 	case roles == "":
 		roles = "none"

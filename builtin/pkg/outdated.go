@@ -60,7 +60,7 @@ func collect(ctx context.Context, c *registryClient, only string) listing {
 // counted apart as the tools line counts the ones it could not.
 func managerStatus(l listing, name string) string {
 	if verr, failed := l.failed[name]; failed {
-		return "could not be read — " + verr.Message
+		return view.CouldNotRead(verr.Message)
 	}
 	n, broken := l.countFor(name), l.brokenFor(name)
 	switch {
@@ -69,7 +69,7 @@ func managerStatus(l listing, name string) string {
 	case n > 0:
 		return fmt.Sprintf("outdated %d", n)
 	case broken > 0:
-		return "could not be read — " + format.CountOf(broken, "package")
+		return view.CouldNotRead(format.CountOf(broken, "package"))
 	}
 	return "ok"
 }
@@ -332,7 +332,7 @@ func overviewWith(ctx context.Context, req plugin.Request, c *registryClient) (v
 	case behind == 0 && unchecked == 0:
 		toolsRow.Value = fmt.Sprintf("ok — %d current", len(tools))
 	case behind == 0:
-		toolsRow.Value = fmt.Sprintf("could not be read — %d of %d", unchecked, len(tools))
+		toolsRow.Value = view.CouldNotRead(fmt.Sprintf("%d of %d", unchecked, len(tools)))
 	default:
 		toolsRow.Value = fmt.Sprintf("outdated %d of %d", behind, len(tools))
 		if unchecked > 0 {
