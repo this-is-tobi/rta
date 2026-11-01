@@ -71,6 +71,9 @@ type glyphs struct {
 	full, empty string
 	// marker points at the selected record, and is as wide as its absence.
 	marker string
+	// ascending and descending follow the heading of the column a table is
+	// sorted by (Options.Sorted).
+	ascending, descending string
 	// bullet heads an item of a markdown list, and quote the lines of a quoted
 	// block, as a note's body draws them (prettyMarkdown).
 	bullet, quote string
@@ -89,7 +92,8 @@ var unicodeGlyphs = glyphs{
 	dash:   " — ",
 	branch: "├── ", last: "└── ", trunk: "│   ", gap: "    ",
 	full: "█", empty: "░",
-	marker: "▸ ",
+	marker:    "▸ ",
+	ascending: "↑", descending: "↓",
 	bullet: "•", quote: "│ ",
 	plot: asciigraph.DefaultCharSet,
 }
@@ -101,7 +105,8 @@ var asciiGlyphs = glyphs{
 	dash:   " - ",
 	branch: "|-- ", last: "`-- ", trunk: "|   ", gap: "    ",
 	full: "#", empty: ".",
-	marker: "> ",
+	marker:    "> ",
+	ascending: "^", descending: "v",
 	bullet: "*", quote: "| ",
 	plot: asciigraph.CharSet{
 		Horizontal: "-", VerticalLine: "|",

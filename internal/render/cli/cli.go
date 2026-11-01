@@ -68,6 +68,24 @@ func ParseFormat(s string) (Format, error) {
 	}
 }
 
+// SortMark names the column a table is sorted by, and which way
+// (Options.Sorted). Section is the key (view.Section.Key) of the section
+// whose table it is on a page, and "" for a table that is the whole view. The
+// zero mark marks nothing.
+type SortMark struct {
+	Section, Column string
+	Desc            bool
+}
+
+// at is the mark for the table in the section keyed key, and the zero mark
+// for any other.
+func (s SortMark) at(key string) SortMark {
+	if s.Column == "" || s.Section != key {
+		return SortMark{}
+	}
+	return s
+}
+
 // Options configures rendering.
 type Options struct {
 	Format  Format
@@ -89,6 +107,12 @@ type Options struct {
 	// Highlight, when > 0, accents that table row (1-based). Interactive
 	// hosts use it for row selection; 0 renders tables uniformly.
 	Highlight int
+	// Sorted marks the column a table is sorted by on its heading, an arrow up
+	// for an ascending order and down for a descending one, the way a web
+	// table marks the column its rows follow. Said only on the line above the
+	// table, it was the first part that line gave up below 100 columns, and
+	// nothing on the screen said the rows were in any order but their own.
+	Sorted SortMark
 	// Screen says pretty output is read as it is drawn — a terminal, a TUI
 	// pane — rather than written to a pipe or a file. It is what an empty
 	// result's sentence (view.Table.Empty) waits for.
@@ -448,7 +472,7 @@ func renderPretty(w io.Writer, v view.View, opts Options) error {
 	case view.KeyValue:
 		return prettyKeyValue(w, t, st)
 	case view.Table:
-		return prettyTable(w, t, st, opts.Highlight)
+		return prettyTable(w, t, st, opts.Highlight, opts.Sorted.at(""))
 	case view.Tree:
 		return prettyTree(w, t, st)
 	case view.Chart:
@@ -500,7 +524,12 @@ func prettySections(w io.Writer, s view.Sections, st styles, opts Options) error
 		if item.View == nil {
 			continue
 		}
-		if err := renderPretty(w, item.View, opts); err != nil {
+		// The mark goes to the one table it names, as that table's own.
+		inner := opts
+		if inner.Sorted = opts.Sorted.at(item.Key()); inner.Sorted.Column != "" {
+			inner.Sorted.Section = ""
+		}
+		if err := renderPretty(w, item.View, inner); err != nil {
 			return err
 		}
 	}
@@ -650,9 +679,22 @@ func hangsUnderKey(val string, keyCol, width int) bool {
 	return broken
 }
 
-func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
-	t, hidden := fitColumns(t, st)
-	return drawTable(w, t, st, highlight, hidden)
+func prettyTable(w io.Writer, t view.Table, st styles, highlight int, sorted SortMark) error {
+	t, hidden := fitColumns(t, st, sorted)
+	return drawTable(w, t, st, highlight, hidden, sorted)
+}
+
+// heading is a column's heading: its name in capitals, and the arrow of the
+// order after it when the table is sorted by it.
+func heading(c view.Column, sorted SortMark, g glyphs) string {
+	h := strings.ToUpper(c.Name)
+	if sorted.Column == "" || c.Name != sorted.Column {
+		return h
+	}
+	if sorted.Desc {
+		return h + " " + g.descending
+	}
+	return h + " " + g.ascending
 }
 
 // fitColumns gives up optional columns, as many as it takes for the grid to fit
@@ -664,17 +706,23 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 // wider one's: the columns shown are always the front of the same ranking, so
 // widening the terminal only ever shows more. Width 0, which is a pipe, and every
 // machine format never reach this, and carry every column.
-func fitColumns(t view.Table, st styles) (view.Table, []string) {
+//
+// The column the table is sorted by is never given up: the order of the rows
+// is the reader's, and a sorted table whose sorted column was cut read as one
+// in an order nobody could see.
+func fitColumns(t view.Table, st styles, sorted SortMark) (view.Table, []string) {
 	if st.width <= 0 || len(t.Columns) < 2 {
 		return t, nil
 	}
-	order := t.DropOrder()
+	order := slices.DeleteFunc(t.DropOrder(), func(i int) bool {
+		return sorted.Column != "" && t.Columns[i].Name == sorted.Column
+	})
 	if len(order) == 0 {
 		return t, nil
 	}
 	headers := make([]string, len(t.Columns))
 	for i, c := range t.Columns {
-		headers[i] = strings.ToUpper(c.Name)
+		headers[i] = heading(c, sorted, st.glyphs)
 	}
 	natural := naturalWidths(t, headers)
 	total := sum(natural)
@@ -741,7 +789,7 @@ func fitColumns(t view.Table, st styles) (view.Table, []string) {
 	return t, hidden
 }
 
-func drawTable(w io.Writer, t view.Table, st styles, highlight int, hidden []string) error {
+func drawTable(w io.Writer, t view.Table, st styles, highlight int, hidden []string, sorted SortMark) error {
 	// The sentence an empty table carries is drawn in its place on a screen:
 	// headings over nothing read as a listing that failed. See
 	// view.Table.Empty. The footer still follows, since an empty listing can
@@ -757,7 +805,7 @@ func drawTable(w io.Writer, t view.Table, st styles, highlight int, hidden []str
 	statusCol := map[int]bool{}
 	usageCol := map[int]bool{}
 	for i, c := range t.Columns {
-		headers[i] = strings.ToUpper(c.Name)
+		headers[i] = heading(c, sorted, st.glyphs)
 		switch c.Kind {
 		case view.KindNumber, view.KindBytes, view.KindPercent, view.KindDuration:
 			rightAlign[i] = true
