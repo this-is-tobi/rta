@@ -293,19 +293,20 @@ func suggestCyclesAt(ctx context.Context, req plugin.Request, base string) []str
 // gradeRow turns one release into a row. The verdict is eolapi.Grade's,
 // shared with audit.kube.eol so the two never disagree about whether a
 // cycle is past its end of life; the date column shows the API's own text
-// and the duration is computed only from a date that parses.
+// and the duration is computed only from a date that parses. Both dates are
+// days, valued as days: the API gives no time and no zone for either.
 func gradeRow(r eolapi.Release, warnDays int, now time.Time) []view.Cell {
 	eol, in := view.Plain("not announced"), view.Plain("-")
 	if r.EolFrom != nil {
 		eol = view.Plain(*r.EolFrom)
 		if eolDate, ok := eolapi.EolDate(r); ok {
-			eol = view.Time(*r.EolFrom, eolDate)
+			eol = view.Date(*r.EolFrom, eolDate)
 			in = view.Duration(humanUntil(eolDate, now), eolDate.Sub(now))
 		}
 	}
 	released := view.Plain(r.ReleaseDate)
 	if date, err := time.Parse("2006-01-02", r.ReleaseDate); err == nil {
-		released = view.Time(r.ReleaseDate, date)
+		released = view.Date(r.ReleaseDate, date)
 	}
 	return []view.Cell{view.Plain(r.Name), released, view.Plain(r.Latest.Name), view.Plain(ltsCell(r)), eol, in,
 		view.Plain(eolStatus(r, warnDays, now))}

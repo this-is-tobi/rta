@@ -68,6 +68,13 @@ func TestTheCellHelpersSpellTheirValues(t *testing.T) {
 		{KindDuration, Duration("250ms", 250*time.Millisecond), "0.25"},
 		{KindTimestamp, Time("Oct 31", when), "2026-10-31T13:02:00Z"},
 		{KindTimestamp, Time("never", time.Time{}), ""},
+		// The clock a time with no zone reads, and not its location: the
+		// location a driver hands back for one (pgx's UTC) says nothing.
+		{KindTimestamp, Zoneless("2026-10-31 14:02", when), "2026-10-31T14:02:00"},
+		{KindTimestamp, Zoneless("14:02:05.5", time.Date(2026, 10, 31, 14, 2, 5, 5e8, time.UTC)), "2026-10-31T14:02:05.5"},
+		{KindTimestamp, Zoneless("never", time.Time{}), ""},
+		{KindTimestamp, Date("Oct 31", when), "2026-10-31"},
+		{KindTimestamp, Date("never", time.Time{}), ""},
 		{KindStatus, Status("WARN soon · Oct 31", "warn"), "warn"},
 		{KindStatus, Status("did not answer", "did not answer"), "did not answer"},
 		{KindStatus, Status("WARN", "WARN"), ""},
@@ -82,7 +89,7 @@ func TestTheCellHelpersSpellTheirValues(t *testing.T) {
 	for kind, bad := range map[ColumnKind][]string{
 		KindBytes:     {"926.4 GiB", "0x10", " 12", "1,024", "NaN", "Infinity", "12."},
 		KindUsage:     {"72%"},
-		KindTimestamp: {"Oct 31", "2026-10-31"},
+		KindTimestamp: {"Oct 31", "2026-10-31 14:02:05", "2026-10-31T14:02", "2026-02-30", "31/10/2026"},
 		KindStatus:    {"WARN", "warn!", " warn"},
 		KindText:      {"anything"},
 	} {
@@ -231,9 +238,10 @@ func TestAMalformedValueIsWrittenAsNone(t *testing.T) {
 
 // A status, a count or a time its producer gave no value is valued as its
 // text, where the text is one, so a plugin that fills nothing still hands a
-// program its grades, its counts and its times. Nothing else is read back from
-// a cell's text, a value the producer gave wins, and a masked cell's text is no
-// value.
+// program its grades, its counts and its times: a time in RFC 3339, and one
+// written with no zone, as a database prints a DATETIME or a DATE, valued
+// with none. Nothing else is read back from a cell's text, a value the
+// producer gave wins, and a masked cell's text is no value.
 func TestAStatusACountOrATimeWithNoValueIsValuedAsItsText(t *testing.T) {
 	pods := Table{Columns: []Column{
 		{Name: "Name"}, {Name: "Status", Kind: KindStatus}, {Name: "Restarts", Kind: KindNumber}, {Name: "Size", Kind: KindBytes},
@@ -244,6 +252,7 @@ func TestAStatusACountOrATimeWithNoValueIsValuedAsItsText(t *testing.T) {
 		{"db", "WARN lagging · 40s", "1,024", "1.2 GiB", "Mar 4 06:06"},
 		{"job", "—", "-", "", "0001-01-01T00:00:00Z"},
 		{"api", "n/a", "007", "0", "2026-03-04"},
+		{"cache", "ok", "2", "", "2026-03-04 06:06:07.250"},
 	}
 	pods.Add(Plain("cron"), Status("did not answer", "did not answer"), Count(5), Bytes(2048),
 		Time("yesterday", time.Date(2026, 3, 3, 0, 0, 0, 0, time.UTC)))
@@ -263,7 +272,8 @@ func TestAStatusACountOrATimeWithNoValueIsValuedAsItsText(t *testing.T) {
 		{nil, "running", json.Number("3"), nil, "2026-03-04T05:06:07Z"},
 		{nil, "warn", nil, nil, nil},
 		{nil, nil, nil, nil, nil},
-		{nil, nil, nil, nil, nil},
+		{nil, nil, nil, nil, "2026-03-04"},
+		{nil, "ok", json.Number("2"), nil, "2026-03-04T06:06:07.25"},
 		{nil, "did not answer", json.Number("5"), json.Number("2048"), "2026-03-03T00:00:00Z"},
 	}
 	if len(got.Values) != len(want) {
@@ -280,6 +290,30 @@ func TestAStatusACountOrATimeWithNoValueIsValuedAsItsText(t *testing.T) {
 	for i, row := range masked {
 		if row[1] != nil || row[2] != nil || row[4] != nil {
 			t.Errorf("row %d's masked cells are valued %v, %v and %v", i, row[1], row[2], row[4])
+		}
+	}
+}
+
+// TimeOf reads every form a time is valued in, for a reader that orders them:
+// an instant as itself, and a time or a date with no zone as the clock or the
+// day it says, read in UTC, so a column of them orders by what it says. A
+// cell's text with a space is no value, since a value writes the T.
+func TestTimeOfReadsEveryFormATimeIsValuedIn(t *testing.T) {
+	for _, c := range []struct {
+		value string
+		want  time.Time
+		ok    bool
+	}{
+		{"2026-10-31T13:02:00Z", time.Date(2026, 10, 31, 13, 2, 0, 0, time.UTC), true},
+		{"2026-10-31T14:02:00+01:00", time.Date(2026, 10, 31, 13, 2, 0, 0, time.UTC), true},
+		{"2026-10-31T14:02:05.25", time.Date(2026, 10, 31, 14, 2, 5, 25e7, time.UTC), true},
+		{"2026-10-31", time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC), true},
+		{"2026-10-31 14:02:05", time.Time{}, false},
+		{"Oct 31", time.Time{}, false},
+	} {
+		got, ok := TimeOf(c.value)
+		if ok != c.ok || !got.Equal(c.want) {
+			t.Errorf("TimeOf(%q) = %v, %v; want %v, %v", c.value, got, ok, c.want, c.ok)
 		}
 	}
 }
