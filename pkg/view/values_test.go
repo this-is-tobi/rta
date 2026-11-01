@@ -171,6 +171,41 @@ func TestTheEnvelopeWritesValuesInTheirTypes(t *testing.T) {
 	}
 }
 
+// A query's numbers are valued as their text, and a database holds more than
+// a float64 does: an UNSIGNED BIGINT up to 2^64-1, a DECIMAL to sixty-five
+// digits. yaml and a page's csv are written from ToMap, so each number is held
+// there in a type that keeps the digits json writes, and its own text where no
+// Go number does.
+func TestANumberKeepsEveryDigitThroughToMap(t *testing.T) {
+	tbl := Table{
+		Columns: []Column{{Name: "N", Kind: KindNumber}},
+		Rows: [][]string{
+			{"9223372036854775807"},
+			{"18446744073709551615"},
+			{"0.1"},
+			{"12345678901234567.89"},
+			{"123456789012345678901234567890"},
+		},
+	}
+	m, err := ToMap(tbl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []any{
+		int64(math.MaxInt64),
+		uint64(math.MaxUint64),
+		0.1,
+		json.Number("12345678901234567.89"),
+		json.Number("123456789012345678901234567890"),
+	}
+	values := m["values"].([]any)
+	for i, w := range want {
+		if got := values[i].([]any)[0]; got != w {
+			t.Errorf("%s reads %#v through ToMap, want %#v", tbl.Rows[i][0], got, w)
+		}
+	}
+}
+
 // A value that is not one its column takes is written as null, whoever wrote
 // it: a hand-filled table, or a cleaning pass that changed one.
 func TestAMalformedValueIsWrittenAsNone(t *testing.T) {
