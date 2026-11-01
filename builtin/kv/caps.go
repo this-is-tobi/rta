@@ -114,17 +114,18 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	t := view.Table{Columns: cols}
 	for _, k := range names {
 		e := s.Entries[k]
-		row := []string{plugin.ListedName(k), e.Kind, format.Bytes(len(e.Value)), e.Description, itemstore.Age(e.Updated)}
+		row := []view.Cell{view.Plain(plugin.ListedName(k)), view.Plain(e.Kind), view.Bytes(len(e.Value)),
+			view.Plain(e.Description), itemstore.AgeCell(e.Updated)}
 		if withHistory {
-			row = append(row, historyCell(len(e.Previous)))
+			row = append(row, view.Plain(historyCell(len(e.Previous))))
 		}
 		if withUsers {
-			row = append(row, strings.Join(usedBy[k], ", "))
+			row = append(row, view.Plain(strings.Join(usedBy[k], ", ")))
 		}
 		if detail {
-			row = append(row, e.origin(), itemstore.Age(e.Created))
+			row = append(row, view.Plain(e.origin()), itemstore.AgeCell(e.Created))
 		}
-		t.Rows = append(t.Rows, row)
+		t.Add(row...)
 	}
 	t.Total = len(t.Rows)
 	// The table even when nothing is listed, and the sentence beside it for a

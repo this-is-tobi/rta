@@ -524,14 +524,9 @@ func runDisk(ctx context.Context, req plugin.Request) (view.View, error) {
 			continue
 		}
 		cell, status := diskUsage(u.UsedPercent)
-		t.Rows = append(t.Rows, []string{
-			p.Mountpoint,
-			p.Fstype,
-			format.Bytes(u.Total),
-			format.Bytes(u.Used),
-			format.Bytes(u.Free),
-			cell, status,
-		})
+		t.Add(view.Plain(p.Mountpoint), view.Plain(p.Fstype),
+			view.Bytes(u.Total), view.Bytes(u.Used), view.Bytes(u.Free),
+			view.Number(cell, u.UsedPercent), view.Graded(status))
 	}
 	t.Total = len(t.Rows)
 	if len(unread) > 0 {
@@ -882,13 +877,10 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 		Total: total,
 	}
 	for _, r := range rows {
-		t.Rows = append(t.Rows, []string{
-			fmt.Sprintf("%d", r.proc.Pid),
-			r.name,
-			fmt.Sprintf("%.1f", r.cpu),
-			fmt.Sprintf("%.1f", r.mem),
-			format.Bytes(r.rss),
-		})
+		t.Add(view.Count(r.proc.Pid), view.Plain(r.name),
+			view.Number(fmt.Sprintf("%.1f", r.cpu), r.cpu),
+			view.Number(fmt.Sprintf("%.1f", r.mem), float64(r.mem)),
+			view.Bytes(r.rss))
 	}
 	if unread > 0 {
 		t.Warnings = append(t.Warnings, unreadProcesses(unread, total+unread))
@@ -1070,7 +1062,7 @@ func runTemp(ctx context.Context, _ plugin.Request) (view.View, error) {
 		case s.Temperature >= 85:
 			status = "WARN high"
 		}
-		t.Rows = append(t.Rows, []string{s.SensorKey, fmt.Sprintf("%.0f", s.Temperature), status})
+		t.Add(view.Plain(s.SensorKey), view.Number(fmt.Sprintf("%.0f", s.Temperature), s.Temperature), view.Graded(status))
 	}
 	if len(t.Rows) == 0 {
 		return nil, view.Errorf("sys.temp.none", "no readable temperature sensors").

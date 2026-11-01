@@ -1004,7 +1004,9 @@ feed:
 		{Name: "Expires", Kind: view.KindTimestamp},
 		{Name: "Status", Kind: view.KindStatus},
 	}}
-	t.Rows = append(t.Rows, rows...)
+	for _, r := range results {
+		t.Add(r.valued()...)
+	}
 	t.Total = len(t.Rows)
 	// **The exit status says whether every host could be checked**, not what
 	// the certificates say: an expired one is a finding in its row, and a host
@@ -1020,6 +1022,17 @@ feed:
 			WithHint("the rows marked ERROR above say which, and why")}
 	}
 	return t, nil
+}
+
+// valued is the row's cells with their values (view.Table.Values): the time
+// left and the end of the certificate that decides the row, and the word its
+// status grades by. A host that could not be checked has no end to value.
+func (r expiryResult) valued() []view.Cell {
+	if r.notAfter.IsZero() {
+		return []view.Cell{view.Plain(r.cells[0]), view.Plain(r.cells[1]), view.Plain(r.cells[2]), view.Graded(r.cells[3])}
+	}
+	return []view.Cell{view.Plain(r.cells[0]), view.Duration(r.cells[1], time.Until(r.notAfter)),
+		view.Time(r.cells[2], r.notAfter), view.Graded(r.cells[3])}
 }
 
 // expiryResult is one target's row and what orders it among the others.

@@ -103,11 +103,11 @@ func runHistory(_ context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Replaced", Kind: view.KindDuration},
 		{Name: "Source"},
 	}}
-	t.Rows = append(t.Rows, []string{head, e.Kind, format.Bytes(len(e.Value)),
-		e.Description, itemstore.Age(e.Updated), "", e.origin()})
+	t.Add(view.Plain(head), view.Plain(e.Kind), view.Bytes(len(e.Value)),
+		view.Plain(e.Description), itemstore.AgeCell(e.Updated), view.Plain(""), view.Plain(e.origin()))
 	for i, r := range e.Previous {
-		t.Rows = append(t.Rows, []string{strconv.Itoa(i + 1), r.Kind, format.Bytes(len(r.Value)),
-			r.Description, itemstore.Age(r.Updated), itemstore.Age(r.Retired), r.Origin})
+		t.Add(view.Plain(strconv.Itoa(i+1)), view.Plain(r.Kind), view.Bytes(len(r.Value)),
+			view.Plain(r.Description), itemstore.AgeCell(r.Updated), itemstore.AgeCell(r.Retired), view.Plain(r.Origin))
 	}
 	t.Total = len(t.Rows)
 	return t, nil
@@ -229,8 +229,8 @@ func removedTable(sf plugin.Surface, s store) view.View {
 		sf.CapabilityName("kv.restore") + " brings it back or " + sf.InputName("purge") + " drops it."}
 	for _, k := range names {
 		r := s.Removed[k]
-		t.Rows = append(t.Rows, []string{plugin.ListedName(k), r.Kind, format.Bytes(len(r.Value)), r.Description,
-			itemstore.Age(r.RemovedAt)})
+		t.Add(view.Plain(plugin.ListedName(k)), view.Plain(r.Kind), view.Bytes(len(r.Value)), view.Plain(r.Description),
+			itemstore.AgeCell(r.RemovedAt))
 	}
 	t.Total = len(t.Rows)
 	return t

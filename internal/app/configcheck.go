@@ -213,17 +213,17 @@ func problemsTable(problems []configProblem, empty string) view.Table {
 		t.Columns = append([]view.Column{{Name: "File"}}, t.Columns...)
 	}
 	for _, p := range problems {
-		line := ""
+		line := view.Plain("")
 		if p.Line > 0 {
-			line = strconv.Itoa(p.Line)
+			line = view.Count(p.Line)
 		}
 		// A problem is one line: its key and the names inside its sentence come
 		// from the file, and a newline in one is a second row of this table.
-		row := []string{line, plugin.ListedName(p.Key), oneLine(p.Text)}
+		row := []view.Cell{line, view.Plain(plugin.ListedName(p.Key)), view.Plain(oneLine(p.Text))}
 		if named {
-			row = append([]string{configFileName(p.File)}, row...)
+			row = append([]view.Cell{view.Plain(configFileName(p.File))}, row...)
 		}
-		t.Rows = append(t.Rows, row)
+		t.Add(row...)
 	}
 	t.Total = len(t.Rows)
 	t.Empty = empty

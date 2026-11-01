@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -70,10 +69,8 @@ func runRemotes(ctx context.Context, req plugin.Request) (view.View, error) {
 			urls = []setURL{{origin: r.origin}}
 		}
 		for i, u := range urls {
-			t.Rows = append(t.Rows, []string{
-				maskURLCredentials(r.name), maskURLCredentials(u.url), r.use(i),
-				strconv.Itoa(known[r.name]), u.origin,
-			})
+			t.Add(view.Plain(maskURLCredentials(r.name)), view.Plain(maskURLCredentials(u.url)), view.Plain(r.use(i)),
+				view.Count(known[r.name]), view.Plain(u.origin))
 		}
 	}
 	t.Total = len(t.Rows)

@@ -209,8 +209,9 @@ func sectionsTable(reg *registry.Registry, cfg config.Config) view.View {
 			if n := stated[section].Height; n > 0 {
 				height = strconv.Itoa(n)
 			}
-			t.Rows = append(t.Rows, []string{nameCell(name), nameCell(section), strconv.Itoa(counts[section]), starts, width, height,
-				stated[section].Refresh, configFileName(file)})
+			t.Add(view.Plain(nameCell(name)), view.Plain(nameCell(section)), view.Count(counts[section]), view.Plain(starts),
+				sizeCell(width, stated[section].Width), sizeCell(height, stated[section].Height),
+				view.Plain(stated[section].Refresh), view.Plain(configFileName(file)))
 		}
 	}
 	t.Total = len(t.Rows)
@@ -1230,7 +1231,8 @@ func viewsTable(cfg config.Config) view.View {
 		for i, who := range selected {
 			listed[i] = plugin.ListedName(who)
 		}
-		t.Rows = append(t.Rows, []string{plugin.ListedName(name), strings.Join(listed, ", "), strconv.Itoa(tiles), configFileName(file), drawn})
+		t.Add(view.Plain(plugin.ListedName(name)), view.Plain(strings.Join(listed, ", ")), view.Count(tiles),
+			view.Plain(configFileName(file)), view.Plain(drawn))
 	}
 	base := cfg.Dashboard
 	row(config.DefaultView, config.Where("dashboard", ""), len(base.Tiles)+len(base.Add), selectors[config.DefaultView])
@@ -1303,4 +1305,13 @@ func refreshFlag(cmd *cobra.Command, c plugin.Capability) (string, *view.Error) 
 			WithHint("a pace a capability declared is what a run costs it, and a configuration can only make it slower")
 	}
 	return config.FormatRefresh(want), nil
+}
+
+// sizeCell is a section's stated width or height, as text says (a number, or
+// the word for none), valued as the number when one is stated.
+func sizeCell(text string, n int) view.Cell {
+	if n > 0 {
+		return view.Number(text, float64(n))
+	}
+	return view.Plain(text)
 }

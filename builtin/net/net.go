@@ -849,7 +849,7 @@ feed:
 			state = "open"
 			openCount++
 		}
-		t.Rows = append(t.Rows, []string{strconv.Itoa(r.port), state})
+		t.Add(view.Count(r.port), view.Graded(state))
 	}
 	t.Total = len(t.Rows)
 	return t, nil

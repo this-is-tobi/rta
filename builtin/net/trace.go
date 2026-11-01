@@ -7,6 +7,7 @@ import (
 	"fmt"
 	stdnet "net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -189,9 +190,12 @@ type hop struct {
 
 // rttCell summarizes a hop's timings the way traceroute does: each probe,
 // then the unit once.
-func (h hop) rttCell() string {
+// rttCell is every probe's round trip, a lost one as *, valued as the
+// fastest: one figure per hop is what a program compares, and the fastest
+// is the one least a matter of the queue the probe met on the way.
+func (h hop) rttCell() view.Cell {
 	if len(h.rtts) == 0 {
-		return "*"
+		return view.Plain("*")
 	}
 	parts := make([]string, 0, len(h.rtts)+h.lost)
 	for _, rtt := range h.rtts {
@@ -200,7 +204,7 @@ func (h hop) rttCell() string {
 	for range h.lost {
 		parts = append(parts, "*")
 	}
-	return strings.Join(parts, " ") + " ms"
+	return view.Duration(strings.Join(parts, " ")+" ms", slices.Min(h.rtts))
 }
 
 func (h hop) status() string {
@@ -320,7 +324,7 @@ probing:
 		if addr == "" {
 			addr = "*"
 		}
-		t.Rows = append(t.Rows, []string{strconv.Itoa(h.ttl), addr, h.name, h.rttCell(), h.status()})
+		t.Add(view.Count(h.ttl), view.Plain(addr), view.Plain(h.name), h.rttCell(), view.Graded(h.status()))
 	}
 	t.Total = len(t.Rows)
 

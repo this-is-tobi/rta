@@ -325,9 +325,7 @@ func needsInventory() view.View {
 		if len(ungranted(c.Declared.Needs, allowed)) == 0 {
 			status, action = "ok", "—"
 		}
-		t.Rows = append(t.Rows, []string{
-			c.Declared.Name, needNames(c.Declared.Needs), status, action,
-		})
+		t.Add(view.Plain(c.Declared.Name), view.Plain(needNames(c.Declared.Needs)), view.Graded(status), view.Plain(action))
 	}
 	t.Total = len(t.Rows)
 	// The table even when nothing asks, and the sentence beside it for a
@@ -1251,9 +1249,7 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 		{Name: "Agents"},
 	}}
 	for _, cap := range p.Capabilities {
-		caps.Rows = append(caps.Rows, []string{
-			cap.ID, string(cap.Safety), cliForm(cap), agentReach(reg, cap),
-		})
+		caps.Add(view.Plain(cap.ID), view.Graded(string(cap.Safety)), view.Plain(cliForm(cap)), view.Plain(agentReach(reg, cap)))
 	}
 	caps.Total = len(caps.Rows)
 

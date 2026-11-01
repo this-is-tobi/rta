@@ -172,7 +172,7 @@ func runOS(ctx context.Context, req plugin.Request) (view.View, error) {
 			if u.Restart {
 				restart = "pending reboot"
 			}
-			t.Rows = append(t.Rows, []string{u.Title, u.Version, restart, u.Label})
+			t.Add(view.Plain(u.Title), view.Plain(u.Version), view.Graded(restart), view.Plain(u.Label))
 		}
 		t.Total = len(t.Rows)
 		p.PutAs("updates", "updates", t)

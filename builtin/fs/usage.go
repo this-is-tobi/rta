@@ -356,9 +356,7 @@ func usageTable(path string, entries []entry, total int64, limit, skipped int) v
 		if e.dir {
 			name += "/"
 		}
-		t.Rows = append(t.Rows, []string{
-			name, humanBytes(e.size), share(e.size, total), fmt.Sprintf("%d", e.files),
-		})
+		t.Add(view.Plain(name), view.Bytes(e.size), shareCell(e.size, total), view.Count(e.files))
 	}
 	t.Total = len(entries)
 	if len(entries) == 0 {
@@ -415,7 +413,7 @@ func usageDetail(ctx context.Context, req plugin.Request, path string,
 	if len(s.largest) > 0 {
 		lt := view.Table{Columns: []view.Column{{Name: "File"}, {Name: "Size", Kind: view.KindBytes}}}
 		for _, f := range s.largest {
-			lt.Rows = append(lt.Rows, []string{textclean.Name(f.path), humanBytes(f.size)})
+			lt.Add(view.Plain(textclean.Name(f.path)), view.Bytes(f.size))
 		}
 		lt.Total = len(lt.Rows)
 		p.PutAs("largest-files", "largest files anywhere beneath", lt)
@@ -423,13 +421,15 @@ func usageDetail(ctx context.Context, req plugin.Request, path string,
 	return p.View()
 }
 
-// share renders a percentage of the scanned total, which is what the reader
-// is looking at — not of the disk, which they did not ask about.
-func share(size, total int64) string {
+// shareCell is a percentage of the scanned total, which is what the reader
+// is looking at — not of the disk, which they did not ask about. A total of
+// nothing has no share to value.
+func shareCell(size, total int64) view.Cell {
 	if total <= 0 {
-		return "—"
+		return view.Plain("—")
 	}
-	return fmt.Sprintf("%.1f%%", float64(size)*100/float64(total))
+	pct := float64(size) * 100 / float64(total)
+	return view.Number(fmt.Sprintf("%.1f%%", pct), pct)
 }
 
 // humanBytes formats a size the way a person reads one: binary units, because

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"slices"
 
 	"github.com/spf13/cobra"
@@ -67,18 +66,19 @@ func pluginsView(reg *registry.Registry) view.View {
 	}}
 	// Where each row's bytes came from, held beside the rows until the whole
 	// list says whether there is a column to put it in.
+	var rows [][]view.Cell
 	var sources []string
-	add := func(source string, cells ...string) {
-		t.Rows = append(t.Rows, cells)
+	add := func(source string, cells ...view.Cell) {
+		rows = append(rows, cells)
 		sources = append(sources, source)
 	}
 	for _, p := range reg.Plugins() {
 		origin, _ := reg.Origin(p.Name)
 		add(plugindist.SourceOf(origin.Path),
-			p.Name,
-			fmt.Sprintf("%d", len(p.Capabilities)),
-			reach(p),
-			p.Summary,
+			view.Plain(p.Name),
+			view.Count(len(p.Capabilities)),
+			view.Graded(reach(p)),
+			view.Plain(p.Summary),
 		)
 	}
 	// Approved and not started: the other way an installed plugin is absent
@@ -86,7 +86,8 @@ func pluginsView(reg *registry.Registry) view.View {
 	// scrolls away. Above the untrusted rows because this is the plugin the
 	// operator expects to be working.
 	for _, f := range failedPluginsFound {
-		add(plugindist.SourceOf(f.Path), f.Name, "—", failedToStartStatus, failedPluginDetail(f))
+		add(plugindist.SourceOf(f.Path), view.Plain(f.Name), view.Plain("—"), view.Graded(failedToStartStatus),
+			view.Plain(failedPluginDetail(f)))
 	}
 	// Installed and not run, in the same table rather than a section of its
 	// own. A trust gate's failure mode is silence: a plugin that is present,
@@ -108,7 +109,7 @@ func pluginsView(reg *registry.Registry) view.View {
 			detail = "found on $PATH (" + u.Short() + ") and not run — the name above is " +
 				"already taken, so trusting it would collide; remove or rename the file"
 		}
-		add(plugindist.SourceOf(u.Path), u.Name, "—", "untrusted", detail)
+		add(plugindist.SourceOf(u.Path), view.Plain(u.Name), view.Plain("—"), view.Graded("untrusted"), view.Plain(detail))
 	}
 	// Where the bytes came from, in the TUI inventory's own words, and only
 	// when it tells the rows apart. A stock install is built in all the way down,
@@ -119,11 +120,15 @@ func pluginsView(reg *registry.Registry) view.View {
 	//
 	// Last, and not beside the plugin it qualifies, so that the columns a script
 	// reads by position keep their places whether the column is there or not.
-	if slices.ContainsFunc(sources, func(source string) bool { return source != plugindist.SourceBuiltIn }) {
+	sourced := slices.ContainsFunc(sources, func(source string) bool { return source != plugindist.SourceBuiltIn })
+	if sourced {
 		t.Columns = append(t.Columns, view.Column{Name: "Source"})
-		for i := range t.Rows {
-			t.Rows[i] = append(t.Rows[i], sources[i])
+	}
+	for i, row := range rows {
+		if sourced {
+			row = append(row, view.Plain(sources[i]))
 		}
+		t.Add(row...)
 	}
 	t.Total = len(t.Rows)
 	return t

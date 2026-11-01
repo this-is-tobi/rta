@@ -437,14 +437,15 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	listOrder(shown)
 	for _, it := range shown {
-		row := []string{
-			strconv.Itoa(it.ID), statusOf(it), dueCell(it.Due, it.Done, now),
-			itemstore.Age(it.Created), titleCell(s, it, detail),
+		row := []view.Cell{
+			view.Count(it.ID), view.Graded(statusOf(it)), view.Graded(dueCell(it.Due, it.Done, now)),
+			itemstore.AgeCell(it.Created), view.Plain(titleCell(s, it, detail)),
 		}
 		if detail {
-			row = append(row, strings.Join(itemstore.CleanTags(it.Tags), ", "), it.Created.Format("2006-01-02 15:04"), itemstore.Preview(it.Body))
+			row = append(row, view.Plain(strings.Join(itemstore.CleanTags(it.Tags), ", ")),
+				view.Time(it.Created.Format("2006-01-02 15:04"), it.Created), view.Plain(itemstore.Preview(it.Body)))
 		}
-		t.Rows = append(t.Rows, row)
+		t.Add(row...)
 	}
 	t.Total = len(t.Rows)
 	// The table even when nothing is listed, and the sentence beside it for a
@@ -490,9 +491,8 @@ func runSearch(_ context.Context, req plugin.Request) (view.View, error) {
 		if it.Parent != 0 && it.Parent != it.ID {
 			title = "↳ " + title // a quiet nod that this is a sub-note
 		}
-		t.Rows = append(t.Rows, []string{
-			strconv.Itoa(it.ID), statusOf(it), title, strings.Join(itemstore.CleanTags(it.Tags), ", "),
-		})
+		t.Add(view.Count(it.ID), view.Graded(statusOf(it)), view.Plain(title),
+			view.Plain(strings.Join(itemstore.CleanTags(it.Tags), ", ")))
 	}
 	t.Total = len(t.Rows)
 	if len(t.Rows) == 0 {
@@ -523,7 +523,7 @@ func runTags(_ context.Context, req plugin.Request) (view.View, error) {
 			plugin.Arg{Name: "tag", Value: plugin.Placeholder("name")}) + "` adds one"
 	}
 	for _, name := range names {
-		t.Rows = append(t.Rows, []string{name, strconv.Itoa(counts[name])})
+		t.Add(view.Plain(name), view.Count(counts[name]))
 	}
 	t.Total = len(t.Rows)
 	return t, nil
@@ -546,7 +546,7 @@ func showSections(sf plugin.Surface, s itemstore.Store, it itemstore.Item) view.
 			{Name: "Sub-note"},
 		}}
 		for _, c := range children {
-			t.Rows = append(t.Rows, []string{strconv.Itoa(c.ID), statusOf(c), c.Title})
+			t.Add(view.Count(c.ID), view.Graded(statusOf(c)), view.Plain(c.Title))
 		}
 		t.Total = len(t.Rows)
 		sec.Items = append(sec.Items, view.Section{ID: "sub-notes", Title: "sub-notes", View: t})
@@ -625,7 +625,7 @@ func crossRefs(s itemstore.Store, it itemstore.Item) view.Table {
 			continue // "#3" inside note 3 is prose, not a link to itself
 		}
 		if i, ok := index(s, id); ok {
-			t.Rows = append(t.Rows, []string{"→ mentions", strconv.Itoa(id), s.Items[i].Title})
+			t.Add(view.Plain("→ mentions"), view.Count(id), view.Plain(s.Items[i].Title))
 		}
 	}
 	for _, other := range s.Items {
@@ -634,7 +634,7 @@ func crossRefs(s itemstore.Store, it itemstore.Item) view.Table {
 		}
 		for _, id := range itemstore.References(other.Body) {
 			if id == it.ID {
-				t.Rows = append(t.Rows, []string{"← mentioned by", strconv.Itoa(other.ID), other.Title})
+				t.Add(view.Plain("← mentioned by"), view.Count(other.ID), view.Plain(other.Title))
 				break
 			}
 		}

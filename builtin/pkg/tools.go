@@ -261,7 +261,8 @@ func toolsTable(states []toolState) view.Table {
 		if latest == "" {
 			latest = s.Tag
 		}
-		t.Rows = append(t.Rows, []string{s.tool.Bin, "github:" + s.tool.Owner + "/" + s.tool.Repo, s.Installed, latest, status, s.Where})
+		t.Add(view.Plain(s.tool.Bin), view.Plain("github:"+s.tool.Owner+"/"+s.tool.Repo), view.Plain(s.Installed), view.Plain(latest),
+			view.Graded(status), view.Plain(s.Where))
 	}
 	t.Total = len(t.Rows)
 	return t
