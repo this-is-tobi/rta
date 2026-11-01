@@ -127,6 +127,13 @@ message Cursor {
 // in the Go contract and hosts should not surface it as one.
 message Row {
   repeated string cells = 1;
+  // The cells again as a program reads them, cell for cell, each in the
+  // spelling its column's kind gives and empty for a cell with none (the Go
+  // contract's Table.Values). Empty for a row with no value at all. A host
+  // keeps a row's values only when there is one for every cell, and a value
+  // only when it is well formed for its column; a host that predates the
+  // field reads the cells alone, as it always did.
+  repeated string values = 2;
 }
 
 // Table is tabular data with pre-formatted cells.

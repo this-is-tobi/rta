@@ -26,6 +26,58 @@ var columnKinds = []struct {
 	{view.KindUsage, rtav1.ColumnKind_COLUMN_KIND_USAGE},
 }
 
+// rowsToProto is t's rows, each with its values beside its cells where it has
+// any.
+func rowsToProto(t view.Table) []*rtav1.Row {
+	if len(t.Rows) == 0 {
+		return nil
+	}
+	out := make([]*rtav1.Row, len(t.Rows))
+	for i, cells := range t.Rows {
+		out[i] = &rtav1.Row{Cells: cells}
+		if i < len(t.Values) && len(t.Values[i]) > 0 {
+			values := make([]string, len(cells))
+			copy(values, t.Values[i])
+			out[i].Values = values
+		}
+	}
+	return out
+}
+
+// valuesFromProto is a plugin's values as the Go contract holds them, row for
+// row with the cells: a row's values kept only when there is one for every
+// cell, and a value only when it is well formed for its column's kind, the
+// rest left empty. Nil when none is left.
+//
+// Held to the kind here because the encoder writes a number's value into JSON
+// unquoted (view.typedValues), so a plugin's value that is not a number would
+// be a document a program cannot parse, not a wrong figure in one; the encoder
+// checks again, and this keeps a malformed value from being carried that far.
+func valuesFromProto(columns []view.Column, rows []*rtav1.Row) [][]string {
+	var out [][]string
+	for i, r := range rows {
+		values := r.GetValues()
+		if len(values) == 0 || len(values) != len(r.GetCells()) {
+			continue
+		}
+		kept := make([]string, len(values))
+		found := false
+		for j, v := range values {
+			if j < len(columns) && view.ValueOK(columns[j].Kind, v) {
+				kept[j], found = v, true
+			}
+		}
+		if !found {
+			continue
+		}
+		if out == nil {
+			out = make([][]string, len(rows))
+		}
+		out[i] = kept
+	}
+	return out
+}
+
 // wellFormedNumbers is a page's numbers without the ones JSON cannot write and
 // the ones whose names are not names. Nil when none is left, so that an empty map
 // and an absent one read alike.
@@ -180,9 +232,7 @@ func ViewToProto(v view.View) *rtav1.View {
 			Columns: mapSlice(t.Columns, func(c view.Column) *rtav1.Column {
 				return &rtav1.Column{Name: c.Name, Kind: columnKindToProto(c.Kind), Priority: uint32Of(c.Priority)}
 			}),
-			Rows: mapSlice(t.Rows, func(r []string) *rtav1.Row {
-				return &rtav1.Row{Cells: r}
-			}),
+			Rows:     rowsToProto(t),
 			Total:    int32Of(t.Total),
 			Redacted: t.Redacted,
 			Tail:     t.Tail,
@@ -276,6 +326,7 @@ func ViewFromProto(v *rtav1.View) view.View {
 		if p := k.Table.GetPage(); p != nil {
 			t.Page = &view.Cursor{Next: p.GetNext(), Input: p.GetInput()}
 		}
+		t.Values = valuesFromProto(t.Columns, k.Table.GetRows())
 		return t
 	case *rtav1.View_Tree:
 		return view.Tree{Roots: nodesFromProto(k.Tree.GetRoots()), Empty: k.Tree.GetEmpty()}

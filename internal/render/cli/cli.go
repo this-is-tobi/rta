@@ -195,10 +195,19 @@ func renderCSV(w io.Writer, v view.View, opts Options) error {
 	if err := cw.Write(header); err != nil {
 		return err
 	}
+	// A cell's value in place of its text where it has one (view.Table.Values):
+	// csv is read by programs alone, and a spreadsheet sums 994662584320 where
+	// it cannot sum "926.4 GiB". Not a status's: its value is the word it
+	// grades by, and its text says more — `WARN soon · Oct 31` is a due date as
+	// well as a grade, and "warn" in its place would drop the date.
 	rows := make([][]string, len(t.Rows))
 	for i, row := range t.Rows {
 		out := make([]string, len(row))
 		for j, cell := range row {
+			if j < len(t.Columns) && t.Columns[j].Kind != view.KindStatus && i < len(t.Values) &&
+				j < len(t.Values[i]) && view.ValueOK(t.Columns[j].Kind, t.Values[i][j]) {
+				cell = t.Values[i][j]
+			}
 			out[j] = csvSafeCell(cell)
 		}
 		rows[i] = out

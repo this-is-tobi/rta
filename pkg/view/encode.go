@@ -172,6 +172,13 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 	if len(cuts) > 0 {
 		m["warnings"] = cuts
 	}
+	// A table's values in their JSON types, which the field's own encoding
+	// cannot give: Values holds every value as its canonical text.
+	if t, ok := v.(Table); ok {
+		if values := typedValues(t); values != nil {
+			m["values"] = values
+		}
+	}
 	return Marshal(m)
 }
 
