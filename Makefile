@@ -92,7 +92,7 @@ endif
 # a binary this machine cannot execute. Override GOLANGCI with a path to use
 # another build.
 # renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
-GOLANGCI_VERSION := v2.13.2
+GOLANGCI_VERSION := v2.15.0
 TOOLS := $(CURDIR)/.tools
 GOLANGCI ?= $(TOOLS)/golangci-lint-$(GOLANGCI_VERSION)
 

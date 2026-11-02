@@ -136,7 +136,7 @@ jobs:
       # golangci-lint runs because .golangci.yml exists; the version is the
       # one `make lint` pins (GOLANGCI in the Makefile), so a finding here is
       # a finding there and neither is a surprise about the tool's version.
-      GOLANGCI_LINT_VERSION: v2.13.2
+      GOLANGCI_LINT_VERSION: v2.15.0
 
   # proto/v1 is frozen: a plugin compiled against it must keep working. Nothing
   # enforced that for a while — `proto-check` existed, `make ci` did not call
