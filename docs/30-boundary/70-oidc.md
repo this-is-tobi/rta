@@ -144,7 +144,7 @@ So the record answers both "which agent was this" and "which human's token authe
 
 ## In Kubernetes
 
-[`charts/rta-chart`](https://github.com/this-is-tobi/rta/tree/main/charts/rta-chart) takes the same three values per instance:
+[`charts/rta`](https://github.com/this-is-tobi/rta/tree/main/charts/rta) takes the same three values per instance:
 
 ```yaml
 servers:

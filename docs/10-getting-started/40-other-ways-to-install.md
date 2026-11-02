@@ -44,7 +44,7 @@ Two shapes of use:
 ## Kubernetes
 
 ```bash
-helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart \
+helm install rta oci://ghcr.io/this-is-tobi/charts/rta \
   --namespace rta --create-namespace \
   --values rta-values.yaml
 ```

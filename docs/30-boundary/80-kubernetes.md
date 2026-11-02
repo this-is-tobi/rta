@@ -4,7 +4,7 @@
 
 That one is not a setting. It is a deployment, and this chapter is how to make it.
 
-[`charts/rta-chart`](https://github.com/this-is-tobi/rta/tree/main/charts/rta-chart) is the chart. Its README is the values reference — every key, every default — and this page deliberately does not repeat it. What is here is the part a values table cannot tell you: the decisions to make before you set anything, the posture worth deploying, and what changes on day two.
+[`charts/rta`](https://github.com/this-is-tobi/rta/tree/main/charts/rta) is the chart. Its README is the values reference — every key, every default — and this page deliberately does not repeat it. What is here is the part a values table cannot tell you: the decisions to make before you set anything, the posture worth deploying, and what changes on day two.
 
 ## The unit is the instance, not the release
 
@@ -27,7 +27,7 @@ The shape that looks tempting and is not is a single instance behind a load bala
 ## Quickstart
 
 ```bash
-helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart \
+helm install rta oci://ghcr.io/this-is-tobi/charts/rta \
   --namespace rta --create-namespace \
   --values rta-values.yaml
 ```
@@ -58,10 +58,10 @@ servers:
 
 Every combination rta would refuse at startup is refused at render time instead, naming the values key rather than arriving later as a CrashLoopBackOff: an issuer with no audience, consent without operators, an empty `roots`, a token under 16 characters, an operator URL that is not `https://`.
 
-**The chart is published the way the image is.** Every release pushes it to `ghcr.io/this-is-tobi/rta/rta-chart` with [SLSA](../95-reference/10-glossary.md#acronyms) build provenance and a cosign signature bound to the digest, the same pair the binaries and the image carry. It moves on its own version stream rather than the app's — a chart `0.2.0` deploying rta `0.17.0` — because a values default or a template fix is a chart release with no new rta in it; `appVersion` is where the app's version lives. `helm install` from a registry checks neither the provenance nor the signature on its own, so check before you install:
+**The chart is published the way the image is.** Every release pushes it to `ghcr.io/this-is-tobi/charts/rta` with [SLSA](../95-reference/10-glossary.md#acronyms) build provenance and a cosign signature bound to the digest, the same pair the binaries and the image carry. It moves on its own version stream rather than the app's — a chart `0.2.0` deploying rta `0.17.0` — because a values default or a template fix is a chart release with no new rta in it; `appVersion` is where the app's version lives. `helm install` from a registry checks neither the provenance nor the signature on its own, so check before you install:
 
 ```bash
-gh attestation verify oci://ghcr.io/this-is-tobi/rta/rta-chart:<version> --owner this-is-tobi
+gh attestation verify oci://ghcr.io/this-is-tobi/charts/rta:<version> --owner this-is-tobi
 ```
 
 Then point the client at it — [Connecting your AI tool](./60-ai-clients.md) covers the per-client detail, and the server is an HTTP [MCP](../95-reference/10-glossary.md#acronyms) endpoint like any other.
@@ -191,6 +191,8 @@ Note this is a different mechanism from `kube:` credential references in a profi
 **Backups are the data volume.** The grants and the record live there and nothing else does. A restored volume is a restored instance; a lost one is a machine with no memory of what you allowed, which is why the chart has no switch for running without one.
 
 **Upgrading rta** is the image tag or digest, and the `Recreate` strategy means a short gap rather than an overlap — deliberately, since two processes briefly sharing one data directory is the thing being avoided.
+
+**Upgrading from `rta-chart`.** Up to version 0.42.1 this chart was named `rta-chart` and published as `rta/rta-chart`, where those versions stay. The chart's name builds the name of every object it renders, the data volume's claim included, so a release made by the old chart sets `nameOverride: rta-chart` in its values before its first upgrade to this one, and renders what it always did. Without it Helm renames the objects and deletes the old ones, the volume with them, and the grants and the record live there. A release installed from `charts/rta` needs nothing.
 
 **When a pod will not start**, the useful order is: `kubectl logs` first, because every credential failure prints there and returns a generic 401 to the caller; then `rta doctor` in the pod; then the two log lines above that are not problems.
 

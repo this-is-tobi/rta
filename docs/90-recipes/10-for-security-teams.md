@@ -14,7 +14,7 @@ An agent with an unrestricted shell is not bounded by rta at all, so this comes 
 ## Deploy one instance per person
 
 ```bash
-helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart \
+helm install rta oci://ghcr.io/this-is-tobi/charts/rta \
   --namespace rta --create-namespace --values rta-values.yaml
 ```
 

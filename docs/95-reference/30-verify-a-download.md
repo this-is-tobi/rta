@@ -39,13 +39,13 @@ cosign verify ghcr.io/this-is-tobi/rta:latest \
 It moves on its own version stream, and the rta it deploys is its `appVersion`. Verify it the way you verify the image:
 
 ```bash
-gh attestation verify oci://ghcr.io/this-is-tobi/rta/rta-chart:<version> --owner this-is-tobi
+gh attestation verify oci://ghcr.io/this-is-tobi/charts/rta:<version> --owner this-is-tobi
 ```
 
 And its cosign signature, bound to the chart attestation workflow the same way:
 
 ```bash
-cosign verify ghcr.io/this-is-tobi/rta/rta-chart:<version> \
+cosign verify ghcr.io/this-is-tobi/charts/rta:<version> \
   --certificate-identity-regexp '^https://github.com/this-is-tobi/github-workflows/\.github/workflows/attest-helm\.yml@refs/tags/v0$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```

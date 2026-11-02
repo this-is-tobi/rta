@@ -118,7 +118,7 @@ servers:
 ```
 
 ```bash
-helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart --namespace rta --values rta-values.yaml
+helm install rta oci://ghcr.io/this-is-tobi/charts/rta --namespace rta --values rta-values.yaml
 ```
 
 - **`HOME` and the mount** put the minted file where kubectl looks, `$HOME/.kube/config`: rta hands a plugin no `KUBECONFIG`, for the reason [Kubernetes](../30-boundary/80-kubernetes.md#giving-an-instance-access-to-the-cluster-it-runs-in) gives.
@@ -139,7 +139,7 @@ with `RTA_PAYMENTS_TOKEN` holding the token on the `laptop` line of `rta-tobi-to
 Any client that speaks [MCP](../95-reference/10-glossary.md#acronyms) over HTTP takes the same two things: the instance's URL, and the token as a bearer header. Ask the agent which pods in `payments` are not ready: it calls `kube_pod_list`, and the call is in the instance's record under the agent `tobi` and the credential `laptop`:
 
 ```bash
-kubectl -n rta exec deploy/rta-rta-chart-tobi -- rta agent log --limit 20
+kubectl -n rta exec deploy/rta-tobi -- rta agent log --limit 20
 ```
 
 The agent's tool list carries the `kube` reads and no way to mint an identity, and nothing that describes the machine the instance runs on — a remote transport never registers those.
@@ -163,7 +163,7 @@ rta kube serviceaccount revoke agent-payments --profile payments-staging
 
 `list` is an estimate from what provisioning recorded, since Kubernetes keeps no object for a token to ask about. The kubelet refreshes a mounted Secret in place and kubectl reads the file on every call, so the instance needs no restart; revoke once the new file has landed. Revoking deletes the ServiceAccount, which is also the one way to end a token before its time: every token minted against it stops working at once.
 
-That takes the reach away. To stop the agent itself, [lock it](../30-boundary/45-stop-an-agent-now.md) on the instance — `kubectl -n rta exec deploy/rta-rta-chart-tobi -- rta lock add tobi` — and every call it makes is refused from the next one.
+That takes the reach away. To stop the agent itself, [lock it](../30-boundary/45-stop-an-agent-now.md) on the instance — `kubectl -n rta exec deploy/rta-tobi -- rta lock add tobi` — and every call it makes is refused from the next one.
 
 ## Related
 
