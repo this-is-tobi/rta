@@ -1,7 +1,7 @@
 # Configuration for chart-testing (https://github.com/helm/chart-testing), which drives both chart
 # gates in ci.yml: `ct lint` and `ct install` against a throwaway Kind cluster.
 #
-# ct lints and installs each chart with the values files it finds in `charts/rta-chart/ci/`, in
+# ct lints and installs each chart with the values files it finds in `charts/rta/ci/`, in
 # place of the chart's own values.yaml. That indirection is load-bearing here rather than
 # incidental: values.yaml ships `servers: {}`, and templates/validation.yaml fails deliberately on
 # it, because this chart's unit is the instance and a release with no servers deploys nothing. Run

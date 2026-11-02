@@ -502,7 +502,7 @@ jobs:
   # The chart deploys the boundary, so a chart that renders wrong is a boundary
   # that is wrong — and until now nothing checked it anywhere except a Makefile
   # target somebody had to remember to run. `ct lint` renders and lints it
-  # against the fixtures in charts/rta-chart/ci/; the docs half of the same
+  # against the fixtures in charts/rta/ci/; the docs half of the same
   # workflow re-runs helm-docs against a read-only mount, so a values.yaml
   # change never reflected in the chart's README fails here instead of shipping
   # a values table that lies.
@@ -530,7 +530,7 @@ jobs:
     permissions:
       contents: read
     with:
-      CHART_PATH: charts/rta-chart
+      CHART_PATH: charts/rta
       VALUES_FILES: values.yaml,ci/test-values.yaml
 
   # The half of the schema no reusable workflow can check. values.schema.json

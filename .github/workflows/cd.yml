@@ -206,17 +206,19 @@ jobs:
     with:
       RUN_MODE: local
       CHART_DIR: charts
-      CHART_NAME: rta-chart
+      CHART_NAME: rta
       APP_VERSION: ${{ needs.release.outputs.version }}
     secrets:
       APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
-  # REGISTRY and REPOSITORY are left at their defaults — ghcr.io and
-  # github.repository — because those already resolve to
-  # ghcr.io/this-is-tobi/rta/rta-chart, the address docs/30-boundary/80-kubernetes.md
-  # and the chart's own README tell people to `helm install` from. Restating
-  # them here would be a second place for that to drift.
+  # REGISTRY is left at its default, ghcr.io. REPOSITORY is not: the default,
+  # github.repository, would publish the chart at ghcr.io/this-is-tobi/rta/rta,
+  # next to the image, while every chart of this-is-tobi lives under
+  # ghcr.io/this-is-tobi/charts/<chart name> — the address
+  # docs/30-boundary/80-kubernetes.md and the chart's own README tell people
+  # to `helm install` from. The versions up to 0.42.1 are still at
+  # ghcr.io/this-is-tobi/rta/rta-chart, frozen: nothing pushes there again.
   chart:
     name: Release Helm chart
     needs: [bump-chart]
@@ -226,11 +228,12 @@ jobs:
       packages: write
     with:
       CHARTS_DIR: ./charts
-      CHART_NAME: rta-chart
+      CHART_NAME: rta
+      REPOSITORY: this-is-tobi/charts
       # The bump commit, not the commit that triggered this run. Packaging the
       # latter would publish whatever version Chart.yaml held *before*
       # bump-chart wrote to it, leaving the registry and git disagreeing about
-      # what a given rta-chart version contains.
+      # what a given chart version contains.
       CHECKOUT_REF: ${{ needs.bump-chart.outputs.commit-sha }}
 
   # Same reasoning as attest-binaries and attest-docker, for the artifact that
