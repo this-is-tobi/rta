@@ -429,7 +429,7 @@ proto-check: ## Refuse a change that breaks a plugin already compiled against v1
 
 ##@ Chart
 
-CHART_DIR ?= charts/rta-chart
+CHART_DIR ?= charts/rta
 
 # The chart's values schema does not restate what a config file may hold — it
 # embeds the schema rta already publishes.

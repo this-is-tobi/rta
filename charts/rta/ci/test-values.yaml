@@ -1,6 +1,6 @@
 # Values used by `ct lint` and `ct install` in a Kind cluster, and the fastest local smoke test:
 #
-#   helm template rta charts/rta-chart -f charts/rta-chart/ci/test-values.yaml
+#   helm template rta charts/rta -f charts/rta/ci/test-values.yaml
 #
 # The `ci/` directory is not decoration: chart-testing looks for `ci/*-values.yaml` under the chart
 # and, finding any, runs each of them *instead of* the chart's own values.yaml. That is what this

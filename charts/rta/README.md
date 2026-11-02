@@ -1,4 +1,4 @@
-# rta-chart
+# rta
 
 Deploy rta MCP servers into Kubernetes, one instance per person.
 
@@ -17,7 +17,7 @@ Per instance: a Deployment, a Service, a ServiceAccount, a PersistentVolumeClaim
 ## Quickstart
 
 ```bash
-helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart \
+helm install rta oci://ghcr.io/this-is-tobi/charts/rta \
   --namespace rta --create-namespace \
   --values my-values.yaml
 ```
