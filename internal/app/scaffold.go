@@ -307,7 +307,7 @@ func toolchainVersion() string {
 	if m := regexp.MustCompile(`^go(\d+\.\d+(?:\.\d+)?)`).FindStringSubmatch(runtime.Version()); m != nil {
 		return m[1]
 	}
-	return "1.26"
+	return "1.27"
 }
 
 const mainTemplate = `// Command {{.Binary}} is an rta plugin.

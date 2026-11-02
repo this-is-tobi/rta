@@ -1749,19 +1749,21 @@ func resolveCmd(cmd tea.Cmd) (tea.Msg, bool) {
 // A blink is a fresh closure every time, so the value itself compares to
 // nothing; but a closure's address is the code of the function literal that
 // built it, and every blink is built by the one literal in cursor's Blink,
-// every tick by the one in bubbletea's Tick. One each only because neither
-// function is small enough to inline: Go 1.26, which this module builds
-// with, compiles a copy of a literal into every call site it inlines the
-// function holding it at, and each copy has an address of its own (1.27
-// shares one). Taken by asking the two libraries for one of each rather than
-// by naming them, so a release that moves or renames either literal still
-// lands here. TestAClockIsToldApartByTheCodeItRuns holds it to a blink a
-// real text box builds and a tick built in the test, call sites of their
-// own, so a release that makes either function inlinable fails there rather
-// than leaving every settle waiting out a clock. Taken on first use and not
-// when the package loads, because asking a cursor for a blink starts that
-// blink's own half-second timer, and every rta process loads this package
-// whether or not it ever opens a form.
+// every tick by the one in bubbletea's Tick. One each even where either
+// function is inlined: Go 1.27, which this module builds with, gives every
+// copy of a literal that inlining makes the one address (1.26 gave each call
+// site's copy an address of its own, and this held then only because neither
+// function was small enough to inline). Taken by asking the two libraries
+// for one of each rather than by naming them, so a release that moves or
+// renames either literal still lands here.
+// TestAClockIsToldApartByTheCodeItRuns holds it to a blink a real text box
+// builds and a tick built in the test, call sites of their own, so a
+// toolchain that went back to an address per copy, or a release that builds
+// either clock some other way, fails there rather than leaving every settle
+// waiting out a clock. Taken on first use and not when the package loads,
+// because asking a cursor for a blink starts that blink's own half-second
+// timer, and every rta process loads this package whether or not it ever
+// opens a form.
 var clockCode = sync.OnceValue(func() map[uintptr]bool {
 	blinking := cursor.New()
 	return map[uintptr]bool{
