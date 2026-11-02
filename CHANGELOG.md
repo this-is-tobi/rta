@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.57.1](https://github.com/this-is-tobi/rta/compare/v0.57.0...v0.57.1) (2026-11-02)
+
+
+### Dependencies
+
+* **deps:** update gcr.io/distroless/static-debian13 to 25ac8f0 ([a0f0e60](https://github.com/this-is-tobi/rta/commit/a0f0e604082a6930313e937c3a2cb36290f5c58e))
+* **deps:** update go modules ([e980583](https://github.com/this-is-tobi/rta/commit/e980583562f01ded291942af7eda220e08489b94))
+* rta builds with Go 1.27.3 and keeps macOS's own certificate verifier ([d492155](https://github.com/this-is-tobi/rta/commit/d492155441019be97820d0d21412cffa3b625eb0))
+
 ## [0.57.0](https://github.com/this-is-tobi/rta/compare/v0.56.0...v0.57.0) (2026-11-01)
 
 
