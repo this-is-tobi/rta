@@ -15,7 +15,7 @@ Which is why the security pages below are not an appendix, and why every one of 
 ```bash
 # a release binary, with the gh CLI (macOS or Linux, amd64 or arm64)
 gh release download --repo this-is-tobi/rta --pattern "rta_*_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" && tar -xzf rta_*.tar.gz rta && install -m 0755 rta /usr/local/bin/rta
-# or from source, with Go 1.26 or newer
+# or from source, with Go 1.27 or newer
 git clone https://github.com/this-is-tobi/rta.git && cd rta && make install
 # or the container image
 docker run --rm ghcr.io/this-is-tobi/rta:latest --version

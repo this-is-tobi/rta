@@ -206,6 +206,10 @@ func UseVerifierSystem(goos string) (restore func()) {
 //
 // Go's verifier says so as an x509.UnknownAuthorityError, and it is the one
 // that runs whenever a CA file is set, on every system, and on Linux always.
+// On macOS it also runs, from Go 1.27, whenever SSL_CERT_FILE or
+// SSL_CERT_DIR is set, both of which rta hands every plugin, with its roots
+// read from them as from a CA file, unless the binary's go.mod keeps
+// `godebug x509sslcertoverrideplatform=0`, as rta's own does.
 // With none set, macOS and iOS ask the system's verifier instead, which Go
 // types for three of its verdicts — an expired certificate, a host it is not
 // for, a root nothing trusts (errSecNotTrusted, as UnknownAuthorityError) —

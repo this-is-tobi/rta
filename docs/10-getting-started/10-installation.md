@@ -63,7 +63,7 @@ The exit status is `0` unless a row is an `error`, when it is `1`; `rta doctor -
 
 ## Supported platforms
 
-rta is built for macOS and Linux, on `amd64` and `arm64`, and the two systems differ in the places this table lists. The rest behaves the same on both, apart from what the host itself reports: `sys` reads the machine it runs on, and `pkg` drives the package managers that machine has.
+rta is built for macOS and Linux, on `amd64` and `arm64`, and the two systems differ in the places this table lists. On macOS it needs 13 Ventura or later, the oldest the Go toolchain it is built with supports. The rest behaves the same on both, apart from what the host itself reports: `sys` reads the machine it runs on, and `pkg` drives the package managers that machine has.
 
 | | macOS | Linux |
 | --- | --- | --- |
