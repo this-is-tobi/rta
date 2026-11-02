@@ -3,7 +3,8 @@
 # always generated for every app/env combination) without deploying any resource into it.
 # @section -- General
 enabled: true
-# -- Provide a name in place of the default chart name.
+# -- Provide a name in place of the default chart name. A release made by this chart's former name sets `rta-chart`
+# here, before its first upgrade, to keep the names its objects have: its data volume's claim included.
 # @section -- General
 nameOverride: ""
 # -- String to fully override the default fully-qualified name.

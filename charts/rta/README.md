@@ -52,6 +52,16 @@ Values combinations that rta would refuse at startup are refused at render time 
 
 Setting up the identity provider is its own subject, including the Keycloak audience mapper without which every token is rejected: see [OIDC](https://github.com/this-is-tobi/rta/blob/main/docs/30-boundary/70-oidc.md).
 
+## Upgrading from `rta-chart`
+
+Up to version 0.42.1 this chart was named `rta-chart` and published as `rta/rta-chart`, where those versions stay. The chart's name builds the name of every object it renders, the data volume's claim included, so a release made by the old chart has to keep rendering the names it has. Set this in its values **before** the first upgrade to this chart:
+
+```yaml
+nameOverride: rta-chart
+```
+
+With it the release renders what `rta-chart` 0.42.1 rendered, object for object. Without it Helm renames the objects and deletes the old ones, the data volume with them, and the grants and the record live there. A release installed from this chart needs nothing: its objects are named `<release>-<server>`.
+
 ## Two things in the logs that look wrong and are not
 
 **`… is group-readable — anyone in that group can authenticate as every label it holds`, on every start.** This is the chart working. Kubernetes writes Secret volume files owned by `root`; the container runs as a non-root user. The obvious fix, `defaultMode: 0400`, is the wrong one: an owner-only file owned by root is one the process cannot open at all, trading a permission refusal for a missing credential. The chart mounts `0440` with an `fsGroup`, and rta leaves group-read outside its refusal mask precisely so a shared-group file can hand a credential to a service account. It warns and starts.
@@ -122,7 +132,7 @@ Nothing else is needed for its plugins to load. The image keeps them, with their
 | grafanaDashboard.label | string | `"grafana_dashboard"` | Label a dashboard sidecar watches for. The default is what kube-prometheus-stack and the Grafana chart use. |
 | grafanaDashboard.labelValue | string | `"1"` | Value of that label. |
 | grafanaDashboard.namespace | string | `""` | Namespace to place the ConfigMap in. Empty uses the release namespace; set it when Grafana's sidecar only watches its own. |
-| nameOverride | string | `""` | Provide a name in place of the default chart name. |
+| nameOverride | string | `""` | Provide a name in place of the default chart name. A release made by this chart's former name sets `rta-chart` here, before its first upgrade, to keep the names its objects have: its data volume's claim included. |
 | servers | object | `{}` | The instances this release deploys, one entry per person. Each key names the instance and, by default, the identity it authenticates as; each entry is layered over `serverDefaults`.  One server for everyone is what this shape exists to avoid. A shared instance costs per-person access control, a record that can say who did what, live consent that reaches the right person, `rta use`, and blast radius - so the unit here is the instance, not the release. A platform team owns one release; adding a person is one entry. |
 
 ### Global
