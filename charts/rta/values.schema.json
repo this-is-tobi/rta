@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "rta-chart values",
+  "title": "rta values",
   "description": "Shape and enum validation for this chart's values. Deliberately permissive: every object allows additionalProperties and nothing is required, because a `servers` entry is a partial layered over `serverDefaults` and a schema that demanded a complete instance there would reject every correct values file. What this schema cannot express - which values require which other values - is enforced at render time by `rta.server.validate` in templates/_helpers.tpl, which fails with the values key to fix. The `rtaConfig` definition is not hand-written: `make chart-schema` replaces it with the output of `rta config schema`, so the config block a person writes here is validated against the same schema rta itself publishes, and `make chart-schema-check` fails when the two drift.",
   "type": "object",
   "additionalProperties": true,

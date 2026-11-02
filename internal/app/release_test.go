@@ -45,7 +45,7 @@ func TestNothingIsReleasedAsStableBeforeThatIsDecided(t *testing.T) {
 		}
 	}
 
-	chart, err := os.ReadFile(filepath.Join(root, "charts", "rta-chart", "Chart.yaml"))
+	chart, err := os.ReadFile(filepath.Join(root, "charts", "rta", "Chart.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
