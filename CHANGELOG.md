@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.58.0](https://github.com/this-is-tobi/rta/compare/v0.57.1...v0.58.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **chart:** the chart is rta, at oci://ghcr.io/this-is-tobi/charts/rta, not rta-chart. A release installed from rta/rta-chart sets nameOverride: rta-chart before it upgrades to this chart, or its objects are renamed and its data volume is replaced. Versions up to 0.42.1 stay at ghcr.io/this-is-tobi/rta/rta-chart.
+
+### Code Refactoring
+
+* **chart:** the chart is named rta and lives in charts/rta ([8c689d0](https://github.com/this-is-tobi/rta/commit/8c689d0e064b349ad09681a00f54d8aa302a96ba))
+
+
+### Dependencies
+
+* **make:** the chart schema is generated the way CI generates it ([82d1e35](https://github.com/this-is-tobi/rta/commit/82d1e359276a5f82d11bc3ea5b6e6692863dd93d))
+
 ## [0.57.1](https://github.com/this-is-tobi/rta/compare/v0.57.0...v0.57.1) (2026-11-02)
 
 
