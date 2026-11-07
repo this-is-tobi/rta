@@ -38,7 +38,7 @@ func refusedBy(e *agentlog.Entry, verr *view.Error) {
 	if e == nil || verr == nil {
 		return
 	}
-	e.Outcome, e.Code, e.Reason = agentlog.Refused, cut(verr.Code, maxCode), cut(textclean.Credentials(verr.Message), maxReason)
+	e.Outcome, e.Code, e.Reason = agentlog.Refused, agentlog.Clip(verr.Code, maxCode), agentlog.Clip(textclean.Credentials(verr.Message), maxReason)
 }
 
 // maxReason and maxCode bound what a handler's error may put in a row. A
@@ -49,24 +49,13 @@ const (
 	maxCode   = 128
 )
 
-func cut(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for len(s) > n {
-		_, size := utf8.DecodeLastRuneInString(s)
-		s = s[:len(s)-size]
-	}
-	return s + "…"
-}
-
 // failedBy is refusedBy's sibling for the other outcome: the call was
 // allowed and the work broke.
 func failedBy(e *agentlog.Entry, verr *view.Error) {
 	if e == nil || verr == nil {
 		return
 	}
-	e.Outcome, e.Code, e.Reason = agentlog.Failed, cut(verr.Code, maxCode), cut(textclean.Credentials(verr.Message), maxReason)
+	e.Outcome, e.Code, e.Reason = agentlog.Failed, agentlog.Clip(verr.Code, maxCode), agentlog.Clip(textclean.Credentials(verr.Message), maxReason)
 }
 
 // maxClientName bounds what a caller may write into every one of its own

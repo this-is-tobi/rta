@@ -813,14 +813,14 @@ func Append(e Entry) (err error) {
 			e.Records, omitted = nil, "arguments and records"
 		}
 		e.Args = map[string]any{"…": fmt.Sprintf("%d bytes of %s, omitted", len(body), omitted)}
-		e.Reason = clip(e.Reason, maxField)
-		e.Code = clip(e.Code, maxField)
-		e.Client = clip(e.Client, maxField)
-		e.Credential = clip(e.Credential, maxField)
-		e.Agent = clip(e.Agent, maxField)
-		e.Profile = clip(e.Profile, maxField)
-		e.Tool = clip(e.Tool, maxField)
-		e.Cap = clip(e.Cap, maxField)
+		e.Reason = Clip(e.Reason, maxField)
+		e.Code = Clip(e.Code, maxField)
+		e.Client = Clip(e.Client, maxField)
+		e.Credential = Clip(e.Credential, maxField)
+		e.Agent = Clip(e.Agent, maxField)
+		e.Profile = Clip(e.Profile, maxField)
+		e.Tool = Clip(e.Tool, maxField)
+		e.Cap = Clip(e.Cap, maxField)
 		if body, err = marshalLine(e); err != nil {
 			return err
 		}
@@ -1661,10 +1661,12 @@ func (l *lineReader) Scan() bool {
 func (l *lineReader) Text() string { return l.line }
 func (l *lineReader) Err() error   { return l.err }
 
-// clip cuts s to at most n bytes on a rune boundary, marking the cut: a
+// Clip cuts s to at most n bytes on a rune boundary, marking the cut: a
 // byte-slice through a multi-byte character would put invalid UTF-8 into a
-// sealed file, where it stays forever.
-func clip(s string, n int) string {
+// sealed file, where it stays forever. Exported for the MCP bridge, which
+// bounds what it puts in an entry before handing it over and kept a copy of
+// this beside it.
+func Clip(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
