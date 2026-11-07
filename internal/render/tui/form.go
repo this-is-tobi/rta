@@ -15,6 +15,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/this-is-tobi/rta/internal/boxlist"
 	"github.com/this-is-tobi/rta/internal/recent"
@@ -840,10 +841,14 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 				v = d
 			}
 			cf.bools[f.Name] = &v
+			// Left, under the question, as every other box's answer is: huh
+			// centres a toggle's buttons, so the toggles of one form each began
+			// at a different column and the eye had to hunt for every one.
 			fields = append(fields, huh.NewConfirm().
 				Title(cf.label(f)).
 				Description(f.Help).
 				Affirmative("yes").Negative("no").
+				WithButtonAlignment(lipgloss.Left).
 				Value(&v))
 		case plugin.Text:
 			// No suggestion list: huh's Text has no Suggestions of any kind
