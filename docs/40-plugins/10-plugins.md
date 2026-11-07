@@ -150,7 +150,7 @@ rta plugin access add cnpg kubeconfig  # or just that one
 rta plugin access rm cnpg              # take it back
 ```
 
-This is deliberately a second decision, separate from `rta plugin trust`. Letting an artifact run and letting it read your cluster credentials are different questions, and an answer to the first must not stand in for the second. Both attach to the artifact's digest, so **rebuilding a plugin asks again** — for the credential grant exactly as for trust, and for the same reason.
+This is deliberately a second decision, separate from `rta plugin trust`. Letting an artifact run and letting it read your cluster credentials are different questions, and an answer to the first must not stand in for the second. Both attach to the artifact's digest, so **rebuilding a plugin asks again** — for the credential grant exactly as for trust, and for the same reason. Upgrading one asks again for the credential grant alone: installing the new build approves it to run, and its receipt names what the old build could read, with the command that gives it back ([what an upgrade leaves behind](./12-indexes-and-upgrades.md#what-an-upgrade-leaves-behind)).
 
 You can only give a plugin what its artifact asked for. A location a plugin never declared is access nobody requested, so there is no way to hand it over — and a record that names one anyway, written by anything but `rta plugin access add`, opens nothing.
 

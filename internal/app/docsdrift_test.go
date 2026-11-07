@@ -743,6 +743,9 @@ func TestTheGlossaryExplainsEveryAcronymTheDocsUse(t *testing.T) {
 	glossary := readDoc(t, root, "docs/95-reference/10-glossary.md")
 	span := regexp.MustCompile("`[^`\n]*`")
 	link := regexp.MustCompile(`\]\([^)]*\)`)
+	// An alert's marker, `> [!CAUTION]`, is markup GitHub and the site both
+	// draw as a banner with a title of their own, never a word a reader meets.
+	alert := regexp.MustCompile(`^>\s*\[![A-Z]+\]`)
 	word := regexp.MustCompile(`\b[A-Z][A-Z0-9]{1,6}\b`)
 
 	used := map[string]string{}
@@ -759,7 +762,7 @@ func TestTheGlossaryExplainsEveryAcronymTheDocsUse(t *testing.T) {
 			if fenced {
 				continue
 			}
-			line = link.ReplaceAllString(span.ReplaceAllString(line, ""), "]")
+			line = link.ReplaceAllString(span.ReplaceAllString(alert.ReplaceAllString(line, ""), ""), "]")
 			for _, w := range word.FindAllString(line, -1) {
 				if _, seen := used[w]; !seen {
 					used[w] = page + ":" + strconv.Itoa(i+1)
