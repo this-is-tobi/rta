@@ -6,8 +6,11 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/plugindist"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -162,8 +165,10 @@ func TestAnUpgradeNamesWhatTheConfigPinnedAndHowToMoveIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := pairs(false)
-	if v := got["your profiles"]; !strings.Contains(v, "1 profile (staging)") || strings.Contains(v, "other") ||
-		!strings.Contains(v, "`rta profile repin --all --plugin hello`") || !strings.Contains(v, "hello@099d72c38cfc") {
+	// One profile is said as one: it read "1 profile (staging) pin … and now
+	// refuse — … points them at".
+	if v := got["your profiles"]; !strings.Contains(v, "1 profile (staging) pins hello@6db7eaeebf84 and now refuses") ||
+		strings.Contains(v, "other") || !strings.Contains(v, "`rta profile repin --all --plugin hello` points it at hello@099d72c38cfc") {
 		t.Errorf("profiles row = %q", v)
 	}
 	// The section's line says what happens to the next call, now refused, and
@@ -178,6 +183,93 @@ func TestAnUpgradeNamesWhatTheConfigPinnedAndHowToMoveIt(t *testing.T) {
 	}
 	if v := pairs(true)["your pin"]; !strings.Contains(v, "still applies") || !strings.Contains(v, "rta config repin") {
 		t.Errorf("a dry run's pin row = %q", v)
+	}
+}
+
+// An upgrade also says what the operator let the old build read and which
+// grants were issued against it, since neither comes along: both are bound to
+// the old bytes. The access line names the locations when the build declares
+// more than the old one was given, because `access add hello` alone would hand
+// over the rest in the operator's name, and it says nothing when these bytes
+// were given it before.
+func TestAnUpgradeNamesTheAccessAndTheGrantsTheOldBuildHad(t *testing.T) {
+	isolate(t)
+	old, fresh := "6db7eaeebf84"+strings.Repeat("0", 52), "099d72c38cfc"+strings.Repeat("1", 52)
+	for digest, at := range map[string]string{old: "/store/hello/old", fresh: "/store/hello/new"} {
+		if verr := plugintrust.Add(digest, "hello", at); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	if verr := plugintrust.Allow(old, []string{string(plugin.NeedKubeconfig)}); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := plugintrust.AllowPaths(old, []string{"/srv/lab certs"}); verr != nil {
+		t.Fatal(verr)
+	}
+	now := time.Now()
+	soon := now.Add(15 * time.Minute)
+	if verr := grant.Save([]grant.Grant{
+		{Target: "hello.item.rm", Agent: "claude", Digest: old, Issued: now, Expires: soon},
+		{Target: "hello.item.rm", Agent: "codex", Digest: old, Issued: now, Expires: soon},
+		{Target: "hello.item.list", Agent: "claude", Digest: fresh, Issued: now, Expires: soon},
+		{Target: "other.item.rm", Agent: "claude", Digest: old, Issued: now, Expires: soon},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
+	up := plugindist.Upgraded{
+		Report: plugindist.Report{Name: "hello", Digest: fresh, Declared: plugin.Plugin{
+			Name: "hello", Needs: []plugin.Need{plugin.NeedKubeconfig, plugin.NeedSSH}}},
+		FromDigest: old,
+	}
+	pairs := func(dryRun bool) map[string]string {
+		out := map[string]string{}
+		for _, p := range leftBehind(up, dryRun) {
+			out[p.Key] = p.Value
+		}
+		return out
+	}
+
+	got := pairs(false)
+	// ssh is declared and was never given, so it is not the upgrade's to
+	// mention, and the command gives kubeconfig rather than everything declared.
+	if v := got["your access"]; !strings.Contains(v, "hello@6db7eaeebf84 could read kubeconfig") ||
+		!strings.Contains(v, "hello@099d72c38cfc cannot until `rta plugin access add hello kubeconfig`") ||
+		strings.Contains(v, "ssh") {
+		t.Errorf("access row = %q", v)
+	}
+	if v := got["your paths"]; !strings.Contains(v, "could read /srv/lab certs under confine: strict") ||
+		!strings.Contains(v, "`rta plugin access add hello --path '/srv/lab certs'`") {
+		t.Errorf("paths row = %q", v)
+	}
+	// Two grants on the one target are named once and counted twice; the grant
+	// on the new build and the one on another plugin are not this upgrade's.
+	if v := got["your grants"]; !strings.Contains(v, "2 grants issued against hello@6db7eaeebf84 authorize nothing now: hello.item.rm —") ||
+		!strings.Contains(v, "`rta grant allow` issues each again for hello@099d72c38cfc") ||
+		strings.Contains(v, "hello.item.list") || strings.Contains(v, "other") {
+		t.Errorf("grants row = %q", v)
+	}
+
+	preview := pairs(true)
+	if v := preview["your access"]; !strings.Contains(v, "hello@6db7eaeebf84 can read kubeconfig") ||
+		!strings.Contains(v, "after the upgrade hello@099d72c38cfc cannot") {
+		t.Errorf("a dry run's access row = %q", v)
+	}
+	if v := preview["your grants"]; !strings.Contains(v, "will authorize nothing after the upgrade") {
+		t.Errorf("a dry run's grants row = %q", v)
+	}
+
+	// Given everything it declares, it is given it back with the plain command.
+	up.Declared.Needs = []plugin.Need{plugin.NeedKubeconfig}
+	if v := pairs(false)["your access"]; !strings.Contains(v, "until `rta plugin access add hello`") {
+		t.Errorf("access row for a build declaring only what it had = %q", v)
+	}
+	// These bytes were given kubeconfig before, as a rollback finds them, so
+	// the upgrade took nothing away.
+	if verr := plugintrust.Allow(fresh, []string{string(plugin.NeedKubeconfig)}); verr != nil {
+		t.Fatal(verr)
+	}
+	if v, said := pairs(false)["your access"]; said {
+		t.Errorf("a build already given its access was said to have lost it: %q", v)
 	}
 }
 

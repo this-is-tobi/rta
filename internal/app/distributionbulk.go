@@ -58,7 +58,13 @@ func bulkScope(cmd *cobra.Command, args []string, all bool, code, verb string) (
 // summarised into a count, because the reasons are the entire point of holding
 // them back. Pointing at another command to see them would be handing over the
 // answer in instalments — what withOthers exists to avoid one layer down.
-func upgradeAllView(outcomes []plugindist.UpgradeOutcome, dryRun bool) (view.View, *view.Error) {
+//
+// left is what the moved plugins left behind (sweepLeftBehind), a section of
+// its own under the table for the same reason: the sweep's page was the table
+// alone, while `upgrade <name>` named the profiles and the section pinned to
+// the old build, so the command that moves twelve plugins at once was the one
+// that said nothing of what they left.
+func upgradeAllView(outcomes []plugindist.UpgradeOutcome, left []view.Pair, dryRun bool) (view.View, *view.Error) {
 	if len(outcomes) == 0 {
 		return view.Text{Body: "no plugin is installed"}, nil
 	}
@@ -99,11 +105,12 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, dryRun bool) (view.Vie
 	}
 
 	v := view.View(t)
-	if len(warnings) > 0 {
-		v = view.Sections{
-			Items:    []view.Section{{ID: "upgrades", Title: "Upgrades", View: t}},
-			Warnings: warnings,
-		}
+	items := []view.Section{{ID: "upgrades", Title: "Upgrades", View: t}}
+	if len(left) > 0 {
+		items = append(items, view.Section{ID: "left-behind", Title: "Left behind", View: view.KeyValue{Pairs: left}})
+	}
+	if len(items) > 1 || len(warnings) > 0 {
+		v = view.Sections{Items: items, Warnings: warnings}
 	}
 	if len(heldNames) == 0 && len(failedNames) == 0 {
 		return v, nil
@@ -125,6 +132,23 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, dryRun bool) (view.Vie
 		WithHint("every other plugin was upgraded; the warnings above say what stopped these")
 }
 
+// sweepLeftBehind is leftBehind for every plugin the sweep moved, each line
+// keyed by the plugin it is about rather than by what it is: one plugin's
+// receipt is about the one, and a sweep's is read a plugin at a time. A plugin
+// held back still runs the build all of it is bound to, so it left nothing.
+func sweepLeftBehind(outcomes []plugindist.UpgradeOutcome, dryRun bool) []view.Pair {
+	var pairs []view.Pair
+	for _, o := range outcomes {
+		if o.Problem != nil || o.Skipped() || o.UpToDate {
+			continue
+		}
+		for _, p := range leftBehind(o.Upgraded, dryRun) {
+			pairs = append(pairs, view.Pair{Key: o.Name, Value: p.Value})
+		}
+	}
+	return pairs
+}
+
 func runPluginUpgradeAll(cmd *cobra.Command, opts *globalOpts, index string) error {
 	// The sweep goes through what the record lists, and a record that cannot
 	// be read lists nothing: refused here, or the answer is "no plugin is
@@ -136,7 +160,8 @@ func runPluginUpgradeAll(cmd *cobra.Command, opts *globalOpts, index string) err
 	if opts.dryRun {
 		sweep = plugindist.PreviewUpgradeAll
 	}
-	v, verr := upgradeAllView(sweep(cmd.Context(), index), opts.dryRun)
+	outcomes := sweep(cmd.Context(), index)
+	v, verr := upgradeAllView(outcomes, sweepLeftBehind(outcomes, opts.dryRun), opts.dryRun)
 	if renderErr := renderView(cmd, opts, v); renderErr != nil {
 		return renderErr
 	}
