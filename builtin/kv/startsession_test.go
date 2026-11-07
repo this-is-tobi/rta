@@ -130,6 +130,9 @@ func TestThereIsNothingToUnlockWithoutAStoreOrWhenTheEnvironmentOpensIt(t *testi
 	if verr := StartSession(aPassphrase, time.Hour); verr == nil || verr.Code != "kv.session.nothing" {
 		t.Errorf("no store: verr = %+v", verr)
 	}
+	if got := NothingToUnlock(); !strings.Contains(got, "there is no store yet") {
+		t.Errorf("with no store the refusal says %q, want that there is none", got)
+	}
 
 	aStoreLockedWith(t, aPassphrase)
 	if p, ok := UnlockPrompt(); !ok || p != "the store's passphrase" {
@@ -139,8 +142,9 @@ func TestThereIsNothingToUnlockWithoutAStoreOrWhenTheEnvironmentOpensIt(t *testi
 	if _, ok := UnlockPrompt(); ok {
 		t.Error("a prompt was offered although the environment opens the store")
 	}
-	if verr := StartSession(aPassphrase, time.Hour); verr == nil || verr.Code != "kv.session.nothing" {
-		t.Errorf("environment: verr = %+v", verr)
+	if verr := StartSession(aPassphrase, time.Hour); verr == nil || verr.Code != "kv.session.nothing" ||
+		!strings.Contains(verr.Message, passphraseEnv) {
+		t.Errorf("environment: verr = %+v, want the refusal to name %s", verr, passphraseEnv)
 	}
 }
 
