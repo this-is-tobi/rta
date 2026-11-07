@@ -157,10 +157,17 @@ func (k keptAnswer) says(now time.Time, titleWidth, width int) string {
 
 // dimmed is a tile body with its colours taken off and the muted one put on: an
 // answer that is not current does not get to be green.
+//
+// An empty line is left empty. Coloured, it is an escape sequence, so the
+// newline a table's body ends in was no longer the end tileLines trims off,
+// and the tile was drawn a line taller from the moment its answer was kept.
 func dimmed(body string) string {
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
-		lines[i] = theme.Subtle.Render(ansi.Strip(line))
+		if line = ansi.Strip(line); line != "" {
+			line = theme.Subtle.Render(line)
+		}
+		lines[i] = line
 	}
 	return strings.Join(lines, "\n")
 }
