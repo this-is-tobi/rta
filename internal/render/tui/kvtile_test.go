@@ -79,10 +79,11 @@ func TestTheKvTileCountsTheStoreFromTheEnvironmentAndKeepsNoSession(t *testing.T
 	}
 }
 
-// With nothing that opens the store at hand the tile says that the count could
-// not be read and why, in a few words — the sentence that names the keys that
-// reach the passphrase box is the page's, since the tile has no room for it —
-// and does not wait for an answer.
+// With nothing that opens the store at hand the tile says the store is locked
+// and that U opens it, without the colour of trouble — a passphrase store at
+// rest is the store doing its job — and does not wait for an answer. The
+// sentence that names the other ways is the page's, since the tile has no room
+// for it.
 func TestTheKvTileOfAStoreItCannotOpenSaysWhatItNeeds(t *testing.T) {
 	kv.ForgetSession()
 	t.Cleanup(kv.ForgetSession)
@@ -98,10 +99,10 @@ func TestTheKvTileOfAStoreItCannotOpenSaysWhatItNeeds(t *testing.T) {
 
 	tileView := kvTile(t, "")
 	line := tilePair(tileView, "inventory")
-	if want := "could not be read — no key at hand"; line != want {
+	if want := "locked — U unlocks it here"; line != want {
 		t.Errorf("the tile says inventory = %q, want %q", line, want)
 	}
-	if got, want := tilePair(tileView, "status"), "warn — locked"; got != want {
+	if got, want := tilePair(tileView, "status"), "ok — locked"; got != want {
 		t.Errorf("the tile says status = %q, want %q", got, want)
 	}
 	if strings.Contains(line, "box") {

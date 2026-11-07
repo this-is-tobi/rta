@@ -385,10 +385,10 @@ func TestTheOverviewNamesTheKeysThatReachThePassphraseBox(t *testing.T) {
 	seeded(t)
 	tui := plugin.NewRequest(nil, false, false).WithSurface(plugin.SurfaceTUI)
 
-	// The tile has no room for the keys, and says so in four words: `U` in the
-	// footer is the way in, and the page enter opens has the rest.
+	// The tile has no room for the keys, and names the one that opens the store
+	// from it, U; the page enter opens has the rest.
 	tile := pairValue(overviewPairs(t, tui), "inventory")
-	if want := "could not be read — no key at hand"; tile != want {
+	if want := "locked — U unlocks it here"; tile != want {
 		t.Errorf("the tile says %q, want %q", tile, want)
 	}
 	page := pairValue(sectionByID(t, overviewPage(t, tui), "summary").(view.KeyValue), "inventory")

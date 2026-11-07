@@ -118,6 +118,9 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 			value := cannotOpen(req, lerr)
 			if tile {
 				value = view.CouldNotRead(whyNot(req, lerr))
+				if keyMissing(req, lerr) && atRest() {
+					value = "locked — U unlocks it here"
+				}
 			}
 			pairs = append(pairs, view.Pair{Key: "inventory", Value: value})
 		}
@@ -176,11 +179,34 @@ func unreadableStore(verr *view.Error) []view.Pair {
 // notOpened is the verdict of a store the call could not open: locked when what
 // was missing or refused was the key, and not opened when it was something else,
 // which a lock is not the name of.
+//
+// **Locked at rest is ok.** A passphrase store with its passphrase away is the
+// store doing its job, the state it is in most of the day, and a person holds
+// what opens it (atRest): it was an amber tile from the moment it was made, the
+// colour a dashboard keeps for what needs a look, so amber came to mean nothing.
+// A key refused, or a key file that is not there to open a store locked to it,
+// is a store this machine cannot open, and stays a warning.
 func notOpened(req plugin.Request, lerr *view.Error) string {
-	if keyMissing(req, lerr) || keyRefused(req, lerr) {
+	switch {
+	case keyMissing(req, lerr) && atRest():
+		return "ok — locked"
+	case keyMissing(req, lerr) || keyRefused(req, lerr):
 		return "warn — locked"
 	}
 	return "warn — not opened"
+}
+
+// atRest is a store locked by what a person holds: a passphrase, or a key file
+// that asks for one (LockedIdentity), which is what the dashboard's U asks for.
+// A fact about the store, and not UnlockPrompt's question, which also answers
+// no while a session holds the store: that is about this process, and the
+// verdict then turned on whatever had last opened it.
+func atRest() bool {
+	mode, _, verr := currentMode()
+	if verr != nil {
+		return false
+	}
+	return mode == modePassphrase || LockedIdentity() != ""
 }
 
 // whyNot is the few words a tile has for why the store did not open, where the
