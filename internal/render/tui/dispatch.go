@@ -885,10 +885,24 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// "no matches". A launcher's query is spent by launching; the result
 		// screen already names what was picked. It is kept apart for esc,
 		// which walks back to the box open on it, where it is on screen.
+		// A call typed as the hints write one opens its form with what it
+		// stated, for the person to read and send: nothing runs from the bar
+		// that would not have run before, it only arrives filled in.
+		_, given := searchCall(m.query)
+		prev, refused := givenValues(c, given)
+		if refused != "" {
+			m.searchEditing = true
+			m.refuse(refused)
+			return m, nil
+		}
 		m.backQuery, m.backSel = m.query, m.searchSel
 		m.query, m.searchSel = "", 0
 		m.origin = modeDashboard
 		m.trail = nil
+		if len(given) > 0 {
+			m.current, m.formBehind, m.row, m.refreshPending = c, false, 0, false
+			return m.startForm(c, prev)
+		}
 		return m.open(c)
 	case "+":
 		// The match onto the dashboard rather than opened: the one key a
