@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/plugindist"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -460,14 +463,16 @@ func stalePinPairs(name, from, to string, dryRun bool) []view.Pair {
 	}
 	newPin := name + "@" + shortDigest(to)
 	var pairs []view.Pair
-	if len(profiles) > 0 {
-		note := format.Count(len(profiles), "profile", "profiles") + " (" + strings.Join(profiles, ", ") +
-			") pin " + name + "@" + shortDigest(from)
+	if n := len(profiles); n > 0 {
+		them := format.Plural(n, "it", "them")
+		note := format.Count(n, "profile", "profiles") + " (" + strings.Join(profiles, ", ") + ") " +
+			format.Plural(n, "pins", "pin") + " " + name + "@" + shortDigest(from)
 		if dryRun {
 			note += ", and will refuse after the upgrade until `rta profile repin --all --plugin " + name +
-				"` points them at " + newPin
+				"` points " + them + " at " + newPin
 		} else {
-			note += " and now refuse — `rta profile repin --all --plugin " + name + "` points them at " + newPin
+			note += " and now " + format.Plural(n, "refuses", "refuse") + " — `rta profile repin --all --plugin " +
+				name + "` points " + them + " at " + newPin
 		}
 		pairs = append(pairs, view.Pair{Key: "your profiles", Value: note})
 	}
@@ -485,6 +490,117 @@ func stalePinPairs(name, from, to string, dryRun bool) []view.Pair {
 		pairs = append(pairs, view.Pair{Key: "your pin", Value: note})
 	}
 	return pairs
+}
+
+// leftBehind is everything an upgrade leaves bound to the build it replaced,
+// each said with the command that binds it to the new one: the profiles and
+// the plugins: section pinned to it (stalePinPairs), what the operator let it
+// read, and the grants issued against it. Nothing when nothing is.
+//
+// Said, and never done. Each is a decision somebody made about the old bytes —
+// that a profile's credentials go to them, that they may read the kubeconfig,
+// that an agent may call them — and the new build is another artifact, which
+// upgrading approves to run and to nothing more. Only the profiles and the
+// section were said, so a kube whose kubeconfig was given to the old build met
+// its next call with kubectl's "operation not permitted", over a file it had
+// read before the upgrade, and nothing on the receipt said why.
+func leftBehind(up plugindist.Upgraded, dryRun bool) []view.Pair {
+	pairs := stalePinPairs(up.Name, up.FromDigest, up.Digest, dryRun)
+	pairs = append(pairs, lostAccessPairs(up, dryRun)...)
+	return append(pairs, replacedGrantPairs(up.Name, up.FromDigest, up.Digest, dryRun)...)
+}
+
+// lostAccessPairs says what the operator let the old build read that the new
+// one may not: the credential locations it was given and still declares, and
+// the paths named for it under confine: strict. Both are recorded against the
+// artifact's digest (plugintrust), so a new build starts with neither unless
+// these same bytes were given them before.
+//
+// The command names the locations whenever they are fewer than the build
+// declares. `rta plugin access add kube` alone gives everything it asks for,
+// and the line would then be handing out, in the operator's name, a location
+// the old build was never given. A location the new build no longer declares
+// is left out too: giving it opens nothing.
+func lostAccessPairs(up plugindist.Upgraded, dryRun bool) []view.Pair {
+	trust := plugintrust.Load()
+	had, has := trust.Allowed(up.FromDigest), trust.Allowed(up.Digest)
+	var lost []plugin.Need
+	for _, n := range up.Declared.Needs {
+		if slices.Contains(had, string(n)) && !slices.Contains(has, string(n)) {
+			lost = append(lost, n)
+		}
+	}
+	named := trust.Paths(up.Digest)
+	var paths []string
+	for _, p := range trust.Paths(up.FromDigest) {
+		if !slices.Contains(named, p) {
+			paths = append(paths, p)
+		}
+	}
+	from, to := up.Name+"@"+shortDigest(up.FromDigest), up.Name+"@"+shortDigest(up.Digest)
+	said := func(what, command string) string {
+		if dryRun {
+			return from + " can read " + what + ", and after the upgrade " + to + " cannot until `" + command + "`"
+		}
+		return from + " could read " + what + ", and " + to + " cannot until `" + command + "`"
+	}
+	var pairs []view.Pair
+	if len(lost) > 0 {
+		command := "rta plugin access add " + up.Name
+		lines := make([]string, len(lost))
+		for i, n := range lost {
+			lines[i] = needLine(n)
+			if len(lost) < len(up.Declared.Needs) {
+				command += " " + string(n)
+			}
+		}
+		pairs = append(pairs, view.Pair{Key: "your access", Value: said(strings.Join(lines, ", "), command)})
+	}
+	if len(paths) > 0 {
+		command := "rta plugin access add " + up.Name
+		for _, p := range paths {
+			command += " --path " + shellquote.Arg(p)
+		}
+		pairs = append(pairs, view.Pair{Key: "your paths",
+			Value: said(strings.Join(paths, ", ")+" under confine: strict", command)})
+	}
+	return pairs
+}
+
+// replacedGrantPairs names the grants issued against the old build. A grant is
+// bound to the build it was issued against (grant.Grant's Digest), so once
+// another answers for the plugin, each one standing on it is listed, inside
+// its window, and authorizes nothing: the calls it was issued for are refused
+// in the words an ungranted call gets. `rta grant list` marks them and rta
+// doctor warns of them; this is where they became so.
+func replacedGrantPairs(name, from, to string, dryRun bool) []view.Pair {
+	grants, verr := grant.Load()
+	if verr != nil {
+		return nil
+	}
+	n := 0
+	var named []string
+	for _, g := range grants {
+		if grant.Namespace(g.Target) != name || g.Digest != from {
+			continue
+		}
+		n++
+		if !slices.Contains(named, g.Named()) {
+			named = append(named, g.Named())
+		}
+	}
+	if n == 0 {
+		return nil
+	}
+	note := format.Count(n, "grant", "grants") + " issued against " + name + "@" + shortDigest(from)
+	if dryRun {
+		note += " will authorize nothing after the upgrade: "
+	} else {
+		note += " " + format.Plural(n, "authorizes", "authorize") + " nothing now: "
+	}
+	note += strings.Join(named, ", ") + " — `rta grant allow` issues " + format.Plural(n, "it", "each") +
+		" again for " + name + "@" + shortDigest(to)
+	return []view.Pair{{Key: "your grants", Value: note}}
 }
 
 // completeInstallable offers the names the attached indexes claim and that are
@@ -570,7 +686,12 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			"`--all` sweeps every installed plugin, and holds back any whose new\n" +
 			"declaration would hand it more than you last approved — nobody reads a\n" +
 			"diff going past in a sweep, so the diff stops the sweep instead. Name\n" +
-			"the plugin to upgrade it anyway once you have read what changed.",
+			"the plugin to upgrade it anyway once you have read what changed.\n\n" +
+			"The receipt names what the upgrade left bound to the build it replaced —\n" +
+			"profile entries and a plugins: section pinned to it, what you let it\n" +
+			"read, grants issued against it — each with the command that moves it,\n" +
+			"and a sweep's names them under its table. None of it moves on its own:\n" +
+			"each was a decision about the old bytes.",
 		Example: "  rta plugin upgrade pg\n" +
 			"  rta plugin upgrade --all --dry-run\n" +
 			"  rta plugin upgrade --all --index official",
@@ -617,7 +738,7 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			for _, line := range up.Diff {
 				pairs = append(pairs, view.Pair{Key: "declaration", Value: line})
 			}
-			pairs = append(pairs, stalePinPairs(up.Name, up.FromDigest, up.Digest, opts.dryRun)...)
+			pairs = append(pairs, leftBehind(up, opts.dryRun)...)
 			return renderView(cmd, opts, view.KeyValue{Pairs: pairs})
 		},
 	}

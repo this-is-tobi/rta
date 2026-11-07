@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/plugindist"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -203,7 +205,7 @@ func TestTheSweepReportSeparatesMovedHeldBackAndFailed(t *testing.T) {
 			Problem: view.Errorf("plugin.install.index", "no index called gone is attached")},
 	}
 
-	v, verr := upgradeAllView(outcomes, false)
+	v, verr := upgradeAllView(outcomes, nil, false)
 	if verr == nil {
 		t.Fatal("a sweep that held one back and failed another returned no error; nothing would exit non-zero")
 	}
@@ -264,13 +266,80 @@ func TestTheSweepReportSeparatesMovedHeldBackAndFailed(t *testing.T) {
 	}
 }
 
-// A sweep where everything moved is not a failure, and must not exit non-zero.
+// A sweep says what each plugin it moved left behind, under the plugin's name,
+// in the words the one-plugin receipt uses — and nothing for a plugin it held
+// back, which still runs the build everything is bound to. Its page was the
+// table alone, so the command that moves every plugin at once was the one that
+// never said what they left. A sweep with nothing to say is the table it was.
+func TestTheSweepSaysWhatEachMovedPluginLeftBehind(t *testing.T) {
+	_, configDir := isolate(t)
+	body := "profiles:\n  lab:\n    plugins:\n" +
+		"      cnpg@aaaaaaaaaaaa:\n        set:\n          namespace: db\n" +
+		"      pg@eeeeeeeeeeee:\n        set:\n          host: db.lab\n"
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kubeOld := strings.Repeat("c", 64)
+	if verr := plugintrust.Add(kubeOld, "kube", "/store/kube/old"); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := plugintrust.Allow(kubeOld, []string{string(plugin.NeedKubeconfig)}); verr != nil {
+		t.Fatal(verr)
+	}
+	moved := func(name, from, to string, needs ...plugin.Need) plugindist.UpgradeOutcome {
+		return plugindist.UpgradeOutcome{Upgraded: plugindist.Upgraded{
+			Report:     plugindist.Report{Name: name, Digest: to, Declared: plugin.Plugin{Name: name, Needs: needs}},
+			FromDigest: from,
+		}}
+	}
+	held := moved("pg", strings.Repeat("e", 64), strings.Repeat("f", 64))
+	held.Widenings = []string{"+ pg.drop  destructive, needs a grant"}
+	outcomes := []plugindist.UpgradeOutcome{
+		moved("cnpg", strings.Repeat("a", 64), strings.Repeat("b", 64)),
+		moved("kube", kubeOld, strings.Repeat("d", 64), plugin.NeedKubeconfig),
+		held,
+	}
+
+	left := sweepLeftBehind(outcomes, false)
+	said := map[string]string{}
+	for _, p := range left {
+		said[p.Key] += p.Value + "\n"
+	}
+	if v := said["cnpg"]; !strings.Contains(v, "1 profile (lab) pins cnpg@aaaaaaaaaaaa and now refuses") ||
+		!strings.Contains(v, "`rta profile repin --all --plugin cnpg`") {
+		t.Errorf("cnpg's lines = %q", v)
+	}
+	if v := said["kube"]; !strings.Contains(v, "kube@cccccccccccc could read kubeconfig") ||
+		!strings.Contains(v, "until `rta plugin access add kube`") {
+		t.Errorf("kube's lines = %q", v)
+	}
+	if v, ok := said["pg"]; ok {
+		t.Errorf("a plugin held back was said to have left something behind: %q", v)
+	}
+
+	v, _ := upgradeAllView(outcomes, left, false)
+	sections, ok := v.(view.Sections)
+	if !ok || len(sections.Items) != 2 || sections.Items[1].Title != "Left behind" {
+		t.Fatalf("view = %#v, want the upgrades and then what they left behind", v)
+	}
+	if kv, ok := sections.Items[1].View.(view.KeyValue); !ok || len(kv.Pairs) != len(left) {
+		t.Errorf("left behind = %#v, want every line", sections.Items[1].View)
+	}
+	quiet, _ := upgradeAllView(outcomes[:1], nil, false)
+	if _, ok := quiet.(view.Table); !ok {
+		t.Errorf("a sweep with nothing left behind = %T, want the table alone", quiet)
+	}
+}
+
+// A sweep where everything moved is not a failure, and must not exit non-zero
+// — nor does what it left behind make it one: every upgrade happened, and the
+// lines are the operator's next steps, not something that went wrong.
 func TestACleanSweepReturnsNoError(t *testing.T) {
 	_, verr := upgradeAllView([]plugindist.UpgradeOutcome{
 		{Upgraded: plugindist.Upgraded{
 			Report:     plugindist.Report{Name: "pg", Version: "1.2.0", Digest: "bbbbbbbbbbbbbbbb"},
 			FromDigest: "aaaaaaaaaaaaaaaa", FromVersion: "1.1.0"}},
-	}, false)
+	}, []view.Pair{{Key: "pg", Value: "1 profile (lab) pins pg@aaaaaaaaaaaa"}}, false)
 	if verr != nil {
 		t.Fatalf("a clean sweep returned %v", verr)
 	}
