@@ -263,16 +263,28 @@ func (rt bearerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 // when the test's context is cancelled, via t.Cleanup.
 func startRemote(t *testing.T, opts Options, verifier auth.TokenVerifier) string {
 	t.Helper()
+	return startRemoteWith(t, opts, func(string) RemoteOptions { return RemoteOptions{Verifier: verifier} })
+}
+
+// startRemoteWith is startRemote for listener options that name the address
+// bound, which exists only once the listener does: a resource URL carries the
+// ephemeral port.
+func startRemoteWith(t *testing.T, opts Options, remote func(addr string) RemoteOptions) string {
+	t.Helper()
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Serve closes the listener once it runs; this is for the test that stops
+	// inside remote, before it does.
+	t.Cleanup(func() { _ = ln.Close() })
 	addr := ln.Addr().String()
+	ro := remote(addr)
 	server := NewServer(testRegistry(t), "test", opts)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Serve(ctx, server, ln, RemoteOptions{Verifier: verifier}) }()
+	go func() { done <- Serve(ctx, server, ln, ro) }()
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {

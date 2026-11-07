@@ -258,6 +258,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		oidcIssuer    string
 		oidcAudience  string
 		oidcSubjects  []string
+		oidcResource  string
 		operatorsFile string
 		observeAddr   string
 		operatorsURL  string
@@ -399,9 +400,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					"the probes and the counters describe a hosted server — a stdio server has "+
 						"no orchestrator asking whether it is ready")
 			}
-			if oidcIssuer == "" && (oidcAudience != "" || len(oidcSubjects) > 0) {
+			if oidcIssuer == "" && (oidcAudience != "" || len(oidcSubjects) > 0 || oidcResource != "") {
 				fmt.Fprintln(cmd.ErrOrStderr(),
-					"rta: --oidc-audience/--oidc-subject do nothing without --oidc-issuer, since there is no token to verify them against")
+					"rta: --oidc-audience/--oidc-subject/--oidc-resource do nothing without --oidc-issuer, "+
+						"since there is no token to verify them against and no issuer to publish")
 			}
 			// The HTTP transport's own gate, checked before anything else it
 			// needs is built: a caller proves who it is over the wire here,
@@ -415,6 +417,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				ln              net.Listener
 				observeLn       net.Listener
 				operatorHandler http.Handler
+				resource        *mcp.ProtectedResource
 			)
 			if httpAddr != "" {
 				// A parked call needs a person positioned to answer it. Over
@@ -488,6 +491,27 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					if len(oidcSubjects) == 0 {
 						return serveUsage("an --oidc-issuer needs at least one --oidc-subject",
 							"an issuer and audience alone identify an application, not a person")
+					}
+					// Required, not defaulted, for the reason --operators-url
+					// is: a client finds the issuer through this URL, and
+					// nothing this process can observe — the bind address, a
+					// Host header a relay or a cache controls — is trustworthy
+					// to derive it from; a forged one would send clients to
+					// somebody else's login page. And required rather than
+					// optional, because without it an OAuth client meets a
+					// wall that never says where to log in, and the operator
+					// who skipped a warning would have a server nobody can use
+					// and no sign of why. Checked before discovery, so the
+					// refusal is about the command line, never the network.
+					if oidcResource == "" {
+						return serveUsage("an --oidc-issuer needs --oidc-resource",
+							"the exact URL MCP clients are configured with for this server, such as "+
+								"https://rta.example.com: rta publishes it with the issuer at "+
+								"/.well-known/oauth-protected-resource, which is how an OAuth client finds where to log in")
+					}
+					var verr *view.Error
+					if resource, verr = mcp.NewProtectedResource(oidcResource, oidcIssuer); verr != nil {
+						return serveUsage(verr.Message, verr.Hint)
 					}
 					oidcVerifier, err := mcp.OIDCVerifier(cmd.Context(), oidcIssuer, oidcAudience, oidcSubjects, cmd.ErrOrStderr())
 					if err != nil {
@@ -672,6 +696,15 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: every request needs a bearer token; TLS is not this process's job — "+
 						"put a reverse proxy, ingress or service mesh in front of it")
+				// The URL a client is configured with is the one string here a
+				// person has to copy somewhere else, and a client compares it to
+				// the document verbatim, so it is printed exactly, beside where
+				// the proxy has to let the document through.
+				if resource != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"rta: configure MCP clients with exactly %s — an OAuth client finds %s as the issuer at %s\n",
+						resource.URL(), oidcIssuer, resource.MetadataURL())
+				}
 				if exposedBind(ln.Addr()) {
 					fmt.Fprintln(cmd.ErrOrStderr(),
 						"rta: that address answers to other machines — every peer on the network can try "+
@@ -742,6 +775,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				err = mcp.Serve(cmd.Context(), server, ln, mcp.RemoteOptions{
 					Verifier: verifier, Stderr: cmd.ErrOrStderr(),
 					Operator:        operatorHandler,
+					Resource:        resource,
 					ObserveListener: observeLn,
 					ObserveHandler:  observeHandler,
 				})
@@ -788,10 +822,15 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		"issuer URL of the OpenID Connect provider bearer tokens are verified against; required with --http "+
 			"unless --token-file is set")
 	cmd.Flags().StringVar(&oidcAudience, "oidc-audience", "",
-		"required audience for tokens verified against --oidc-issuer")
+		"required audience (\"aud\" claim) for tokens verified against --oidc-issuer; the --oidc-resource "+
+			"URL, put there by the issuer's audience mapper, binds a token to this server alone")
 	cmd.Flags().StringSliceVar(&oidcSubjects, "oidc-subject", nil,
 		"subject (\"sub\" claim) allowed to authenticate (repeatable); required with --oidc-issuer, "+
 			"since an issuer and audience alone name an application, not a person")
+	cmd.Flags().StringVar(&oidcResource, "oidc-resource", "",
+		"this server's URL, exactly as MCP clients are configured with it (e.g. https://rta.example.com); "+
+			"required with --oidc-issuer — published with the issuer at /.well-known/oauth-protected-resource "+
+			"so an OAuth client finds where to log in, and never derived from the bind address")
 	cmd.Flags().StringVar(&operatorsFile, operatorsFlag, "",
 		"operator public keys allowed to manage this server remotely, one \"label base64-pubkey\" "+
 			"per line (`rta operator status` prints yours); mounts /operator/v1 beside the MCP endpoint")

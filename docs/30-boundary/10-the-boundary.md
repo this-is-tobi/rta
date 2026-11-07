@@ -116,7 +116,7 @@ It is not free, and the costs are worth naming rather than glossing over:
 | **The credentials move** | Off the laptops, which is better, and onto one process with reach, which is a target. The trade is real in both directions, and authenticating callers over `--http` does not change it — see the next row |
 | **It only bounds anything if it is the only route** | If the agent's own machine can reach production directly, routing rta through a server changes nothing. The containment is the network and credential boundary; rta is what makes a *useful* hole in it |
 
-The transport itself turned out to be the easy part, as expected: MCP specifies OAuth 2.1 for HTTP, and [Hosting a server](./65-hosting-a-server.md) is that, built on the bearer-token verification the SDK rta links already ships.
+The transport itself turned out to be the easy part, as expected: MCP specifies OAuth 2.1 for HTTP, and rta is the resource server's half of it, built on the bearer-token verification the SDK rta links already ships. [Hosting a server](./65-hosting-a-server.md) verifies a bearer on every request, and with an identity provider behind it publishes the [RFC](../95-reference/10-glossary.md#acronyms) 9728 metadata naming that provider, which is how an OAuth client finds where to log in ([OIDC](./70-oidc.md)). The login itself, and the authorization server, are the identity provider's.
 
 ## What rta does not do yet, and would be right to
 

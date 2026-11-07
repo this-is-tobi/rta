@@ -118,6 +118,7 @@ This chapter is what a connected agent can reach and what every call is held to.
 | The working directory a client chooses, and the team policy | [Team policy](./50-team-policy.md#where-an-mcp-server-looks-and-why-it-may-surprise-you) |
 | Locks: the instant no | [Stop an agent now](./45-stop-an-agent-now.md) |
 | `--http`, tokens, probes, what a remote server hides | [Hosting a server](./65-hosting-a-server.md) |
+| Logging in through an identity provider, and how an OAuth client finds it | [OIDC](./70-oidc.md) |
 | The operator channel | [The operator channel](./66-operators.md) |
 | The container recipe, sharing an image, why not one server | [Containers and images](./67-containers-and-images.md) |
 | Symbolic links, `git`, hard links: the whole path gate | [The path gate](../95-reference/20-the-path-gate.md) |

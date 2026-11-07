@@ -198,20 +198,63 @@ func TestHTTPOIDCIssuerRequiresASubject(t *testing.T) {
 	}
 }
 
-// Well-formed but pointing nowhere real: discovery must fail as this
-// command's own clear error, not several layers down inside net/http.
-func TestHTTPOIDCDiscoveryFailureIsRefusedAtStartup(t *testing.T) {
+// An OAuth client finds the issuer through the URL it was configured with, so
+// an issuer with no such URL is one no client can log in through, and a
+// server that started anyway would give no sign of why. Refused before
+// discovery, so the refusal is about the command line and not the network.
+func TestHTTPOIDCIssuerRequiresAResource(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
 	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0",
 		"--oidc-issuer", "http://127.0.0.1:1", "--oidc-audience", "rta", "--oidc-subject", "alice"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Message, "--oidc-resource") {
+		t.Fatalf("err = %#v, want a usage refusal naming --oidc-resource", err)
+	}
+}
+
+// A resource URL the server could not publish as typed is the command line's
+// refusal too, in the words of what is wrong with it.
+func TestHTTPOIDCResourceIsRefusedWhenItCannotBeServed(t *testing.T) {
+	for resource, want := range map[string]string{
+		"http://rta.example.com":     "must be https",
+		"https://rta.example.com/?x": "query",
+		"rta.example.com":            "absolute",
+	} {
+		cmd := NewRoot(registry.New(), "test")
+		cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0",
+			"--oidc-issuer", "http://127.0.0.1:1", "--oidc-audience", "rta", "--oidc-subject", "alice",
+			"--oidc-resource", resource})
+		cmd.SetOut(new(strings.Builder))
+		cmd.SetErr(new(strings.Builder))
+		err := cmd.Execute()
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Message, want) {
+			t.Errorf("--oidc-resource %s: err = %#v, want a usage refusal saying %q", resource, err, want)
+		}
+	}
+}
+
+// Well-formed but pointing nowhere real: discovery must fail as this
+// command's own clear error, not several layers down inside net/http. The
+// code is what says it was discovery: the refusals before it name
+// --oidc-issuer too.
+func TestHTTPOIDCDiscoveryFailureIsRefusedAtStartup(t *testing.T) {
+	cmd := NewRoot(registry.New(), "test")
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0",
+		"--oidc-issuer", "http://127.0.0.1:1", "--oidc-audience", "rta", "--oidc-subject", "alice",
+		"--oidc-resource", "http://127.0.0.1:8443"})
+	cmd.SetOut(new(strings.Builder))
+	cmd.SetErr(new(strings.Builder))
+	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("an --oidc-issuer with no discovery document was accepted")
 	}
-	if !strings.Contains(err.Error(), "oidc-issuer") {
-		t.Errorf("err = %q, want it to name --oidc-issuer", err)
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "core.mcp.oidc" || !strings.Contains(err.Error(), "oidc-issuer") {
+		t.Errorf("err = %#v, want core.mcp.oidc naming --oidc-issuer", err)
 	}
 }
 
@@ -317,13 +360,19 @@ func TestServeRefusalsAreCodedInTheFormatAskedFor(t *testing.T) {
 		{web, CodeUsage},
 		{append(web, "--oidc-issuer", "https://idp.example"), CodeUsage},
 		{append(web, "--oidc-issuer", "https://idp.example", "--oidc-audience", "rta"), CodeUsage},
+		{append(web, "--oidc-issuer", "https://idp.example", "--oidc-audience", "rta",
+			"--oidc-subject", "alice"), CodeUsage},
+		{append(web, "--oidc-issuer", "https://idp.example", "--oidc-audience", "rta",
+			"--oidc-subject", "alice", "--oidc-resource", "http://rta.example.com"), CodeUsage},
+		{append(web, "--oidc-issuer", "https://idp.example", "--oidc-audience", "rta",
+			"--oidc-subject", "alice", "--oidc-resource", "https://rta.example.com/?x"), CodeUsage},
 		{append(web, "--token-file", tokens, "--operators", roster), CodeUsage},
 		{append(web, "--token-file", tokens, "--operators", roster,
 			"--operators-url", "http://rta.example.com"), CodeUsage},
 		{[]string{"--http", "127.0.0.1:99999", "--token-file", tokens}, "core.mcp.listen"},
 		{append(web, "--token-file", loose), "core.mcp.tokenfile"},
 		{append(web, "--oidc-issuer", "http://127.0.0.1:1", "--oidc-audience", "rta",
-			"--oidc-subject", "alice"), "core.mcp.oidc"},
+			"--oidc-subject", "alice", "--oidc-resource", "http://127.0.0.1:8443"), "core.mcp.oidc"},
 	} {
 		cmd := NewRoot(registry.New(), "test")
 		cmd.SetArgs(append([]string{"mcp", "serve", "--as", "probe", "-o", "json"}, tc.args...))

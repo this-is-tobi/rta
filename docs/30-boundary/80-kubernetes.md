@@ -35,14 +35,15 @@ helm install rta oci://ghcr.io/this-is-tobi/charts/rta \
 ```yaml
 servers:
   tobi:
-    host: rta-tobi.example.com       # ingress host AND the operator identity
+    host: rta-tobi.example.com       # ingress host, operator identity AND the OIDC resource URL
     roots: ["/work"]
     auth:
       oidc:
         enabled: true
         issuer: https://keycloak.example.com/realms/main
-        audience: rta
+        audience: https://rta-tobi.example.com  # the resource URL, through the IdP's audience mapper
         subjects: ["8f14e45f-ceea-467a-9c1a-2d7c4f0b1a33"]
+        # resource: defaults to https://<host>; set it when clients use a path
     operators:
       enabled: true
       keys:
@@ -56,7 +57,7 @@ servers:
       tlsSecretName: rta-tobi-tls
 ```
 
-Every combination rta would refuse at startup is refused at render time instead, naming the values key rather than arriving later as a CrashLoopBackOff: an issuer with no audience, consent without operators, an empty `roots`, a token under 16 characters, an operator URL that is not `https://`.
+Every combination rta would refuse at startup is refused at render time instead, naming the values key rather than arriving later as a CrashLoopBackOff: an issuer with no audience, an OIDC instance with neither `host` nor `auth.oidc.resource`, consent without operators, an empty `roots`, a token under 16 characters, an operator URL that is not `https://`.
 
 **The chart is published the way the image is.** Every release pushes it to `ghcr.io/this-is-tobi/charts/rta` with [SLSA](../95-reference/10-glossary.md#acronyms) build provenance and a cosign signature bound to the digest, the same pair the binaries and the image carry. It moves on its own version stream rather than the app's — a chart `0.2.0` deploying rta `0.17.0` — because a values default or a template fix is a chart release with no new rta in it; `appVersion` is where the app's version lives. `helm install` from a registry checks neither the provenance nor the signature on its own, so check before you install:
 

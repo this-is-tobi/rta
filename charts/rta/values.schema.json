@@ -1087,6 +1087,9 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "resource": {
+                  "type": "string"
                 }
               }
             },

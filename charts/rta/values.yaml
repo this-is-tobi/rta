@@ -91,9 +91,11 @@ serverDefaults:
   # to the entry's key in `servers`. 1-64 characters of `[A-Za-z0-9._-]`.
   # @section -- Server defaults
   agentName: ""
-  # -- The public hostname this instance is served on. It is both the Ingress/HTTPRoute host and,
-  # unless `operators.url` overrides it, the `--operators-url` identity - so it is the exact string
-  # operators write in their `remotes.yaml`, never an in-cluster Service name.
+  # -- The public hostname this instance is served on. It is the Ingress/HTTPRoute host and, unless
+  # `operators.url` or `auth.oidc.resource` overrides it, both the `--operators-url` identity and
+  # the `--oidc-resource` URL OAuth clients find the issuer through - so it is the exact string
+  # operators write in their `remotes.yaml` and clients are configured with, never an in-cluster
+  # Service name.
   # @section -- Server defaults
   host: ""
   # -- Paths this instance's filesystem capabilities may reach, passed as `--root` (repeatable).
@@ -152,7 +154,9 @@ serverDefaults:
       # @section -- Server defaults
       issuer: ""
       # -- Expected audience. Required when `enabled` - rta refuses an issuer with no audience,
-      # because a token minted for some other service would otherwise authenticate here.
+      # because a token minted for some other service would otherwise authenticate here. The
+      # resource URL below, put into `aud` by the IdP's audience mapper, binds a token to this one
+      # instance rather than to every instance the realm issues tokens to.
       # @section -- Server defaults
       audience: ""
       # -- Accepted subjects. At least one is required when `enabled`: an issuer with no subject
@@ -160,6 +164,13 @@ serverDefaults:
       # @section -- Server defaults
       subjects: []
       # - "person@example.com"
+      # -- This instance's URL exactly as MCP clients are configured with it, passed as
+      # `--oidc-resource`. rta publishes it with the issuer at `/.well-known/oauth-protected-resource`,
+      # which is how an OAuth client finds where to log in. Empty derives `https://<host>`; set it
+      # when clients reach the instance under a path (`https://<host>/mcp`). `https://`, with no
+      # query, fragment or user name.
+      # @section -- Server defaults
+      resource: ""
     tokens:
       # -- Authenticate callers with static bearer tokens. Honest for a CI or bot instance, and for
       # anyone without an IdP; a token names whoever holds it, not a person.
@@ -657,7 +668,7 @@ servers: {}
 #     oidc:
 #       enabled: true
 #       issuer: "https://id.example.com"
-#       audience: "rta"
+#       audience: "https://rta-tobi.example.com"
 #       subjects:
 #       - "tobi@example.com"
 #   consent:

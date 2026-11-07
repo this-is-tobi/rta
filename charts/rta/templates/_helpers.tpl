@@ -224,6 +224,28 @@ Parameters:
 
 
 {{/*
+The URL MCP clients are configured with, which an OIDC instance publishes with its issuer.
+
+`--oidc-resource` is what an OAuth client compares the published document against, byte for byte,
+before it logs in anywhere, so it derives from the public host the ingress serves, for the reason
+the operator URL does: the in-cluster Service name is not what a client outside the cluster was
+given, and a document naming it would be refused by every one of them.
+
+Written in the form rta canonicalises it to - scheme and host lowercased, trailing slashes trimmed -
+because NOTES tells people to configure their clients with exactly this string, and the string a
+client is compared against is the one rta publishes, not the one typed into values.
+Parameters:
+- server: The server's resolved values.
+*/}}
+{{- define "rta.server.oidcResource" -}}
+{{- $s := .server -}}
+{{- $url := $s.auth.oidc.resource | default (printf "https://%s" $s.host) -}}
+{{- $origin := regexFind "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#]*" $url -}}
+{{- printf "%s%s" (lower $origin) (regexReplaceAll "/+$" (trimPrefix $origin $url) "") -}}
+{{- end -}}
+
+
+{{/*
 The roster file: one `label base64-pubkey [role=...] [expires=...]` line per enrolled operator key.
 
 `operators.dashboard` renders last and always carries `role=read`. It is not sugar for an entry in
@@ -320,8 +342,11 @@ Parameters:
 The argv for `rta mcp serve`.
 
 Two binds, never one. `--observe` is a second listener rather than four more paths on `--http`,
-because bearer authentication wraps the whole protocol handler on the `--http` one and open paths
-beside it would make that structural property a matter of route matching instead. The chart binds
+because on the `--http` one anything that runs a capability or reads state sits behind the bearer
+wall, and beside it there is only the signed operator channel and, on an OIDC instance, one
+constant document RFC 9728 pins to that very URL. Probes could live anywhere, and `/readyz` reads
+the data directory's state, so on `--http` they would make the wall's reach a matter of route
+matching instead. The chart binds
 it to 0.0.0.0 rather than loopback - which the flag's own documentation offers as the tighter
 choice - because a kubelet HTTP probe reaches the pod IP and cannot reach the pod's loopback, so
 loopback would mean no probes at all. The narrowing that replaces it is that the main Service does
@@ -361,6 +386,8 @@ Parameters:
 - --oidc-subject
 - {{ . | quote }}
 {{- end }}
+- --oidc-resource
+- {{ include "rta.server.oidcResource" (dict "server" $s) | quote }}
 {{- end }}
 {{- if $s.operators.enabled }}
 - --operators
@@ -473,6 +500,17 @@ mint - which is the whole namespace of that IdP, not this person. */ -}}
 {{- end -}}
 {{- if not $s.auth.oidc.subjects -}}
 {{- fail (printf "%s.auth.oidc.subjects needs at least one entry - an issuer with no subject accepts every identity it will ever mint, which is the opposite of authenticating as one person" $prefix) -}}
+{{- end -}}
+{{- /* rta refuses an issuer without the URL clients use, and refuses a URL it could not publish as
+typed. The shape is checked here as far as a template can - the scheme, the host, segments of
+unreserved characters - so the common mistakes name the values key; a `.` or `..` segment is left to
+rta's own refusal. */ -}}
+{{- if and (not $s.auth.oidc.resource) (not $s.host) -}}
+{{- fail (printf "%s needs host (or auth.oidc.resource) when oidc is enabled - rta publishes the URL MCP clients are configured with beside the issuer, so it derives from the public host, never from the in-cluster Service name" $prefix) -}}
+{{- end -}}
+{{- $resource := include "rta.server.oidcResource" (dict "server" $s) -}}
+{{- if not (regexMatch "^(https://([A-Za-z0-9._~-]+|\\[[0-9A-Fa-f:.]+\\])|http://(localhost|127\\.[0-9]+\\.[0-9]+\\.[0-9]+|\\[::1\\]))(:[0-9]+)?(/[A-Za-z0-9._~-]+)*/*$" $resource) -}}
+{{- fail (printf "%s.auth.oidc.resource resolves to %q - it must be an https:// URL (plain http only for loopback) with no query, fragment or user name, and a path, if any, of letters, digits and - . _ ~, because MCP clients compare it byte for byte with the URL they were given. Set servers.%s.host, or auth.oidc.resource explicitly." $prefix $resource $name) -}}
 {{- end -}}
 {{- end -}}
 
@@ -709,10 +747,11 @@ spec:
     livenessProbe: {{- toYaml . | nindent 6 }}
     {{- end }}
     {{- else }}
-    {{- /* Without --observe there is no open path to probe: every route on the MCP listener meets
-    the bearer wall and answers 401, which Kubernetes counts as a failed probe, and the image has
-    no shell for an exec probe. A TCP check proves the listener is up and accepting, and is honest
-    about proving nothing more. */}}
+    {{- /* Without --observe there is no open path worth probing: every route on the MCP listener
+    meets the bearer wall and answers 401, which Kubernetes counts as a failed probe, but an OIDC
+    instance's resource metadata, which is a constant and says nothing about the store either; and
+    the image has no shell for an exec probe. A TCP check proves the listener is up and accepting,
+    and is honest about proving nothing more. */}}
     readinessProbe:
       tcpSocket:
         port: mcp

@@ -15,10 +15,17 @@ import (
 // **Why a second listener rather than four more paths on the MCP port.**
 // remote.go states that bearer authentication wraps the whole protocol handler
 // and cross-origin protection wraps that, and that neither is optional or
-// bypassable by a flag. Open paths on that listener would make the sentence
-// false — its security would become a property of route matching, and every
-// future handler added there a chance to get the matching wrong. Kept apart,
-// that invariant stays exactly as written, and an operator binds this
+// bypassable by a flag; what sits beside the wall there is only what cannot
+// sit anywhere else. That is the operator channel, authenticated by its own
+// signatures, and an OIDC server's resource metadata — one constant document,
+// public by design, which RFC 9728 puts at a well-known path on the very
+// origin clients were given, so it could not be served from this address if
+// it wanted to. Probes can be served from anywhere, and /readyz reads the
+// data directory's state: on the MCP port they would make its security more a
+// property of route matching, and every handler added there afterwards a
+// chance to get the matching wrong. Kept apart, a routing mistake there can
+// reach the document, a channel that checks its own signatures, or the wall,
+// and nothing past the wall; and an operator binds this
 // somewhere the agent-facing port is not: loopback, or a pod port the Service
 // never publishes.
 //
