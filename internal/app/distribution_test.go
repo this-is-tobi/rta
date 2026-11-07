@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -364,5 +366,92 @@ func TestAChecksumsFileIsRefusedPastTheCapWithoutBeingRead(t *testing.T) {
 	if _, verr := readChecksumsFile(filepath.Join(t.TempDir(), "missing")); verr == nil ||
 		verr.Code != "plugin.manifest.checksums" {
 		t.Errorf("a missing checksums file = %v, want plugin.manifest.checksums", verr)
+	}
+}
+
+// indexRepo is a repository of index/<name>.yaml files, committed.
+func indexRepo(t *testing.T, manifests map[string]string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on this machine")
+	}
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "index"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commitIndexRepo(t, dir, manifests)
+	return dir
+}
+
+func commitIndexRepo(t *testing.T, dir string, manifests map[string]string) {
+	t.Helper()
+	for name, doc := range manifests {
+		if err := os.WriteFile(filepath.Join(dir, "index", name+".yaml"), []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{
+		{"init", "--quiet", "-b", "main"}, {"add", "."},
+		{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "index"},
+	} {
+		if args[0] == "init" {
+			if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+				continue
+			}
+		}
+		if out, err := gitIn(dir, args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+}
+
+// `index update` said "updated" when it had pulled an index of which only some
+// manifests could be read: it refused the pull when none could, and was silent
+// when one could not, so a plugin the upstream had just moved past this rta
+// disappeared from search with no word from the command that fetched it. It
+// names each manifest it cannot read, and a clean update is as quiet as ever.
+func TestIndexUpdateNamesTheManifestsItCannotRead(t *testing.T) {
+	run := session(t, registry.New())
+	repo := indexRepo(t, map[string]string{"pg": noBuildHerePG})
+	if _, errOut, err := run("plugin", "index", "add", "lab", repo); err != nil {
+		t.Fatalf("attach: %v %q", err, errOut)
+	}
+
+	out, errOut, err := run("plugin", "index", "update", "-o", "json")
+	if err != nil {
+		t.Fatalf("update: %v %q", err, errOut)
+	}
+	if strings.Contains(out, "warnings") || strings.Contains(out, "cannot") || !strings.Contains(out, "updated") {
+		t.Fatalf("a clean update printed %q, want only that it updated", out)
+	}
+
+	commitIndexRepo(t, repo, map[string]string{
+		"redis": "apiVersion: rta/v2\n" + strings.ReplaceAll(noBuildHerePG, "pg", "redis"),
+		"mongo": "name: [",
+	})
+	out, errOut, err = run("plugin", "index", "update", "-o", "json")
+	if err != nil {
+		t.Fatalf("an update that left some of the index readable failed: %v %q", err, errOut)
+	}
+	for _, want := range []string{"updated", "plugin.index.apiversion", "lab/redis.yaml", "is newer than rta/v1", "upgrade rta", "lab/mongo.yaml"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("update printed %q, want it to say %q", out, want)
+		}
+	}
+
+	pretty, _, err := run("plugin", "index", "update", "--no-color")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pretty, "lab/redis.yaml") || !strings.Contains(pretty, "upgrade rta") {
+		t.Errorf("pretty update printed %q, want the manifest named on a screen too", pretty)
+	}
+
+	dry, _, err := run("plugin", "index", "update", "--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(dry, "lab/redis.yaml") || !strings.Contains(dry, "would update") {
+		t.Errorf("a dry run printed %q, want it to read nothing it did not pull", dry)
 	}
 }

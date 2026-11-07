@@ -749,6 +749,13 @@ func refuseUpdate(name string, bad []*view.Error) *view.Error {
 	}
 	hint := "the update was pulled, and search and install refuse " + name + " until its upstream is an " +
 		"index again; `rta plugin index rm " + name + "` detaches it"
+	// An upstream that moved to a newer apiVersion has done nothing wrong and
+	// does not need to become anything again: the operator's rta is what is
+	// behind, and the same pull is readable the day it is upgraded.
+	if verr.Code == CodeAPIVersion {
+		hint = "the update was pulled, and search and install refuse " + name + " until you upgrade rta " +
+			"to read it; `rta plugin index rm " + name + "` detaches it"
+	}
 	if verr.Hint != "" {
 		hint = verr.Hint + "; " + hint
 	}
@@ -858,6 +865,13 @@ type Listed struct {
 // Manifests reads every valid manifest in one index, sorted by name, and
 // reports the invalid ones apart. One malformed file must not cost the
 // operator the rest of the catalogue — the LoadInto rule, applied to claims.
+//
+// A manifest written for a newer rta than this one is one of the invalid
+// ones, reported under its own code (CodeAPIVersion) and never left out: a
+// catalogue that quietly lacks the plugins its index has moved past is how
+// somebody concludes a plugin does not exist. Each is reported on its own, with
+// the file named, so a person who has twelve of them reads twelve lines
+// that say the same thing and fixes it by upgrading once.
 //
 // A directory holding no manifest at all is reported the same way a missing
 // index/ is, and notAnIndex says why that is not the same as an empty

@@ -461,3 +461,51 @@ func TestAPinAtNothingAttachesNothing(t *testing.T) {
 		}
 	}
 }
+
+// A manifest written for a later rta is reported where the index's other
+// manifests are read, and not skipped: a plugin that vanishes from search and
+// install, on a catalogue that otherwise reads, is a plugin somebody concludes
+// does not exist. Every surface that reads a manifest says why this one is
+// missing, in the words that tell the person at the terminal what to do.
+func TestAnIndexAheadOfThisRtaIsReportedNotSkipped(t *testing.T) {
+	testData(t)
+	runningAs(t, "0.59.0")
+	repo := gitFixture(t, map[string]string{
+		"pg":    goodManifest,
+		"redis": "apiVersion: rta/v2\n" + named(goodManifest, "redis") + "scope: cluster\n",
+	})
+	if verr := AddIndex(context.Background(), "lab", repo); verr != nil {
+		t.Fatalf("an index with one readable manifest was refused: %v", verr)
+	}
+	const want = `lab/redis.yaml: apiVersion "rta/v2" is newer than rta/v1, which this rta (0.59.0) reads — upgrade rta`
+
+	ix, _ := IndexByName("lab")
+	listed, bad := Manifests(ix)
+	if len(listed) != 1 || listed[0].Manifest.Name != "pg" {
+		t.Fatalf("listed = %v, want pg alone", listed)
+	}
+	if len(bad) != 1 || bad[0].Code != CodeAPIVersion || bad[0].Message != want {
+		t.Fatalf("bad = %v, want one %s: %q", bad, CodeAPIVersion, want)
+	}
+
+	rows, problems := Search("", "")
+	if len(rows) != 1 || rows[0].Name != "pg" || len(problems) != 1 || problems[0].Message != want {
+		t.Fatalf("search = %+v with %v, want pg and the redis problem beside it", rows, problems)
+	}
+
+	for _, spec := range []string{"redis", "lab/redis"} {
+		_, verr := Resolve(spec)
+		if verr == nil || verr.Code != CodeAPIVersion || verr.Message != want {
+			t.Fatalf("Resolve(%s) = %v, want %s: %q, not an answer that the name is unknown", spec, verr, CodeAPIVersion, want)
+		}
+	}
+
+	if verr := recordInstall(LockEntry{Name: "redis", Digest: "d", Version: "0.1.0",
+		Index: "lab", InstalledAt: time.Now()}, nil); verr != nil {
+		t.Fatal(verr)
+	}
+	rows2 := Outdated()
+	if len(rows2) != 1 || rows2[0].Name != "redis" || rows2[0].Problem != want {
+		t.Fatalf("outdated = %+v, want a row for redis saying why there is no answer", rows2)
+	}
+}

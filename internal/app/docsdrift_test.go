@@ -17,6 +17,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/mcp"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -1006,5 +1007,59 @@ func TestTheFilesThePagesSayRtaKeepsAreNamesRtaUses(t *testing.T) {
 	}
 	if checked < 15 {
 		t.Fatalf("checked %d names in the section; has its table changed shape?", checked)
+	}
+}
+
+// A manifest has two keys that are about the file and not the plugin, and an
+// index author finds out about them from the refusal of a third: a key rta does
+// not read, which the page has to say where to put. The sentence a reader is
+// told when a manifest is ahead of their rta is quoted on the page, so it is
+// compared with the one rta prints, and the manifest the page shows is parsed
+// by the parser it describes.
+func TestTheIndexesPageSaysWhatAManifestMayState(t *testing.T) {
+	root := repoRoot(t)
+	page := readDoc(t, root, "docs/40-plugins/12-indexes-and-upgrades.md")
+	for _, want := range []string{"`apiVersion`", "`annotations`", "`rta/v1`", "`plugin.index.apiversion`",
+		"Annotations mean nothing to rta", "Quote the values"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the indexes page does not say %s", want)
+		}
+	}
+
+	was := agentsession.Self()
+	agentsession.SetSelf("0.59.0")
+	t.Cleanup(func() { agentsession.SetSelf(was) })
+	_, verr := plugindist.ParseManifest([]byte("apiVersion: rta/v2\n"))
+	if verr == nil || verr.Code != plugindist.CodeAPIVersion {
+		t.Fatalf("a newer apiVersion: %v", verr)
+	}
+	if !strings.Contains(page, "`"+verr.Message+"`") {
+		t.Errorf("the indexes page does not quote the refusal rta prints: %q", verr.Message)
+	}
+
+	parsed := 0
+	for _, block := range yamlFences(page) {
+		if !strings.Contains(block.text, "annotations:") {
+			continue
+		}
+		m, verr := plugindist.ParseManifest([]byte(block.text))
+		if verr != nil {
+			t.Errorf("docs/40-plugins/12-indexes-and-upgrades.md:%d: the manifest shown is refused: %v", block.line, verr)
+			continue
+		}
+		if m.APIVersion != plugindist.APIVersionV1 || len(m.Annotations) == 0 {
+			t.Errorf("docs/40-plugins/12-indexes-and-upgrades.md:%d: the manifest shown states neither key", block.line)
+		}
+		parsed++
+	}
+	if parsed != 1 {
+		t.Errorf("the indexes page shows %d manifests with annotations, want one", parsed)
+	}
+
+	publishing := readDoc(t, root, "docs/40-plugins/24-testing-and-publishing.md")
+	for _, want := range []string{"no `apiVersion` and no `annotations`", "goes under `annotations:`", "typed into it is gone"} {
+		if !strings.Contains(publishing, want) {
+			t.Errorf("the publishing page does not say %q", want)
+		}
 	}
 }

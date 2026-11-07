@@ -343,3 +343,41 @@ func TestACredentialInACloneURLIsNotEchoedBack(t *testing.T) {
 		t.Errorf("the hint echoes the token: %q", verr.Hint)
 	}
 }
+
+// An index whose every manifest is ahead of this rta is not attached, and an
+// update that moves one there is refused: the first because it would be an
+// attached index nothing can be read from, the second because search and
+// install would refuse it from then on. Neither refusal is the one for a
+// repository that is not an index, which sends the operator to fix a
+// repository; this one sends them to the rta they run.
+func TestAnIndexWhollyAheadIsRefusedAtAttachAndUpdate(t *testing.T) {
+	testData(t)
+	runningAs(t, "0.59.0")
+	ctx := context.Background()
+	ahead := "apiVersion: rta/v2\n" + goodManifest
+
+	verr := AddIndex(ctx, "future", gitFixture(t, map[string]string{"pg": ahead}))
+	if verr == nil || verr.Code != CodeAPIVersion || !strings.Contains(verr.Message, "upgrade rta") ||
+		!strings.Contains(verr.Hint, "nothing was attached") {
+		t.Fatalf("attach = %v, want %s and \"nothing was attached\"", verr, CodeAPIVersion)
+	}
+	if _, attached := IndexByName("future"); attached {
+		t.Fatal("an index nothing in it could be read from was attached")
+	}
+
+	repo := gitFixture(t, map[string]string{"pg": goodManifest})
+	if verr := AddIndex(ctx, "lab", repo); verr != nil {
+		t.Fatal(verr)
+	}
+	writeManifests(t, repo, map[string]string{"pg": ahead})
+	commitAll(t, repo, "pg moves to a newer apiVersion")
+
+	verr = UpdateIndex(ctx, "lab")
+	if verr == nil || verr.Code != CodeAPIVersion || !strings.Contains(verr.Message, "lab/pg.yaml") {
+		t.Fatalf("update = %v, want %s naming the manifest", verr, CodeAPIVersion)
+	}
+	if !strings.Contains(verr.Hint, "search and install refuse lab") || !strings.Contains(verr.Hint, "upgrade rta") ||
+		strings.Contains(verr.Hint, "until its upstream is an index again") {
+		t.Fatalf("hint = %q, want the pull stays and upgrading rta reads it, not a demand that the upstream change", verr.Hint)
+	}
+}

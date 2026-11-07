@@ -161,8 +161,16 @@ func offerFirstPartyIndex(ctx context.Context, ask func(url string) (bool, error
 	}
 	claims := ""
 	if ix, ok := plugindist.IndexByName(plugindist.FirstPartyIndex); ok {
-		listed, _ := plugindist.Manifests(ix)
+		listed, bad := plugindist.Manifests(ix)
 		claims = ", which claims " + format.CountOf(len(listed), "plugin")
+		// The index was attached because something in it read, and a person
+		// who is told "claims 11 plugins" of a catalogue of twelve has been told
+		// the first-party index has eleven. The ones this rta cannot read are
+		// said to be there.
+		if len(bad) > 0 {
+			claims += " and holds " + format.CountOf(len(bad), "manifest") +
+				" this rta cannot read (`rta plugin index list` says why)"
+		}
 	}
 	fmt.Fprintf(said, "attached %s%s\n", plugindist.FirstPartyIndex, claims)
 	return true, nil

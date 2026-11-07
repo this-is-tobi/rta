@@ -11,19 +11,52 @@
 package plugindist
 
 import (
+	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"path"
+	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/internal/yamlguard"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// APIVersionV1 is the one apiVersion this reader has: the shape of a manifest
+// as every index holds it today. A manifest states no apiVersion at all and
+// is read as this one, and stating it is accepted too.
+//
+// **Absent means v1, for as long as an index can hold such a file.** Every
+// manifest published so far lacks the key, and so does every index pinned at an
+// older commit with --ref, and the image that builds the first-party plugins
+// in. Requiring it would hide all of them from every rta at once, which is
+// the failure the field exists to prevent in the other direction.
+//
+// **The version is the schema's, not the plugin's.** Manifest.Version is the
+// index's claim about a release and means nothing here, and neither does this
+// field mean anything about trust: it decides whether this reader can parse a
+// document, and nothing about whether to believe one. What an install trusts is
+// the digest of bytes rta hashed itself, however a manifest is stamped.
+//
+// **When it moves.** Anything a reader must understand to decide safely — a
+// claim that is compared, a restriction, a changed meaning, a removal — is a
+// field of a new apiVersion, never an annotation, and a reader that does not
+// know the version refuses the manifest rather than skipping what it cannot
+// read. A new key that a reader may ignore without deciding any worse is what
+// annotations are for. The index writer states the lowest apiVersion that
+// carries every claim it makes, which for v1 is none; it writes no apiVersion
+// today, so that regenerating an index cannot hide a plugin from a release
+// older than the one that starts to.
+const APIVersionV1 = "rta/v1"
 
 // Manifest is one plugin's entry in an index: claims about an artifact,
 // written by whoever maintains the index. Krew's shape (a YAML file per
@@ -31,6 +64,11 @@ import (
 // the plugin's declaration — because an rta plugin declares itself before it
 // runs, so the claim is checkable at install.
 type Manifest struct {
+	// APIVersion is the schema this document is written in, first in the file
+	// so that a reader which cannot parse the rest finds it at once. Empty is
+	// APIVersionV1; see there for what it is and is not.
+	APIVersion string `yaml:"apiVersion,omitempty"`
+
 	// Name is the namespace this manifest claims, and the file must be
 	// called <name>.yaml — the same rule again: where the name in a thing and
 	// the name on the thing disagree, the operator-visible one wins, and here
@@ -61,8 +99,28 @@ type Manifest struct {
 	// platform, each a different binary, so one detached signature could
 	// verify one of them at most, and a check that never gated an install
 	// recorded "none stated" for every plugin there was. yaml.Strict refuses
-	// the key, so an index still stating one hears so rather than believing
-	// it is checked.
+	// the key at the top level, so an index still stating one hears so rather
+	// than believing it is checked; under Annotations it is accepted, and
+	// means exactly as little as anything else there.
+
+	// Annotations is the one place a manifest may hold a key rta does not
+	// read. Kubernetes' shape and for Kubernetes' reason: an index author can
+	// keep a license, an owner or a pointer for their own tooling without a
+	// release of rta to allow it, and without the strictness above, which
+	// stays for everything else.
+	//
+	// **Inert, and nothing here may change that.** No reader of a manifest
+	// compares an annotation with the binary, records one in rta.lock, shows
+	// one or lets one alter what a claim says, and a key called `signature`
+	// or `trusted` is a string like any other. If a reader must understand a
+	// thing to decide safely, it is a field of a new apiVersion, which an
+	// older reader refuses; an annotation is only ever something an older
+	// reader loses nothing by missing.
+	//
+	// Bounded like the prose it is displayed beside, so a hostile index gets
+	// no larger a surface here than in a summary: see checkAnnotations. Last
+	// in the struct, so the writer's output stays in the order it always had.
+	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
 // Platform is where the artifact for one os/arch lives and what the index
@@ -109,9 +167,33 @@ const manifestCap = 1 << 20
 // same channel: these strings are printed by search and install, and some
 // reach a model through MCP-facing surfaces later.
 const (
-	maxManifestSummary = 120
-	maxManifestVersion = 40
+	maxManifestSummary  = 120
+	maxManifestVersion  = 40
+	maxManifestHomepage = 200
+
+	// Annotations are held to a bound of their own and not to the manifest's
+	// whole: sixteen short, visible lines is room for what an author keeps
+	// beside a plugin, and any more is a place to put a document. The key is
+	// Kubernetes' [prefix/]name, in the characters a label may carry; its 63 is
+	// counted over the whole key, which is stricter than Kubernetes' per-part
+	// count and can be widened later without hiding a manifest that was
+	// readable, where narrowing could not.
+	maxAnnotations     = 16
+	maxAnnotationKey   = 63
+	maxAnnotationValue = maxManifestSummary
+
+	// maxEchoedClaim bounds how much of a value a refusal repeats back. The
+	// value came from an index, so the message holds a clipped, quoted piece
+	// of it and never the claim at its own length.
+	maxEchoedClaim = 40
 )
+
+// CodeAPIVersion is the refusal of a manifest written for a newer rta than this
+// one. It is addressed to whoever runs rta and not to the index author, who
+// has done nothing wrong, and it is not a not-found code: the first-party
+// offer asks to attach an index when none carries a plugin, and an index that
+// carries it in a form this rta cannot read is the opposite case.
+const CodeAPIVersion = "plugin.index.apiversion"
 
 // ParseManifest reads and validates one manifest. Every refusal names the
 // field, because the person who can act on it is the index author reading
@@ -132,8 +214,28 @@ func ParseManifest(raw []byte) (Manifest, *view.Error) {
 		return m, view.Errorf("plugin.index.manifest", "%v", err)
 	}
 	if err := yaml.UnmarshalWithOptions(raw, &m, yaml.Strict()); err != nil {
-		return m, view.Errorf("plugin.index.manifest", "%s",
+		// A document of a newer apiVersion fails here for whatever it changed
+		// — a key this struct has no field for, a field it retyped — and that
+		// symptom would blame the manifest for what is this rta being old. So
+		// the version is read once more, on this path only, and a newer one
+		// is what the manifest is refused for. The path a good manifest takes
+		// parses once.
+		if v := statedAPIVersion(raw); isNewerAPIVersion(v) {
+			return m, newerAPIVersion(v)
+		}
+		verr := view.Errorf("plugin.index.manifest", "%s",
 			strings.TrimSpace(yaml.FormatError(err, false, false)))
+		var unknown *yaml.UnknownFieldError
+		if errors.As(err, &unknown) {
+			verr = verr.WithHint("a key rta does not read is refused, so a misspelling is heard; one meant for " +
+				"other tools goes under `annotations:` at the top level, where it means nothing to rta")
+		}
+		return m, verr
+	}
+	// Before check, which is a judgement by this version's rules and has no
+	// standing over a document written under another's.
+	if verr := checkAPIVersion(m.APIVersion); verr != nil {
+		return m, verr
 	}
 	if verr := m.check(); verr != nil {
 		return m, verr
@@ -141,13 +243,77 @@ func ParseManifest(raw []byte) (Manifest, *view.Error) {
 	return m, nil
 }
 
+// statedAPIVersion reads the one key a failed decode can still be asked
+// about, leniently: the document has already been refused, and its
+// remaining keys are the reason, not the question. A document too broken to
+// give one states none.
+//
+// Its caller has already refused anchors in these bytes; asked again here so
+// the rule holds where the decode is, whoever calls it next.
+func statedAPIVersion(raw []byte) string {
+	if yamlguard.RefuseAnchors(raw) != nil {
+		return ""
+	}
+	var probe struct {
+		APIVersion string `yaml:"apiVersion"`
+	}
+	_ = yaml.Unmarshal(raw, &probe)
+	return probe.APIVersion
+}
+
+// isNewerAPIVersion reports whether v is rta/v<N> for an N past the one
+// version this reader has: ASCII digits only and no leading zero, so that
+// every spelling is one number and "rta/v1" is the one that is not newer.
+// Compared as text because N is the index's and may be any size.
+func isNewerAPIVersion(v string) bool {
+	n, ok := strings.CutPrefix(v, "rta/v")
+	if !ok || n == "" || n == "1" || n[0] == '0' {
+		return false
+	}
+	for i := 0; i < len(n); i++ {
+		if n[i] < '0' || n[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// checkAPIVersion is the gate: nothing, or v1, passes; a newer one is the
+// reader's to act on; and anything else is a slip in the manifest.
+func checkAPIVersion(v string) *view.Error {
+	switch {
+	case v == "" || v == APIVersionV1:
+		return nil
+	case isNewerAPIVersion(v):
+		return newerAPIVersion(v)
+	}
+	return view.Errorf("plugin.index.manifest",
+		"apiVersion %q is not one rta knows — a manifest states %s, or no apiVersion at all",
+		format.Clip(v, maxEchoedClaim), APIVersionV1)
+}
+
+// newerAPIVersion is the refusal of a manifest written for a later rta. It
+// stands alone, because `index add` and `outdated` print the message and not
+// the hint: it says what the manifest stated, what this rta reads, which rta
+// this is, and whose move it is. No text of the manifest becomes an
+// instruction — the value is clipped and quoted, and "upgrade rta" is ours.
+func newerAPIVersion(v string) *view.Error {
+	running := ""
+	if self := session.Self(); self != "" {
+		running = " (" + self + ")"
+	}
+	return view.Errorf(CodeAPIVersion,
+		"apiVersion %q is newer than %s, which this rta%s reads — upgrade rta",
+		format.Clip(v, maxEchoedClaim), APIVersionV1, running)
+}
+
 // check is every rule a manifest must satisfy before its claims are shown to
 // anybody. The grammar rules are pkg/plugin's own exports, so a claim is held
 // to exactly the grammar the binary will be held to at registration — one
 // home per rule.
 func (m Manifest) check() *view.Error {
-	bad := func(format string, args ...any) *view.Error {
-		return view.Errorf("plugin.index.manifest", format, args...)
+	bad := func(msg string, args ...any) *view.Error {
+		return view.Errorf("plugin.index.manifest", msg, args...)
 	}
 	if !plugin.ValidName(m.Name) {
 		return bad("name %q is not a plugin namespace (lowercase [a-z0-9-])", m.Name)
@@ -165,6 +331,12 @@ func (m Manifest) check() *view.Error {
 		return bad("%s states no summary", m.Name)
 	}
 	if m.Homepage != "" {
+		// Shown to a person, from an index, so held to what a summary is. The
+		// parse below admits a bidi override and an escape in a path, and a
+		// link that displays as another one is what those are for.
+		if verr := cleanLine("homepage", m.Homepage, maxManifestHomepage); verr != nil {
+			return verr
+		}
 		u, err := url.Parse(m.Homepage)
 		if err != nil || u.Scheme != "https" || u.Host == "" {
 			return bad("%s: homepage %q is not an https URL", m.Name, m.Homepage)
@@ -220,12 +392,70 @@ func (m Manifest) check() *view.Error {
 		}
 		seenNeed[n] = true
 	}
+	return m.checkAnnotations()
+}
+
+// checkAnnotations holds the one free-form part of a manifest to the bounds
+// that keep it from being a second place to put a summary. A violation
+// refuses the manifest and does not drop the annotation: what is displayed
+// beside a plugin must display as what it is, and a reader that quietly kept
+// the manifest minus one line would be deciding what the author meant. Keys are
+// walked in order so that the refusal is the same on every run.
+func (m Manifest) checkAnnotations() *view.Error {
+	bad := func(msg string, args ...any) *view.Error {
+		return view.Errorf("plugin.index.manifest", msg, args...)
+	}
+	if len(m.Annotations) > maxAnnotations {
+		return bad("%s carries %d annotations; at most %d are allowed", m.Name, len(m.Annotations), maxAnnotations)
+	}
+	for _, key := range slices.Sorted(maps.Keys(m.Annotations)) {
+		shown := strconv.Quote(format.Clip(key, maxAnnotationKey+1))
+		if n := utf8.RuneCountInString(key); n > maxAnnotationKey {
+			return bad("annotation %s is %d characters; the cap is %d", shown, n, maxAnnotationKey)
+		}
+		if !annotationKey(key) {
+			return bad("annotation %s is not a key: [prefix/]name, in lowercase letters, digits, "+
+				"'-', '_' and '.', each part beginning and ending with a letter or digit", shown)
+		}
+		if verr := cleanLine("annotation "+shown+" value", m.Annotations[key], maxAnnotationValue); verr != nil {
+			return verr
+		}
+	}
 	return nil
 }
 
+// annotationKey is [prefix/]name with at most one slash, each part made of
+// [a-z0-9._-] and beginning and ending with a letter or digit. By hand, like
+// token: a loop over bytes holds a key of any size to a grammar this small
+// without a pattern to run, on a path every manifest of every search takes.
+func annotationKey(key string) bool {
+	prefix, name, prefixed := strings.Cut(key, "/")
+	if !prefixed {
+		return annotationPart(key)
+	}
+	return annotationPart(prefix) && annotationPart(name)
+}
+
+func annotationPart(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		alnum := (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+		if alnum {
+			continue
+		}
+		if (c != '.' && c != '_' && c != '-') || i == 0 || i == len(s)-1 {
+			return false
+		}
+	}
+	return true
+}
+
 func (p Platform) check(name string) *view.Error {
-	bad := func(format string, args ...any) *view.Error {
-		return view.Errorf("plugin.index.manifest", format, args...)
+	bad := func(msg string, args ...any) *view.Error {
+		return view.Errorf("plugin.index.manifest", msg, args...)
 	}
 	if !token(p.OS) || !token(p.Arch) {
 		return bad("%s: platform %q/%q is not os/arch", name, p.OS, p.Arch)

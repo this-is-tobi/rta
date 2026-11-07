@@ -176,14 +176,17 @@ func TestTheFirstIndexProblemIsRaisedWithTheCountOfTheRest(t *testing.T) {
 	if got := withOthers([]*view.Error{one}); got.Hint != one.Hint {
 		t.Errorf("one problem: hint = %q, want it untouched", got.Hint)
 	}
-	// "2 more attached indexes", the word alone after the number: the hint
-	// used to read "2 more attached 2 indexes".
+	// "2 more problems", the word alone after the number: the hint used to
+	// read "2 more attached 2 indexes". And problems, not indexes: a problem
+	// is a manifest as often as an index, and three manifests of one index
+	// that this rta is too old for were counted as two more indexes.
 	got := withOthers([]*view.Error{one, view.Errorf("x", "y"), view.Errorf("z", "w")})
-	if !strings.HasPrefix(got.Hint, one.Hint+". ") || !strings.Contains(got.Hint, "2 more attached indexes could") {
+	if !strings.HasPrefix(got.Hint, one.Hint+". ") || !strings.Contains(got.Hint, "2 more problems in the attached indexes") ||
+		strings.Contains(got.Hint, "2 more attached") {
 		t.Errorf("three problems: hint = %q", got.Hint)
 	}
 	two := withOthers([]*view.Error{one, view.Errorf("x", "y")})
-	if !strings.Contains(two.Hint, "1 more attached index could") {
+	if !strings.Contains(two.Hint, "1 more problem in the attached indexes") {
 		t.Errorf("two problems: hint = %q", two.Hint)
 	}
 	if got := asWarnings([]*view.Error{one}); len(got) != 1 || got[0].Code != one.Code {
