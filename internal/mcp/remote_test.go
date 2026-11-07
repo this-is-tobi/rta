@@ -333,8 +333,16 @@ func TestACredentialHoldsAtMostItsCapOfSessions(t *testing.T) {
 	for range maxSessions + 1 {
 		alice = append(alice, open("tok-a-0123456789abcdef"))
 	}
-	if err := alice[0].Ping(ctx, nil); err == nil {
-		t.Errorf("alice's oldest session still answers after she opened %d more", maxSessions)
+	// Asked until it stops answering, within a bound, and not once: on a loaded
+	// CI runner the oldest still answered the first ping after the newest had
+	// connected, a race no run outside CI reproduced. Nothing but the cap closes
+	// a session, so a cap that did not close it still fails, at the bound.
+	start := time.Now()
+	for alice[0].Ping(ctx, nil) == nil {
+		if time.Since(start) > 10*time.Second {
+			t.Fatalf("alice's oldest session still answers %s after she opened %d more", time.Since(start).Round(time.Millisecond), maxSessions)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	for i, s := range alice[1:] {
 		if err := s.Ping(ctx, nil); err != nil {
