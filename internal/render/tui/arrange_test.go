@@ -1062,8 +1062,13 @@ func TestVerticalMovementKeepsItsColumn(t *testing.T) {
 // Hit-testing used to divide x by the column width, which is right only
 // while every row has the same number of equally-wide tiles. On a full-width
 // row, the far right of the screen is still that one tile.
+//
+// The wide tile is stated: this asked the automatic dashboard for one, and it
+// skipped without a word once that dashboard had none.
 func TestClickingAnywhereOnAWideRowHitsThatTile(t *testing.T) {
-	m := wideRowModel(t)
+	m := sectioned(t, config.Dashboard{Tiles: []config.Tile{
+		{ID: "alpha.status"}, {ID: "beta.status"}, {ID: "gamma.status", Width: config.GridTracks}, {ID: "delta.status"},
+	}}, 120, 44)
 	rows := cellRows(m)
 	heights := m.rowHeights()
 	wideRow, wideIdx := -1, -1
@@ -1073,7 +1078,7 @@ func TestClickingAnywhereOnAWideRowHitsThatTile(t *testing.T) {
 		}
 	}
 	if wideRow < 0 {
-		t.Skip("no wide tile")
+		t.Fatalf("no row of the fixture is one full-width tile: %v", rows)
 	}
 	y := 1 + m.searchHeight()
 	for r := 0; r < wideRow; r++ {
