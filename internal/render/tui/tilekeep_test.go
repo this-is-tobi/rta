@@ -240,12 +240,32 @@ func TestAChangedConnectionTakesTheKeptAnswerAway(t *testing.T) {
 }
 
 // The tile's height is what it shows: a kept answer is the view the row was
-// sized from, so the row does not jump when a run fails.
-func TestAFailedRefreshDoesNotResizeTheRow(t *testing.T) {
-	ok := answered(t, &scriptedRuns{errs: []*view.Error{nil}}, 0)
-	failed := askedAgain(t, answered(t, &scriptedRuns{errs: []*view.Error{nil, timedOut()}}, 0))
-	if a, b := tileRowHeight(ok.asReturned(1), 60), tileRowHeight(failed.asReturned(1), 60); a != b {
-		t.Errorf("the row is %d lines tall with the answer and %d with the answer kept", a, b)
+// sized from, so the row does not jump when a run fails or the answer goes old.
+//
+// **A table grew its tile by a line once its answer was kept.** Its body ends
+// in a newline, which dimming turned into a line of its own, so every row of a
+// dashboard jumped by a line as its answers turned old. This drew a line of
+// text, which ends in none, and only after a failed run.
+func TestAKeptAnswerDoesNotResizeTheRow(t *testing.T) {
+	table := view.Table{
+		Columns: []view.Column{{Name: "Name"}, {Name: "Status", Kind: view.KindStatus}},
+		Rows:    [][]string{{"db", "up"}},
+		Total:   1,
+	}
+	for name, answer := range map[string]view.View{"text": nil, "a table": table} {
+		current := answered(t, &scriptedRuns{errs: []*view.Error{nil}, answer: answer}, 0)
+		want := tileRowHeight(current.asReturned(1), 60)
+		failed := askedAgain(t, answered(t, &scriptedRuns{errs: []*view.Error{nil, timedOut()}, answer: answer}, 0))
+		ageAnswer(current, time.Hour)
+		for state, m := range map[string]Model{"after a failed run": failed, "gone old": current} {
+			kept := m.asReturned(1)
+			if kept.kept == nil {
+				t.Fatalf("%s: the answer is not kept %s", name, state)
+			}
+			if got := tileRowHeight(kept, 60); got != want {
+				t.Errorf("%s: the row is %d lines tall with the answer current and %d with it kept %s", name, want, got, state)
+			}
+		}
 	}
 }
 
