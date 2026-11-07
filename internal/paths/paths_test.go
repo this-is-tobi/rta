@@ -41,6 +41,19 @@ func TestDataFallsBackToXDGDataHome(t *testing.T) {
 	}
 }
 
+// A relative XDG_DATA_HOME is ignored, as the specification says: honoured,
+// it put the grant file, its seal key and the stores in the working directory.
+func TestARelativeXDGDataHomeIsIgnored(t *testing.T) {
+	clear(t)
+	t.Setenv("HOME", "/home/someone")
+	t.Setenv("XDG_DATA_HOME", "reldata")
+
+	want := filepath.Join("/home/someone", ".local", "share", "rta")
+	if got := Data(); got != want {
+		t.Errorf("Data() = %q, want %q", got, want)
+	}
+}
+
 // With neither set, the XDG default itself: ~/.local/share, plus rta's own
 // name under it.
 func TestDataFallsBackToHomeWhenNeitherIsSet(t *testing.T) {
