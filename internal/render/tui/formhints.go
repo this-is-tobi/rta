@@ -198,7 +198,7 @@ func (m Model) formEnterWord() string {
 	case cf.configTarget != "", cf.allowTarget != "", cf.credentialEditing, cf.connEditing, cf.profileEditing:
 		return "save"
 	case !cf.final:
-		return "next"
+		return "next step"
 	case m.current.Safety == plugin.Destructive:
 		return "preview"
 	}
