@@ -92,7 +92,9 @@ Every upgrade keeps the previous artifact in the store, so a rollback is a re-in
 
 An upgrade also leaves the grants standing on the plugin covering nothing: each is bound to the build it was issued against, and the new build is another artifact. `rta grant list` marks every such grant `(replaced)` and `rta doctor` warns of them; `rta grant allow` issues each again for the build installed now.
 
-And it leaves your configuration pinned to the old build. A `plugins:` section whose heading names the old digest no longer applies, and rta refuses every call of the plugin until it names the build installed, as `core.config.unapplied`, rather than run them without it: without it a call goes to the plugin's own default destination, with whatever credentials you exported for the one the section named. A profile entry naming the old digest is refused the same way. The upgrade's receipt names both, and the command that moves each:
+It leaves behind what you let the old build read, too. `rta plugin access add` records a credential location, or a path named for `confine: strict`, against the build's digest, so the new build starts with none of it, and a call that needs the file fails until you give it again: `rta plugin access add kube`, the decision you made for the build it replaced, made for these bytes. An upgrade never makes it for you. Installing the new build is the decision to run it and no more, for the reason [Using plugins](./10-plugins.md#when-a-plugin-needs-one-of-those-locations) gives, and a sweep holds back a build that asks for a location the old one did not.
+
+And it leaves your configuration pinned to the old build. A `plugins:` section whose heading names the old digest no longer applies, and rta refuses every call of the plugin until it names the build installed, as `core.config.unapplied`, rather than run them without it: without it a call goes to the plugin's own default destination, with whatever credentials you exported for the one the section named. A profile entry naming the old digest is refused the same way. Each has its command:
 
 ```bash
 rta config repin --plugin pg                 # the plugins: section, every key kept, in the file it is in
@@ -100,6 +102,30 @@ rta profile repin --all --plugin pg          # every profile entry
 ```
 
 A section written with no pin, or one too short to trust, is refused and pinned the same way. Two sections for the one plugin, the old pin left beside the new, are refused by `config repin` rather than folded together, since which one's keys you keep is yours to say. A config file read from the working directory is not honoured at all, and a call runs without its sections rather than refuse on the word of a file you did not name.
+
+**The receipt names all of it.** `rta plugin upgrade pg` ends on a row for each thing the upgrade left on the build it replaced — `your profiles`, `your pin`, `your access`, `your paths` and `your grants` — with the command that moves it, and a sweep says the same in a `Left behind` section under its table, one line for each thing a plugin left. The access line names the locations to give back whenever the new build declares more than the old one was given, so the command it hands you never gives a plugin something you did not give it before. Nothing on it moves by itself. `rta doctor` goes on naming each one until it is done, except a named path, which only the receipt says: doctor reads what the build installed now was given, and the path was given to the one it replaced.
+
+### In one script
+
+On a machine with many plugins and profiles, the receipt's commands can run as one script:
+
+> [!CAUTION]
+> **This makes, unread, every decision an upgrade leaves to you.** Each profile's credentials and each `plugins:` section go to the new builds, and each plugin you name reads what you let its old build read — decisions about bytes nobody has looked at, which rta leaves behind on purpose. A sweep holds back a build that declares more than you approved; nothing holds back one that does something worse with the same declaration, and reading the receipt is how you would have caught it. Run this only against an index whose releases you would install unread anyway, and give access by name, as it does, never in a loop.
+
+```bash
+rta plugin index update
+rta plugin upgrade --all
+# plugin list's last column says where each plugin came from
+for p in $(rta plugin list -o json | jq -r '.rows[] | select(.[-1] == "installed by rta") | .[0]'); do
+  rta profile repin --all --plugin "$p"
+  rta config repin --plugin "$p"
+done
+rta plugin access add kube
+rta plugin access add cnpg
+rta doctor
+```
+
+Both repins answer that there is nothing to do for a plugin no profile or section names, and leave alone a plugin the sweep held back, whose entries still name the build it runs. A path you named for `confine: strict` is not in it: the receipt's `your paths` line has the command for each. Grants are left out on purpose: issuing one is consent given to an agent, which a script run with nobody at the terminal must not give, and `rta doctor` names them at the end with whatever else is left.
 
 ## Related
 
