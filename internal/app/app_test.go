@@ -1430,6 +1430,11 @@ func TestEverySectionInTheCatalogueHasAStableID(t *testing.T) {
 	}
 	idRe := regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	inputs := conformanceInputs(t.TempDir())
+	// No program of the host's: what is checked is the page's shape, and pkg's
+	// pages were drawn from the host's package managers and Apple's update
+	// service (`softwareupdate --list`, 6.9 s of the 20 this test took). With
+	// none found they draw the same sections, saying so.
+	t.Setenv("PATH", t.TempDir())
 
 	var reached, skipped []string
 	for _, c := range reg.Capabilities() {
