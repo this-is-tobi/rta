@@ -150,9 +150,8 @@ func StartSession(passphrase string, ttl time.Duration) *view.Error {
 	if passphrase == "" {
 		return view.Errorf("kv.passphrase.missing", "no passphrase given").WithInput("passphrase")
 	}
-	if _, ok := UnlockPrompt(); !ok {
-		return view.Errorf("kv.session.nothing", "there is nothing to unlock").
-			WithHint("the store is absent, or this process already opens it")
+	if prompt, nothing := unlockAsk(); prompt == "" {
+		return view.Errorf("kv.session.nothing", "%s", nothing)
 	}
 	req := plugin.NewRequest(map[string]any{
 		"passphrase": passphrase,
@@ -172,23 +171,40 @@ func StartSession(passphrase string, ttl time.Duration) *view.Error {
 // own help line: "the store's passphrase", or "the passphrase of the key
 // ~/.ssh/rta_kv".
 func UnlockPrompt() (string, bool) {
-	if !fileExists(storePath()) || os.Getenv(passphraseEnv) != "" {
-		return "", false
+	prompt, _ := unlockAsk()
+	return prompt, prompt != ""
+}
+
+// NothingToUnlock is why UnlockPrompt has nothing to ask, for the person who
+// pressed the key: the cause that holds, where one line naming every cause it
+// might be read as rta not knowing which.
+func NothingToUnlock() string {
+	_, nothing := unlockAsk()
+	return nothing
+}
+
+// unlockAsk is UnlockPrompt's question, or, when there is none, why.
+func unlockAsk() (prompt, nothing string) {
+	switch {
+	case !fileExists(storePath()):
+		return "", "nothing to unlock: there is no store yet, and kv.set makes one"
+	case os.Getenv(passphraseEnv) != "":
+		return "", "nothing to unlock: " + passphraseEnv + " in rta's environment already opens the store"
 	}
 	if _, held := peekSession(); held {
-		return "", false
+		return "", "the store is unlocked already"
 	}
 	mode, _, verr := currentMode()
 	if verr != nil {
-		return "", false
+		return "", verr.Message
 	}
 	if mode == modeKeys {
 		if p := LockedIdentity(); p != "" {
-			return "the passphrase of the key " + p, true
+			return "the passphrase of the key " + p, ""
 		}
-		return "", false
+		return "", "nothing to unlock: the store opens with its key, which needs no passphrase"
 	}
-	return "the store's passphrase", true
+	return "the store's passphrase", ""
 }
 
 // ForgetSession ends the session on demand. Exported for whoever owns a
