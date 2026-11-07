@@ -654,6 +654,28 @@ func TestNoTokenOffTheCLIIsRefusedRatherThanReadFromStdin(t *testing.T) {
 	}
 }
 
+// b64, hex and url take their value from a pipe on the CLI, as jwt takes its
+// token, and refuse rather than hang everywhere else: `echo hello | rta codec
+// b64` was refused as a call missing its value.
+func TestNoValueOffTheCLIIsRefusedRatherThanReadFromStdin(t *testing.T) {
+	for id, run := range map[string]plugin.Handler{"codec.b64": runB64, "codec.hex": runHex, "codec.url": runURL} {
+		for _, s := range []plugin.Surface{plugin.SurfaceMCP, plugin.SurfaceTUI} {
+			_, err := run(context.Background(), req(map[string]any{}).WithSurface(s))
+			if verr := view.AsError(err, "test"); verr.Code != id+".empty" || verr.Input != "value" {
+				t.Errorf("%s on %s: %s on %q, want %s.empty on value", id, s, verr.Code, verr.Input, id)
+			}
+		}
+	}
+	for _, c := range Plugin().Capabilities {
+		for _, f := range c.Inputs {
+			if f.Name == "value" && (!f.Piped || !c.NoPreview) {
+				t.Errorf("%s: value is piped %v and the capability kept off the dashboard %v, want both",
+					c.ID, f.Piped, c.NoPreview)
+			}
+		}
+	}
+}
+
 // A part that does not decode is refused in words about the token, with what
 // a token is: `not.a.jwt` was told "decoding the header: invalid character
 // '\u009e' looking for beginning of value", with no hint.

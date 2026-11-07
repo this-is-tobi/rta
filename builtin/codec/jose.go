@@ -47,10 +47,11 @@ import (
 // signature — because that is what somebody debugging a rejected token came
 // to find out.
 
-// maxPipedToken bounds what codec.jwt and codec.jwk read from a pipe. A token
-// in an Authorization header is a few kilobytes and a key set a few dozen, so
-// this is generous for either and still a bound.
-const maxPipedToken = 1 << 20
+// maxPiped bounds what a codec reads from a pipe. A token
+// in an Authorization header is a few kilobytes, a key set a few dozen and a
+// value to encode is what a shell pipeline hands over, so this is generous
+// for each and still a bound.
+const maxPiped = 1 << 20
 
 // maxNesting bounds how deep codec.jwt follows a token whose payload is
 // another token. Real nesting is one level — sign, then encrypt, and the
@@ -115,17 +116,9 @@ func verifierFrom(ctx context.Context, req plugin.Request) (*verifier, *view.Err
 // particular: an argument lands in the shell's history and, for as long as the
 // call runs, in a process table every user on the machine can read.
 func joseInput(req plugin.Request, field, code, what, hint string) (string, *view.Error) {
-	raw := req.String(field)
-	if raw == "" {
-		piped, err := pipein.Read(req, maxPipedToken)
-		switch {
-		case errors.Is(err, pipein.ErrTooLarge):
-			return "", view.Errorf(code+".stdin", "stdin holds more than the %s a %s can be",
-				format.Bytes(maxPipedToken), what).WithInput(field)
-		case err != nil:
-			return "", view.Errorf(code+".stdin", "reading stdin: %v", err)
-		}
-		raw = piped
+	raw, verr := argOrPipe(req, field, code, what)
+	if verr != nil {
+		return "", verr
 	}
 	raw = trimText(raw)
 	if raw == "" {
@@ -136,6 +129,23 @@ func joseInput(req plugin.Request, field, code, what, hint string) (string, *vie
 		return "", view.Errorf(code+".empty", "no %s to read", what).WithHint(hint).WithInput(field)
 	}
 	return raw, nil
+}
+
+// argOrPipe is a Piped input: the argument, or what was piped when the argument
+// is left out, as it came.
+func argOrPipe(req plugin.Request, field, code, what string) (string, *view.Error) {
+	if raw := req.String(field); raw != "" {
+		return raw, nil
+	}
+	piped, err := pipein.Read(req, maxPiped)
+	switch {
+	case errors.Is(err, pipein.ErrTooLarge):
+		return "", view.Errorf(code+".stdin", "stdin holds more than the %s a %s can be",
+			format.Bytes(maxPiped), what).WithInput(field)
+	case err != nil:
+		return "", view.Errorf(code+".stdin", "reading stdin: %v", err)
+	}
+	return piped, nil
 }
 
 // unwrapToken removes what surrounds a token copied from where it was found

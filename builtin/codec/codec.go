@@ -34,7 +34,10 @@ import (
 
 // Plugin returns the codec plugin declaration.
 func Plugin() plugin.Plugin {
-	valueField := plugin.Field{Name: "value", Type: plugin.String, Positional: true, Required: true, Help: "the text to transform"}
+	// Piped, as codec.jwt's token is: `pbpaste | rta codec b64 --decode` and
+	// `cat key.der | rta codec hex` are how a value usually arrives, and an
+	// argument puts it in the shell's history.
+	valueField := plugin.Field{Name: "value", Type: plugin.String, Positional: true, Piped: true, Help: "the text to transform"}
 	decodeField := plugin.Field{Name: "decode", Type: plugin.Bool, Help: "decode instead of encode"}
 
 	return plugin.Plugin{
@@ -50,6 +53,7 @@ func Plugin() plugin.Plugin {
 					"that are not plain text come back as a hex dump, and text holding a control or invisible " +
 					"character comes back as its exact value beside the dump.",
 				Safety: plugin.Read, Idempotent: true,
+				NoPreview: true, // a pipe can supply the value, as codec.jwt says
 				Inputs: []plugin.Field{valueField, decodeField,
 					{Name: "url", Type: plugin.Bool, Help: "use the URL-safe alphabet when encoding"}},
 				Run: runB64,
@@ -62,8 +66,9 @@ func Plugin() plugin.Plugin {
 					"Bytes that are not plain text are shown as a hex dump, beside the exact " +
 					"value when they are text holding a control or invisible character.",
 				Safety: plugin.Read, Idempotent: true,
-				Inputs: []plugin.Field{valueField, decodeField},
-				Run:    runHex,
+				NoPreview: true, // a pipe can supply the value, as codec.jwt says
+				Inputs:    []plugin.Field{valueField, decodeField},
+				Run:       runHex,
 			},
 			{
 				ID:      "codec.url",
@@ -73,6 +78,7 @@ func Plugin() plugin.Plugin {
 					"`path` escapes a path segment instead, where a space is %20 and + is a literal plus: " +
 					"decoding a path as a query turns c++.txt into \"c  .txt\".",
 				Safety: plugin.Read, Idempotent: true,
+				NoPreview: true, // a pipe can supply the value, as codec.jwt says
 				Inputs: []plugin.Field{valueField, decodeField,
 					{Name: "path", Type: plugin.Bool, Help: "escape or unescape a path segment rather than a query value"}},
 				Run: runURL,
@@ -149,8 +155,28 @@ func Plugin() plugin.Plugin {
 	}
 }
 
+// valueOf is the value b64, hex and url transform: the argument, or what was
+// piped when it is left out. Piped bytes are taken as they came, as base64(1)
+// and xxd take them, so `echo` encodes the line break it adds and `printf %s`
+// does not; decoding reads past the space around a value, which no encoding
+// holds.
+func valueOf(req plugin.Request, code string) (string, *view.Error) {
+	value, verr := argOrPipe(req, "value", code, "value")
+	if verr != nil || value != "" {
+		return value, verr
+	}
+	hint := "pass it as an argument, or pipe it: `printf %s 'the text' | rta " + strings.ReplaceAll(code, ".", " ") + "`"
+	if s := req.Surface(); s == plugin.SurfaceTUI || s == plugin.SurfaceMCP {
+		hint = "give it in " + s.InputName("value")
+	}
+	return "", view.Errorf(code+".empty", "no value to transform").WithHint(hint).WithInput("value")
+}
+
 func runB64(_ context.Context, req plugin.Request) (view.View, error) {
-	value := req.String("value")
+	value, verr := valueOf(req, "codec.b64")
+	if verr != nil {
+		return nil, verr
+	}
 	if req.Bool("decode") {
 		raw, err := decodeB64(value)
 		if err != nil {
@@ -202,7 +228,10 @@ func decodeB64(value string) ([]byte, error) {
 }
 
 func runHex(_ context.Context, req plugin.Request) (view.View, error) {
-	value := req.String("value")
+	value, verr := valueOf(req, "codec.hex")
+	if verr != nil {
+		return nil, verr
+	}
 	if req.Bool("decode") {
 		raw, err := decodeHex(value)
 		if err != nil {
@@ -277,7 +306,11 @@ func splitHexGroups(s string) []string {
 }
 
 func runURL(_ context.Context, req plugin.Request) (view.View, error) {
-	value, path := req.String("value"), req.Bool("path")
+	value, verr := valueOf(req, "codec.url")
+	if verr != nil {
+		return nil, verr
+	}
+	path := req.Bool("path")
 	if req.Bool("decode") {
 		unescape := url.QueryUnescape
 		if path {
