@@ -62,3 +62,27 @@ func TestTheShimReadsANamedPathAndNothingBesideIt(t *testing.T) {
 		t.Errorf("the confined shell read past the named path:\n%s", out)
 	}
 }
+
+// The CA paths rta hands every plugin by name are held to a named path's rules:
+// one that leads to the home directory gives nothing, and one beside it its own.
+func TestACertPathThatLeadsHomeIsNotGiven(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("RTA_DATA_DIR", filepath.Join(home, ".local", "share", "rta"))
+	t.Setenv("RTA_CONFIG", filepath.Join(home, ".config", "rta", "config.yaml"))
+	t.Setenv("RTA_KV_IDENTITY", "")
+	link := filepath.Join(t.TempDir(), "certs")
+	if err := os.Symlink(home, link); err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(tree(t, "corp.pem"), "corp.pem")
+	t.Setenv("SSL_CERT_FILE", bundle)
+	t.Setenv("SSL_CERT_DIR", link)
+	got := certPaths()
+	if slices.ContainsFunc(got, func(p string) bool { return p == link || inside(home, p) }) {
+		t.Errorf("SSL_CERT_DIR leading to the home directory is given: %q", got)
+	}
+	if !slices.Contains(got, bundle) {
+		t.Errorf("the bundle beside it is not given: %q", got)
+	}
+}

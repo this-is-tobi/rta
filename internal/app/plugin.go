@@ -390,9 +390,22 @@ func needsInventory() view.View {
 		if len(c.Declared.Needs) == 0 {
 			asks = "—"
 		}
+		// A named path a launch now leaves out (pluginhost.ResolveAllowing): it
+		// was swapped for, or now leads to, what CheckPath refuses. Marked, and
+		// its removal is the next step once nothing else is.
+		shown := make([]string, len(paths))
+		for i, p := range paths {
+			shown[i] = p
+			if _, verr := pluginhost.CheckPath(p); verr != nil {
+				shown[i] = p + " (not given: " + verr.Message + ")"
+				if status == "ok" {
+					status, action = "warn", "rta plugin access rm "+c.Declared.Name+" --path "+p
+				}
+			}
+		}
 		row := []view.Cell{view.Plain(c.Declared.Name), view.Plain(asks), view.Plain(status), view.Plain(action)}
 		if named {
-			row = append(row, view.Plain(dashIfNone(strings.Join(paths, ", "))))
+			row = append(row, view.Plain(dashIfNone(strings.Join(shown, ", "))))
 		}
 		t.Add(row...)
 	}

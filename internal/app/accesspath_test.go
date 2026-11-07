@@ -73,3 +73,35 @@ func TestAPathIsNamedForAPluginAndTakenBack(t *testing.T) {
 		t.Errorf("Paths after taking it back = %v", got)
 	}
 }
+
+// A named path a launch now leaves out — swapped for a link to the home
+// directory after it was named — is marked in the inventory, with taking it back
+// as the next step, instead of reading as given.
+func TestTheInventoryMarksANamedPathALaunchLeavesOut(t *testing.T) {
+	session(t, registry.New())
+	ca := filepath.Join(t.TempDir(), "team-ca")
+	if err := os.Symlink(os.Getenv("HOME"), ca); err != nil {
+		t.Fatal(err)
+	}
+	digest := strings.Repeat("e", 64)
+	if verr := plugintrust.Add(digest, "lab", "/somewhere/rta-plugin-lab"); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := plugintrust.AllowPaths(digest, []string{ca}); verr != nil {
+		t.Fatal(verr)
+	}
+	SetLoadedPlugins([]*pluginhost.Client{{
+		Identity: pluginhost.Identity{Path: "/somewhere/rta-plugin-lab", Digest: digest},
+		Declared: plugin.Plugin{Name: "lab", Summary: "a lab plugin",
+			Capabilities: []plugin.Capability{{ID: "lab.get", Safety: plugin.Read}}},
+	}})
+	t.Cleanup(func() { SetLoadedPlugins(nil) })
+
+	row := needsInventory().(view.Table).Rows[0]
+	if !strings.Contains(row[len(row)-1], "not given: ") || !strings.Contains(row[len(row)-1], "holds the home directory") {
+		t.Errorf("the inventory lists the swapped path as given: %q", row)
+	}
+	if row[2] != "warn" || row[3] != "rta plugin access rm lab --path "+ca {
+		t.Errorf("status and next step = %q, %q, want warn and the path taken back", row[2], row[3])
+	}
+}
