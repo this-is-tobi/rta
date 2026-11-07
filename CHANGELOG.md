@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.59.0](https://github.com/this-is-tobi/rta/compare/v0.58.0...v0.59.0) (2026-11-07)
+
+
+### Features
+
+* **codec:** b64, hex and url read their value from a pipe, as jwt does ([568439e](https://github.com/this-is-tobi/rta/commit/568439efb38682a6a295dd4dc70c8109f5e9d64a))
+* **kv:** a tree is narrowed to one folder, as the listing is ([0da4e1e](https://github.com/this-is-tobi/rta/commit/0da4e1ec2d73825af071d6cb97b55961a6515ef3))
+* **plugin:** every upgrade receipt names what it left on the build it replaced ([510423e](https://github.com/this-is-tobi/rta/commit/510423e803605e01602c45cf79c991e3e8c8f603))
+* **tui:** a call typed into the search bar fills its form ([500f7f8](https://github.com/this-is-tobi/rta/commit/500f7f8f8138c3e5acbae47c09816466f4619ae9))
+* **tui:** the M key shows more rows of a table cut at its limit ([525dcc6](https://github.com/this-is-tobi/rta/commit/525dcc635cba6befbfa2d68474753596bc4769d7))
+
+
+### Bug Fixes
+
+* **audit:** the deny block names plugin upgrade and plugin index ([57ad9ad](https://github.com/this-is-tobi/rta/commit/57ad9adf144237cc9a78b73f430c5765a2f571e1))
+* **kv:** a passphrase store at rest is ok — locked, not a warning ([3cd2dfa](https://github.com/this-is-tobi/rta/commit/3cd2dfa57c34d010770f441d6a5e363480ebb394))
+* **kv:** nothing to unlock says which of its causes holds ([814e9b7](https://github.com/this-is-tobi/rta/commit/814e9b7a968f03bddbf2a5299157dae71693893a))
+* **kv:** passphrase derivations take turns, so calls side by side cannot exhaust memory ([d9debf4](https://github.com/this-is-tobi/rta/commit/d9debf4a19452baa36c87e11bd6323543567ff3d))
+* **mcp:** a credential holds at most 16 sessions on the HTTP listener ([9540bf1](https://github.com/this-is-tobi/rta/commit/9540bf1bdbec8b1420be57e73e99bbd53bf0bd99))
+* **paths:** a relative XDG_DATA_HOME is ignored, as the specification says ([6339676](https://github.com/this-is-tobi/rta/commit/633967609c73ef4e54e979708f3402a819ac7ed1))
+* **plugin:** a named path is held to its rules at every launch, not once ([3fac371](https://github.com/this-is-tobi/rta/commit/3fac3713c1413e3cf84329f9bd497a8340cb3885))
+* **profile:** a forward frees a TLS-adjacent key from the command line too ([2a83926](https://github.com/this-is-tobi/rta/commit/2a83926911ff8e7592d740c43aa407c0f19ae650))
+* **tui:** a new store asks for its passphrase twice, and esc on its question goes back ([cd15bd8](https://github.com/this-is-tobi/rta/commit/cd15bd888dc8b610751be8605e2fc1aab90115cd))
+* **tui:** a tab asks a plugin's service nothing that its run would not ([2555e36](https://github.com/this-is-tobi/rta/commit/2555e36f636725e92b27fb1b15f09d0a5534f203))
+* **tui:** a toggle's yes and no sit at the left, under its question ([0e339bd](https://github.com/this-is-tobi/rta/commit/0e339bd639bb2703b32457957733351c904231a5))
+* **tui:** the last box of a first stage names its step once ([a703441](https://github.com/this-is-tobi/rta/commit/a7034412e56137d76a487a8f61f11e0d8db6fb13))
+
+
+### Code Refactoring
+
+* **kv:** kv edit opens the editor through internal/editor ([ad2f234](https://github.com/this-is-tobi/rta/commit/ad2f234f53988d25ccc3c2f2c5bb3994edc78de0))
+* **mcp:** the bridge bounds an entry's fields with agentlog.Clip ([9283383](https://github.com/this-is-tobi/rta/commit/9283383e5205b09eb41af32631917c0f039352f1))
+* one process-group rule for every program rta starts ([31c64e3](https://github.com/this-is-tobi/rta/commit/31c64e3511a0c1a514a6b256ec5d1d3424f3c4ca))
+* sorted keys are slices.Sorted(maps.Keys(m)), not nine helpers ([f62c4c3](https://github.com/this-is-tobi/rta/commit/f62c4c3e10d18a5fdbd91f785f37978bc53d2ab0))
+
 ## [0.58.0](https://github.com/this-is-tobi/rta/compare/v0.57.1...v0.58.0) (2026-11-03)
 
 
