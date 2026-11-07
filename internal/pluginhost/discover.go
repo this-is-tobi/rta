@@ -196,6 +196,26 @@ func Discover() []Found {
 // seen. Ten trusted plugins on $PATH add about fifty milliseconds to an
 // invocation, measured.
 func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
+	return h.load(ctx, reg, Discover())
+}
+
+// LoadNamed is LoadInto for the plugins installed under one name, and nothing
+// else on $PATH: each of them hashed and held to trust exactly as the full sweep
+// holds it, the others not read at all. For a process that can reach no other
+// namespace, which internal/app decides for a shell's completion request: the
+// hash is the cost every installed plugin puts in front of every command, and a
+// tab press after `rta pg` paid for all of them to complete one.
+func (h *Host) LoadNamed(ctx context.Context, reg *registry.Registry, name string) []error {
+	var named []Found
+	for _, f := range Discover() {
+		if f.Name == name {
+			named = append(named, f)
+		}
+	}
+	return h.load(ctx, reg, named)
+}
+
+func (h *Host) load(ctx context.Context, reg *registry.Registry, found []Found) []error {
 	var problems []error
 	// Which clients this loop actually registered. Open is a cache keyed on
 	// (digest, confinement, argv) and deliberately carries no path — two
@@ -236,7 +256,6 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 	// so a failure is still reported against each plugin that needed it.
 	resolveDeny := sync.OnceValues(Resolve)
 
-	found := Discover()
 	// Hashed here rather than inside Open, so the digest the operator
 	// approved is the digest that gets launched — one read of the file, no
 	// window between deciding and running.
