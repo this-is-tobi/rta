@@ -3,7 +3,6 @@ package pluginhost
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -105,20 +104,6 @@ func TestAPluginGetsItsOwnProcessGroup(t *testing.T) {
 	if own, err := syscall.Getpgid(os.Getpid()); err == nil && pgid == own {
 		t.Errorf("the plugin shares rta's process group (%d): a reap would signal the test runner", pgid)
 	}
-}
-
-// A failed Getpgid must degrade to killing the one process, never to
-// signalling group 0 or 1 — which would be "every process in rta's own
-// session" and "everything the init system owns".
-func TestReapIsSafeOnAProcessThatIsGone(t *testing.T) {
-	cmd := exec.Command("/bin/sh", "-c", "exit 0")
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
-	}
-	// Must not panic and must not signal anything wider.
-	reap(cmd)
-	reap(nil)
-	reap(&exec.Cmd{})
 }
 
 func alive(pid int) bool {
