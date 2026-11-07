@@ -82,6 +82,7 @@ type Request struct {
 	Yes     bool
 
 	pipedPrimary bool
+	confirm      func(card string) bool
 }
 
 // link is a symbolic link a caller named, which the surface resolved before
@@ -334,6 +335,28 @@ func (r Request) WithPipedPrimary() Request {
 
 // PipedPrimary is whether WithPipedPrimary was stamped.
 func (r Request) PipedPrimary() bool { return r.pipedPrimary }
+
+// WithConfirmer stamps a way to put a yes-or-no question to the person running
+// this call. Called once, at the boundary, by the command line, and only when
+// somebody is there to answer: standard input and standard error a terminal, and
+// the answer drawn for a screen rather than for a program.
+//
+// It is for a handler about to do something whose reach the person may not have
+// read, and it is never a gate: nothing is refused because it cannot ask. --yes,
+// a script, an agent's shell, the TUI, MCP and a plugin in its own process (the
+// plugin-host wire does not carry it) all go on as they would have, so a handler
+// asks only where CanConfirm says it can.
+func (r Request) WithConfirmer(ask func(card string) bool) Request {
+	r.confirm = ask
+	return r
+}
+
+// CanConfirm is whether WithConfirmer was stamped: whether anyone can be asked.
+func (r Request) CanConfirm() bool { return r.confirm != nil }
+
+// Confirm shows card to the person and reports whether they said yes. It is false
+// when nobody can be asked, which a handler tells apart with CanConfirm.
+func (r Request) Confirm(card string) bool { return r.confirm != nil && r.confirm(card) }
 
 // Bounds is the reach this call was given, the zero Bounds when it was given
 // none. For the package that opens what a path names (Bounds says which);

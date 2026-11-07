@@ -462,6 +462,17 @@ func (g Grant) Window() time.Duration {
 	return DefaultTTL
 }
 
+// StartingAt is g with its window moved to start at now and its width kept, a
+// ceiling's cap included. A builder stamps the window when it runs, and a person
+// can take minutes to answer the question or type the passphrase that comes
+// after it; a receipt that says "for the next 15m" means from when the grant
+// stands. Moved before the grant is signed, so the signature covers the window
+// as issued.
+func (g Grant) StartingAt(now time.Time) Grant {
+	g.Issued, g.Expires = now, now.Add(g.Expires.Sub(g.Issued))
+	return g
+}
+
 // Caller is who is asking and through what.
 //
 // The four travel together because they are one decision, and because four

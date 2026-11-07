@@ -90,7 +90,9 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Description: "Grants expire (15m by default, 24h maximum) and can only be issued by " +
 					"a person at a terminal — an agent that could grant itself access would be no " +
 					"gate at all. The target is a capability ID (kv.get) or a plugin name (kv), " +
-					"which covers all of it. `scope` narrows the grant to one record: kv.get " +
+					"which covers all of it; at a terminal, a plugin whose gated capabilities " +
+					"destroy or reveal stored values is asked about first, with what it covers " +
+					"shown. `scope` narrows the grant to one record: kv.get " +
 					"scoped to db-password allows that key and no other. " +
 					"`agent` narrows it to one of your named agents, so consent given while " +
 					"talking to one client does not follow every other client on this machine. " +
@@ -732,6 +734,22 @@ func runApprove(ctx context.Context, req plugin.Request, catalog func() []plugin
 		return nil, verr
 	}
 	seen := agentsSeen()
+	// A grant on a whole plugin that reaches capabilities that destroy or reveal
+	// is asked about at a terminal before anything is signed or written, with the
+	// lines the receipt says after the fact (wideReach). After every refusal the
+	// command could still make, so a yes is never followed by one; before the
+	// guard's passphrase, so a no costs none. Not asked where nobody can answer
+	// (Request.CanConfirm), with --yes, on a dry run, which is the same card
+	// without the question, or under a remote guard, which refuses a grant made
+	// here whatever the answer.
+	if !req.DryRun && !req.Yes && req.CanConfirm() && (!guard.Enabled() || !guard.Remote()) {
+		if reach := wideReach(catalog, g); len(reach) > 0 {
+			if !req.Confirm(wouldLet(g, ttl) + "\n" + strings.Join(reach, "\n")) {
+				return nil, notConfirmed(g)
+			}
+			g = g.StartingAt(time.Now())
+		}
+	}
 	// The guard, before anything is written: prove the passphrase, sign the
 	// authority. After the Grant is fully built — the signature covers the
 	// struct as issued, and signing a draft that a later field-set would
@@ -756,8 +774,7 @@ func runApprove(ctx context.Context, req plugin.Request, catalog func() []plugin
 		if guard.Enabled() {
 			note = " — the guard will ask for its passphrase"
 		}
-		msg = fmt.Sprintf("would let %s %s for %s%s%s%s",
-			subject(g), describe(g), format.Duration(ttl), usesSuffix(g.MaxUses), rateSuffix(g), note)
+		msg = wouldLet(g, ttl) + note
 	} else {
 		msg = fmt.Sprintf("%s may %s for %s (until %s)%s%s",
 			subject(g), describe(g), format.Duration(ttl), format.Clock(g.Expires), usesSuffix(g.MaxUses), rateSuffix(g))
@@ -778,6 +795,13 @@ func runApprove(ctx context.Context, req plugin.Request, catalog func() []plugin
 		}
 	}
 	return view.Text{Body: msg}, nil
+}
+
+// wouldLet is the sentence a dry run answers with, and the first line of the
+// question a grant on a whole plugin asks: who it lets do what, for how long.
+func wouldLet(g core.Grant, ttl time.Duration) string {
+	return fmt.Sprintf("would let %s %s for %s%s%s",
+		subject(g), describe(g), format.Duration(ttl), usesSuffix(g.MaxUses), rateSuffix(g))
 }
 
 // usesSuffix renders the use-count half of a grant's lifetime, when there is
