@@ -290,7 +290,7 @@ func TestConfigCheckReportsAUnitStatedTwiceOnce(t *testing.T) {
 	if err == nil || ExitCode(err) != 1 {
 		t.Fatalf("exit %d, %v", ExitCode(err), err)
 	}
-	if n := strings.Count(out, "stated in both"); n != 1 {
+	if n := rowsMentioning(t, out, "stated in both"); n != 1 {
 		t.Errorf("the clash is reported %d times:\n%s", n, out)
 	}
 }

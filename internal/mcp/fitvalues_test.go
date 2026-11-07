@@ -38,12 +38,17 @@ func TestACutTableKeepsEachValueBesideItsRow(t *testing.T) {
 
 // A model is sent a table's cells and not their values, which are the same
 // cells again: the ones its producer gave and the ones its text holds, on a
-// table answered alone and on one a page holds.
+// table answered alone and on one a page holds. Nor its records, which are the
+// rows a third time and which only `-o json` and `-o yaml` ask the encoder for:
+// this fails the day the envelope writes them by default.
 func TestAModelIsSentATablesCellsAndNotTheirValues(t *testing.T) {
 	tbl := view.Table{Columns: []view.Column{{Name: "Used", Kind: view.KindBytes}, {Name: "State", Kind: view.KindStatus}}}
 	tbl.Add(view.Bytes(994662584320), view.Plain("WARN soon"))
 	if raw, _ := view.Marshal(view.Envelope{View: tbl}); !strings.Contains(string(raw), `"values"`) {
 		t.Fatalf("-o json carries no values for the table, so this proves nothing: %s", raw)
+	}
+	if raw, _ := view.Marshal(view.Envelope{View: tbl, Records: true}); !strings.Contains(string(raw), `"records"`) {
+		t.Fatalf("an envelope that asks for records writes none for the table, so this proves nothing: %s", raw)
 	}
 	page := view.Sections{Items: []view.Section{{ID: "disks", Title: "disks", View: tbl}}}
 	for _, v := range []view.View{tbl, page} {
@@ -59,6 +64,9 @@ func TestAModelIsSentATablesCellsAndNotTheirValues(t *testing.T) {
 		}
 		if _, has := answer["values"]; has || answer["rows"] == nil {
 			t.Errorf("a %s answer, want a table's rows without their values: %s", view.TypeOf(v), text)
+		}
+		if strings.Contains(text, "records") {
+			t.Errorf("a %s answer carries records: %s", view.TypeOf(v), text)
 		}
 	}
 }

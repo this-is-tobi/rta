@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -110,6 +111,20 @@ func jsonRows(t *testing.T, out string) [][]string {
 		t.Fatalf("a table was expected, got %q: %v", out, err)
 	}
 	return table.Rows
+}
+
+// rowsMentioning is how many of a table's rows have a cell with text in it,
+// counted over the rows and not over the text: -o json writes every row twice,
+// as a row and as a record, and a count of the text is a count of both.
+func rowsMentioning(t *testing.T, out, text string) int {
+	t.Helper()
+	n := 0
+	for _, row := range jsonRows(t, out) {
+		if slices.ContainsFunc(row, func(cell string) bool { return strings.Contains(cell, text) }) {
+			n++
+		}
+	}
+	return n
 }
 
 // hasProblemStarting is true when a quoted problem is the start of one printed:

@@ -257,14 +257,25 @@ func ValueOK(kind ColumnKind, value string) bool {
 	if value == "" || len(value) > 64 {
 		return false
 	}
-	switch kind {
-	case KindNumber, KindBytes, KindPercent, KindUsage, KindDuration:
+	switch {
+	case kind.numeric():
 		return number.MatchString(value)
-	case KindTimestamp:
+	case kind == KindTimestamp:
 		_, ok := TimeOf(value)
 		return ok
-	case KindStatus:
+	case kind == KindStatus:
 		return statusWord.MatchString(value)
+	}
+	return false
+}
+
+// numeric reports whether a column of this kind holds numbers: the kinds whose
+// values are written as JSON numbers, a count, a size, a percentage, a share of
+// a ceiling or a length of time.
+func (k ColumnKind) numeric() bool {
+	switch k {
+	case KindNumber, KindBytes, KindPercent, KindUsage, KindDuration:
+		return true
 	}
 	return false
 }
