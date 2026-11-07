@@ -193,6 +193,16 @@ const (
 	// opens rather than overruled either way: the TLS they asked for is
 	// negotiated only straight to the server, which they name with the other
 	// endpoint inputs (internal/profile's Dial).
+	//
+	// **What depends on this input is the plugin's to read.** A CA bundle, a
+	// client certificate, its key or a name to check is an ordinary input of the
+	// plugin's own: the host neither fills it nor refuses it beside a forward,
+	// and with this one forced off nothing reads it unless the plugin says
+	// otherwise. A plugin that should still verify a server it was handed a CA
+	// for asks Request.Tunnel and turns TLS back on itself, as plugins/etcd's
+	// ca-file, plugins/pg's sslrootcert and plugins/mysql's ca-file do. One that
+	// does not leaves a value no call reads, or refuses it in its handler,
+	// naming its own input, which the host's generic sentence could not.
 	EndpointTLS EndpointRole = "tls"
 )
 
@@ -472,32 +482,6 @@ type Field struct {
 	// Zero value is EndpointNone: no input is filled from a tunnel, which is
 	// every plugin that has not opted in.
 	Endpoint EndpointRole
-	// TLSAdjacent marks an input that only affects the connection when this
-	// capability's own EndpointTLS-role input actually negotiates TLS — a CA
-	// bundle, a client certificate, a client key. It carries no Endpoint role
-	// itself: the host does not fill it, the operator does. What it needs
-	// said is the opposite fact — that a tunnel silently strips its effect,
-	// because EndpointTLS is forced to its off value unconditionally
-	// whenever a forward is open (see EndpointTLS), and a value that only
-	// mattered once TLS was negotiated does nothing once TLS is not. So the
-	// host refuses one beside a forward, whether a profile's `set:` states it
-	// or the caller gives it, rather than open the forward and leave it unread.
-	//
-	// **Not the same claim `checkSet` already makes about an Endpoint-role
-	// input.** Those are overridden because the host writes into them
-	// directly; this one is untouched and inert anyway, because what it
-	// depended on was overridden instead — a harder failure to notice, since
-	// nothing about the value itself looks wrong.
-	//
-	// **False by default, and that default is load-bearing, not merely
-	// unset.** A plugin whose own connect() already compensates — turning
-	// TLS back on when this field is given, the way plugins/etcd's
-	// ca-file/cert-file/key-file do (`tls || ca-file != "" || cert-file !=
-	// ""`) — must leave this false, or a connection that works correctly
-	// gets refused for a reason that no longer applies to it. Only a plugin
-	// that leaves the forced-off value standing, as plugins/pg's sslrootcert
-	// does against its own multi-valued sslmode, opts in.
-	TLSAdjacent bool
 	// Suggest returns values that exist right now: the tags you have used,
 	// the keys in your store, the hostnames in your hosts file. Unlike
 	// Options it is not exhaustive — anything may still be typed — so it

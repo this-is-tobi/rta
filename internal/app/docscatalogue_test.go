@@ -88,7 +88,7 @@ func shapeOnly(c *rtav1.Capability) {
 	c.Idempotent, c.NoPreview, c.Reveals, c.Live, c.Flash, c.HasPrefill = false, false, false, false, false, false
 	c.MinWidth, c.RefreshSeconds = 0, 0
 	for _, f := range c.Inputs {
-		f.Help, f.HasSuggest, f.Live, f.TlsAdjacent, f.Widens = "", false, false, false, ""
+		f.Help, f.HasSuggest, f.Live, f.Widens = "", false, false, ""
 		f.Default = nil
 	}
 }

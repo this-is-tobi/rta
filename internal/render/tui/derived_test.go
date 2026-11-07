@@ -290,11 +290,12 @@ func endpointEditorModel(t *testing.T, conn config.Connection) Model {
 				{Name: "sslmode", Type: plugin.String, Default: "prefer", Config: "sslmode",
 					Local: true, Endpoint: plugin.EndpointTLS,
 					Options: []string{"disable", "prefer"}, Help: "tls"},
-				// TLSAdjacent, not itself an endpoint role: it depends on
-				// sslmode rather than being filled directly, the same shape
-				// plugins/pg's real sslrootcert has beside its real sslmode.
+				// Not an endpoint role, and the control for the ones above: a
+				// plugin reads a CA beside a forward as a request for TLS
+				// (plugins/pg's real sslrootcert beside its real sslmode), so
+				// the editor keeps its box and a save keeps its value.
 				{Name: "sslrootcert", Type: plugin.String, Config: "sslrootcert",
-					Local: true, TLSAdjacent: true, Help: "ca"},
+					Local: true, Help: "ca"},
 				{Name: "schema", Type: plugin.String, Config: "schema", Help: "schema"},
 				{Name: "password", Type: plugin.Secret, Local: true, EnvFallback: true,
 					Help: "password"},
@@ -329,20 +330,23 @@ func TestTheConnEditorDoesNotOfferWhatTheForwardFills(t *testing.T) {
 	})
 	model, _ := m.startConnForm("db")
 	nm := model.(Model)
-	for _, name := range []string{"host", "port", "sslmode", "sslrootcert"} {
+	for _, name := range []string{"host", "port", "sslmode"} {
 		if _, offered := nm.form.bindings[profileSetPrefix+name]; offered {
 			t.Errorf("set.%s has a box beside a coordinate — an invitation to state the "+
 				"losing destination", name)
 		}
 	}
-	if _, offered := nm.form.bindings[profileSetPrefix+"schema"]; !offered {
-		t.Error("set.schema lost its box — only the endpoint keys are the forward's to fill")
+	for _, name := range []string{"schema", "sslrootcert"} {
+		if _, offered := nm.form.bindings[profileSetPrefix+name]; !offered {
+			t.Errorf("set.%s lost its box — only the endpoint keys are the forward's to fill", name)
+		}
 	}
 	// An untouched save is the repair: the coordinate stays, the dead keys
 	// go, and the flash names what happened to them.
 	model, _ = nm.saveConnForm()
 	nm = model.(Model)
-	if !strings.Contains(nm.flash, "removed set.host, set.sslmode, set.sslrootcert") {
+	if !strings.Contains(nm.flash, "removed set.host, set.sslmode") ||
+		strings.Contains(nm.flash, "sslrootcert") {
 		t.Errorf("flash = %q, want the removal named — a save that silently drops a "+
 			"statement is a save that lies", nm.flash)
 	}
@@ -354,10 +358,14 @@ func TestTheConnEditorDoesNotOfferWhatTheForwardFills(t *testing.T) {
 	if saved.Kube != "homelab/databases/svc/postgres:5432" {
 		t.Errorf("kube = %q, want the coordinate kept", saved.Kube)
 	}
-	for _, name := range []string{"host", "sslmode", "sslrootcert"} {
+	for _, name := range []string{"host", "sslmode"} {
 		if v, still := saved.Set[name]; still {
 			t.Errorf("set.%s = %v survived the save — the file still names two destinations", name, v)
 		}
+	}
+	if saved.Set["sslrootcert"] != "/etc/rta/ca.crt" {
+		t.Errorf("set.sslrootcert = %v, want the CA kept — a plugin reads it beside a forward",
+			saved.Set["sslrootcert"])
 	}
 }
 
@@ -386,8 +394,8 @@ func TestSavingACoordinateRemovesTheKeptEndpointKeys(t *testing.T) {
 	*nm.form.bindings[profileKubeField] = "homelab/databases/svc/postgres:5432"
 	model, _ = nm.saveConnForm()
 	nm = model.(Model)
-	if !strings.Contains(nm.flash, "removed set.host, set.sslmode, set.sslrootcert") ||
-		!strings.Contains(nm.flash, "secrets.host") {
+	if !strings.Contains(nm.flash, "removed set.host, set.sslmode") ||
+		strings.Contains(nm.flash, "sslrootcert") || !strings.Contains(nm.flash, "secrets.host") {
 		t.Errorf("flash = %q, want every removal named", nm.flash)
 	}
 	onDisk, err := config.LoadFile()
@@ -398,11 +406,15 @@ func TestSavingACoordinateRemovesTheKeptEndpointKeys(t *testing.T) {
 	if saved.Kube != "homelab/databases/svc/postgres:5432" {
 		t.Errorf("kube = %q, want the coordinate the person typed", saved.Kube)
 	}
-	for _, name := range []string{"host", "sslmode", "sslrootcert"} {
+	for _, name := range []string{"host", "sslmode"} {
 		if v, still := saved.Set[name]; still {
 			t.Errorf("set.%s = %v was written beside the coordinate — the pair every "+
 				"surface refuses", name, v)
 		}
+	}
+	if saved.Set["sslrootcert"] != "/etc/rta/ca.crt" {
+		t.Errorf("set.sslrootcert = %v, want the CA kept — a plugin reads it beside a forward",
+			saved.Set["sslrootcert"])
 	}
 	if v, still := saved.Secrets["host"]; still {
 		t.Errorf("secrets.host = %v was written beside the coordinate — fetched and "+

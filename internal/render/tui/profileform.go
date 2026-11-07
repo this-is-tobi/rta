@@ -372,13 +372,7 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 			// them (saveConnForm). Decided at open, like the
 			// reopen-to-fill flow above: clearing the coordinate reveals
 			// the boxes on reopen.
-			//
-			// A TLSAdjacent field — pg's sslrootcert — is offered no box
-			// here for the same reason, one step removed: it carries no
-			// Endpoint role itself, but it depends on the EndpointTLS field
-			// this same tunnel already forces off, so a value typed here
-			// would do nothing the moment it left the box.
-			if tunnelled && (f.Endpoint != plugin.EndpointNone || f.TLSAdjacent) {
+			if tunnelled && f.Endpoint != plugin.EndpointNone {
 				continue
 			}
 			// Said under the box when a value stated here does not reach every
@@ -729,11 +723,7 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 			declared := map[string]bool{}
 			for _, f := range configFields(decl) {
 				declared[f.Name] = true
-				// Endpoint-role fields are overridden directly; a
-				// TLSAdjacent one depends on an EndpointTLS field the same
-				// tunnel forces off — both are exactly as dead, so both get
-				// the same repair (profile.DeadUnderForward).
-				if !tunnelled || !profile.DeadUnderForward(f) {
+				if !tunnelled || f.Endpoint == plugin.EndpointNone {
 					continue
 				}
 				_, stated := conn.Set[f.Name]

@@ -1067,17 +1067,6 @@ func fillableReaders(ns string, inst Installed) map[string][]plugin.Field {
 	return readers
 }
 
-// DeadUnderForward reports whether what a connection states for f stops meaning
-// anything once a forward is open: an input the forward fills (an endpoint
-// role), or one that only mattered beside the TLS mode the forward turns off
-// (plugin.Field.TLSAdjacent). The one definition `profile set` and the TUI's
-// editor repair a connection by and CheckConnection refuses one by: the CLI's
-// copy left the TLS-adjacent half out, kept such a key beside a new forward,
-// and the check then refused the connection it had just written.
-func DeadUnderForward(f plugin.Field) bool {
-	return f.Endpoint != plugin.EndpointNone || f.TLSAdjacent
-}
-
 // CheckConnection reports what is wrong with one plugin entry, without needing
 // the profile it sits in to exist anywhere yet.
 //
@@ -1246,23 +1235,6 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 	// every capability, the one offering it included.
 	readers := fillableReaders(ns, inst)
 	reach := reachOfKeys(ns, inst)
-	// Whether this namespace has an EndpointTLS input at all — not which
-	// capability declares it, matching fillable/declared's own namespace-wide
-	// grain, and correct at that grain because a plugin's connFields()
-	// pattern puts the same shared fields on every capability alike. If one
-	// exists, a tunnel forces it to its off value unconditionally (see
-	// EndpointTLS), which is the fact a TLSAdjacent field depends on below.
-	hasTLSField := false
-	for _, c := range capabilitiesOf(inst) {
-		if plugin.Namespace(c.ID) != ns {
-			continue
-		}
-		for _, f := range c.Inputs {
-			if f.Endpoint == plugin.EndpointTLS {
-				hasTLSField = true
-			}
-		}
-	}
 	set := make([]string, 0, len(conn.Set))
 	for k := range conn.Set {
 		set = append(set, k)
@@ -1280,24 +1252,11 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 		// roles: a forward that overrides the key for one capability has made
 		// the line a destination that call never reads.
 		endpoint := slices.ContainsFunc(readers[k], func(r plugin.Field) bool { return r.Endpoint != plugin.EndpointNone })
-		adjacent := slices.ContainsFunc(readers[k], func(r plugin.Field) bool { return r.TLSAdjacent })
 		if conn.Tunnelled() && endpoint {
 			// Before the Options check, because a value nothing reads being
 			// misspelt on top is not the sentence the operator needs first.
 			problems = append(problems, Problem{Name: name, Plugin: key,
 				Reason: fmt.Sprintf("`set: %s` is overridden by the forward `%s:` opens",
-					k, conn.TunnelKey()),
-				Hint: "remove it, or remove `" + conn.TunnelKey() + ":` to connect directly"})
-			continue
-		}
-		// The harder half of the same fact: this key is not itself
-		// overridden, it is inert because what it depends on was. A tunnel
-		// forces this namespace's EndpointTLS input to its off value
-		// unconditionally, and TLSAdjacent is a plugin's own declaration
-		// that its value then does nothing — see plugin.Field.TLSAdjacent.
-		if conn.Tunnelled() && adjacent && hasTLSField {
-			problems = append(problems, Problem{Name: name, Plugin: key,
-				Reason: fmt.Sprintf("`set: %s` is overridden along with the TLS mode the forward `%s:` turns off",
 					k, conn.TunnelKey()),
 				Hint: "remove it, or remove `" + conn.TunnelKey() + ":` to connect directly"})
 			continue
@@ -1479,8 +1438,8 @@ func checkSecretRefs(name, key string, conn config.Connection, ns string, inst I
 
 // forwardTLSRefusal refuses a caller's TLS-role input given as anything but
 // the value the forward fills it with, which is its off value
-// (plugin.EndpointTLS), and a TLSAdjacent input given at all. nil when the
-// capability has no TLS-role input, or the caller gave neither.
+// (plugin.EndpointTLS). nil when the capability has no TLS-role input, or the
+// caller gave it that value or none.
 //
 // **Refused, not overridden, and not let through.** The forward's value
 // cannot simply win: the caller asked for TLS, and running the call without
@@ -1523,31 +1482,6 @@ func forwardTLSRefusal(name string, conn config.Connection, c plugin.Capability,
 			"%s cannot go through the forward profile %q opens with `%s:`, which turns %s's TLS off",
 			asked, name, conn.TunnelKey(), plugin.Namespace(c.ID)).
 			WithHint(forwardWayOn(conn, c, sf, through, asked))
-	}
-	// And a TLSAdjacent input — a CA the plugin reads only once that mode
-	// negotiates — given at all, which checkSet refuses beside a coordinate
-	// when `set:` states it. Given on the call it was accepted and went
-	// unread: a check the caller named, which nothing then ran. Only where
-	// this capability has a TLS mode a forward turns off, as the plugin's
-	// declaration of the field says it depends on.
-	if !slices.ContainsFunc(c.Inputs, func(f plugin.Field) bool {
-		return f.Endpoint == plugin.EndpointTLS && plugin.ProfileFillable(c, f)
-	}) {
-		return nil
-	}
-	for _, f := range c.Inputs {
-		if !f.TLSAdjacent {
-			continue
-		}
-		v, given := caller[f.Name]
-		if !given || v == nil || v == false || strings.TrimSpace(fmt.Sprint(v)) == "" {
-			continue
-		}
-		stated := sf.SettingTo(f.Name, v)
-		return view.Errorf("core.profile.tls.forward",
-			"%s cannot go through the forward profile %q opens with `%s:`, which turns off the TLS %s reads it for",
-			stated, name, conn.TunnelKey(), plugin.Namespace(c.ID)).
-			WithHint(forwardWayOn(conn, c, sf, sf.WithoutInputs(f.Name), stated))
 	}
 	return nil
 }
