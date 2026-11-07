@@ -1067,6 +1067,17 @@ func fillableReaders(ns string, inst Installed) map[string][]plugin.Field {
 	return readers
 }
 
+// DeadUnderForward reports whether what a connection states for f stops meaning
+// anything once a forward is open: an input the forward fills (an endpoint
+// role), or one that only mattered beside the TLS mode the forward turns off
+// (plugin.Field.TLSAdjacent). The one definition `profile set` and the TUI's
+// editor repair a connection by and CheckConnection refuses one by: the CLI's
+// copy left the TLS-adjacent half out, kept such a key beside a new forward,
+// and the check then refused the connection it had just written.
+func DeadUnderForward(f plugin.Field) bool {
+	return f.Endpoint != plugin.EndpointNone || f.TLSAdjacent
+}
+
 // CheckConnection reports what is wrong with one plugin entry, without needing
 // the profile it sits in to exist anywhere yet.
 //

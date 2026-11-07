@@ -754,6 +754,53 @@ func TestAddingAForwardFreesTheKeysItFills(t *testing.T) {
 	}
 }
 
+// A key that only means something beside the TLS mode a forward turns off is as
+// dead as one the forward fills (profile.DeadUnderForward), and is freed the same
+// way: `profile set` kept it, and the connection check then refused the
+// connection the command had just written over it.
+func TestAddingAForwardFreesATLSAdjacentKey(t *testing.T) {
+	reg := setRegistry(t)
+	if err := reg.Register(plugin.Plugin{
+		Name: "tlsdb", Summary: "a database whose CA is read only under TLS",
+		Capabilities: []plugin.Capability{{
+			ID: "tlsdb.status", Summary: "status", Safety: plugin.Read,
+			Inputs: []plugin.Field{
+				{Name: "host", Type: plugin.String, Default: "localhost", Config: "host",
+					Local: true, Endpoint: plugin.EndpointHost, Help: "host"},
+				{Name: "port", Type: plugin.Int, Default: 5432, Config: "port",
+					Local: true, Endpoint: plugin.EndpointPort, Min: 1, Max: 65535, Help: "port"},
+				{Name: "sslmode", Type: plugin.String, Default: "verify-full", Config: "sslmode", Local: true,
+					Endpoint: plugin.EndpointTLS, Options: []string{"disable", "require", "verify-full"}, Help: "tls"},
+				{Name: "tls-server-name", Type: plugin.String, Config: "tls-server-name", Local: true,
+					TLSAdjacent: true, Help: "the name the certificate is checked against"},
+				{Name: "dbname", Type: plugin.String, Config: "dbname", Local: true, Help: "database"},
+			},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	const before = `profiles:
+  staging:
+    plugins:
+      tlsdb:
+        set:
+          tls-server-name: db.internal
+          dbname: orders
+`
+	out, errOut, err := runWith(t, reg, before,
+		"profile", "set", "staging", "--plugin", "tlsdb", "--kube", "prod/db/svc/postgres:5432")
+	if err != nil {
+		t.Fatalf("adding a forward was refused over a key it makes dead: %v %q", err, errOut)
+	}
+	if body := configOf(t); strings.Contains(body, "tls-server-name") || !strings.Contains(body, "dbname: orders") {
+		t.Errorf("the TLS-adjacent key survived beside the forward, or a live one went:\n%s", body)
+	}
+	if !strings.Contains(out, "set.tls-server-name") {
+		t.Errorf("the removal has no receipt:\n%s", out)
+	}
+}
+
 // The same pair stated in one breath is refused, not repaired. Quietly
 // dropping half of what somebody just typed is a different thing from
 // clearing a line they are not looking at.
