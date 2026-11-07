@@ -1,19 +1,26 @@
 package tui
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rta/builtin/kv"
+	"github.com/this-is-tobi/rta/internal/passkey"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Asking first.
@@ -73,6 +80,10 @@ type dialog struct {
 	title, body     string
 	confirm, cancel string
 	focus           int
+	// back is a question whose two buttons are both ways forward, asked over a
+	// form: esc closes it and goes back to the form, as it closes a dialog over
+	// a web page, rather than taking the second button the way it takes Cancel.
+	back bool
 }
 
 // openDialog puts a question over the current screen. The dialog is replaced
@@ -96,7 +107,14 @@ func (m Model) dialogKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case "y", "Y":
 		nm, cmd := m.answerDialog(true)
 		return nm, cmd, true
-	case "n", "N", "esc":
+	case "esc":
+		if d.back {
+			nm, cmd := m.dialogBack()
+			return nm, cmd, true
+		}
+		nm, cmd := m.answerDialog(false)
+		return nm, cmd, true
+	case "n", "N":
 		nm, cmd := m.answerDialog(false)
 		return nm, cmd, true
 	case "tab", "right", "l", "shift+tab", "left", "h":
@@ -123,15 +141,42 @@ func (m Model) answerDialog(yes bool) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// dialogBack is esc on a question asked over a form (dialog.back): the question
+// closes and the form it was asked over is back, its answers in their boxes.
+func (m Model) dialogBack() (tea.Model, tea.Cmd) {
+	d := *m.dialog
+	m.dialog = nil
+	if d.id == dialogNewStore && m.newStore != nil && m.mode == modeForm && m.form != nil {
+		ask := m.newStore
+		m.newStore = nil
+		m.form = m.stageOne(m.current, &firstStage{
+			carry: m.form.base, answers: ask.base, about: m.form.about, touched: m.form.touched(),
+		}, m.form.fromResult)
+		m.fitForm()
+		return m, m.firstFocus()
+	}
+	return m, nil
+}
+
 // dialogItems is the bar while a dialog is up: its own vocabulary and nothing of
-// the screen underneath, whose keys are not answered.
+// the screen underneath, whose keys are not answered. Each key is named for what
+// it does on this question: n for the second button, by its own words, and esc
+// for going back where it goes back (dialog.back) and for the second button
+// where it answers with it.
 func (m Model) dialogItems() []hintItem {
 	d := *m.dialog
-	rest := []hintItem{
-		{display: "n/esc", label: "cancel", rank: rankPrimary, keys: []string{"n", "N", "esc"}},
+	no := strings.ToLower(d.cancel)
+	answers := []hintItem{{display: "n/esc", label: no, rank: rankPrimary, keys: []string{"n", "N", "esc"}}}
+	if d.back {
+		answers = []hintItem{
+			{display: "n", label: no, rank: rankPrimary, keys: []string{"n", "N"}},
+			{display: "esc", label: "back", rank: rankPrimary, keys: []string{"esc"}},
+		}
+	}
+	rest := slices.Concat(answers, []hintItem{
 		{display: "tab", label: "switch", rank: rankExtra, keys: []string{"tab", "shift+tab", "left", "right", "h", "l"}},
 		{display: "ctrl+c", label: "quit", rank: rankLeave, keys: []string{"ctrl+c"}},
-	}
+	})
 	// With the focus on Cancel, enter says no and y is the only way to the other
 	// button without moving, so it is named then and only then; on the confirming
 	// button enter and y are one answer and are named once.
@@ -191,7 +236,11 @@ func (m Model) dialogGeometry() dialogGeometry {
 	}
 	rows := append(append(body, ""), buttonLine)
 
-	box := panel(panelHead{Title: textclean.Terminal(d.title), Right: "esc cancels"}, strings.Join(rows, "\n"), width, 0, true)
+	esc := "esc cancels"
+	if d.back {
+		esc = "esc goes back"
+	}
+	box := panel(panelHead{Title: textclean.Terminal(d.title), Right: esc}, strings.Join(rows, "\n"), width, 0, true)
 	lines := strings.Split(box, "\n")
 	g := dialogGeometry{lines: lines, boxWidth: width}
 	g.x = max((m.width-width)/2, 0)
@@ -334,12 +383,17 @@ func newStoreDialog() dialog {
 		confirm: "Use a key file",
 		cancel:  "Use a passphrase",
 		focus:   focusCancel,
+		// Both buttons make a store, so neither is the way out: esc goes back
+		// to the key, where leaving the form makes nothing. It took "Use a
+		// passphrase" while the bar and the title said it cancelled.
+		back: true,
 	}
 }
 
 // newStoreAnswer opens the second stage the question was asked before, with
 // the answer in its generate box: the key is made with the store, when the
-// form is sent, and leaving the form makes neither.
+// form is sent, and leaving the form makes neither. A passphrase is asked for
+// there twice (passphraseTwice).
 func (m Model) newStoreAnswer(yes bool) (tea.Model, tea.Cmd) {
 	ask := m.newStore
 	m.newStore = nil
@@ -351,7 +405,69 @@ func (m Model) newStoreAnswer(yes bool) (tea.Model, tea.Cmd) {
 		defaults = map[string]any{}
 	}
 	defaults["generate"] = yes
-	return m.stageTwo(ask.base, defaults)
+	if yes {
+		return m.stageTwo(ask.base, defaults)
+	}
+	m.current = passphraseTwice(m.current)
+	next, cmd := m.stageTwo(ask.base, defaults)
+	nm := next.(Model)
+	if cf := nm.form; cf != nil {
+		withCheck("passphrase", func(s string) error {
+			if utf8.RuneCountInString(s) < passkey.MinLength {
+				return fmt.Errorf("a new store's passphrase needs at least %d characters", passkey.MinLength)
+			}
+			return nil
+		}).apply(cf)
+		withCheck(againInput, func(string) error {
+			if *cf.bindings[againInput] != *cf.bindings["passphrase"] {
+				return errors.New("this is not the passphrase above — type it again")
+			}
+			return nil
+		}).apply(cf)
+	}
+	return nm, cmd
+}
+
+// againInput is the box a new store's passphrase is typed into a second time.
+const againInput = "again"
+
+// passphraseTwice is kv.set for the first write of a store the person chose a
+// passphrase for: the passphrase box required and followed by a second one, and
+// the boxes for the other lock, which the question already answered, left out.
+//
+// A terminal asks for a new store's passphrase twice (kv's askPassphrase), since
+// a typo in the only answer there was is a store nobody can open, with the first
+// secret already inside it. The form asked once, masked, below the value box,
+// and made the store from whatever was in it; left empty, the call failed and
+// the value had to be typed again. The second box is the form asking again, as a
+// web page's "confirm password" does, and not an input of kv.set: it exists here,
+// for this form, on no other surface. The run refuses two that differ as well,
+// for a path that reached it past the box's own check.
+func passphraseTwice(c plugin.Capability) plugin.Capability {
+	inputs := make([]plugin.Field, 0, len(c.Inputs)+1)
+	for _, f := range c.Inputs {
+		switch f.Name {
+		case "generate", "identity":
+		case "passphrase":
+			f.Required = true
+			inputs = append(inputs, f, plugin.Field{
+				Name: againInput, Type: plugin.Secret, Local: true, Required: true, Group: f.Group,
+				Help: "the passphrase again — nothing recovers a store whose passphrase was mistyped",
+			})
+		default:
+			inputs = append(inputs, f)
+		}
+	}
+	c.Inputs = inputs
+	run := c.Run
+	c.Run = func(ctx context.Context, req plugin.Request) (view.View, error) {
+		if req.String("passphrase") != req.String(againInput) {
+			return nil, view.Errorf("kv.passphrase.differs",
+				"the two passphrases differ, so no store was made").WithInput(againInput)
+		}
+		return run(ctx, req)
+	}
+	return c
 }
 
 func discardFormDialog() dialog {
