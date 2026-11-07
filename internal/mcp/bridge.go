@@ -137,7 +137,7 @@ func recordUnknownTools(known map[string]bool, opts Options) sdk.Middleware {
 		return func(ctx context.Context, method string, req sdk.Request) (sdk.Result, error) {
 			if method == "tools/call" {
 				if r, ok := req.(*sdk.CallToolRequest); ok && r.Params != nil && !known[r.Params.Name] {
-					name := cut(textclean.Terminal(r.Params.Name), maxClientName)
+					name := agentlog.Clip(textclean.Terminal(r.Params.Name), maxClientName)
 					// Cap as well as Tool: every surface shows the
 					// capability column, so a row with only the wire name
 					// reads as a call to nothing at all — and this row exists
@@ -365,7 +365,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				"%s was not run: rta did not apply the operator's configuration of %s, and it does not run without it",
 				plugin.ToolName(c.ID), plugin.Namespace(c.ID)).WithHint(readTheRecord())
 			refusedBy(rec, verr)
-			rec.Note = cut(p.String(), maxReason)
+			rec.Note = agentlog.Clip(p.String(), maxReason)
 			return errResult(verr), nil
 		}
 		// The profile comes out of the arguments here — before defaults, before
@@ -713,7 +713,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// upgrade, or a set: value outside its own only: list, leaves a
 				// profile every call of which is refused, and a row that says only
 				// "unusable" sends the operator to a ledger that has nothing in it.
-				rec.Note = cut(textclean.Credentials(verr.Message), maxReason)
+				rec.Note = agentlog.Clip(textclean.Credentials(verr.Message), maxReason)
 				// The reason is deliberately discarded on this surface. A person
 				// at a terminal gets profile.Lookup's real message and its list
 				// of what would have worked; an agent gets one sentence for
@@ -779,7 +779,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// agent heard in the row's own fields, and in Note what it was
 				// not told, with what to do about it when the refusal says.
 				refusedBy(rec, agentErr)
-				rec.Note = cut(textclean.Credentials(withRemedy(verr2)), maxReason)
+				rec.Note = agentlog.Clip(textclean.Credentials(withRemedy(verr2)), maxReason)
 				return errResult(agentErr), nil
 			}
 			// The forward, if this connection names a cluster. Last, because it
@@ -806,7 +806,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 					"%s could not reach the connection profile %q names", plugin.ToolName(c.ID), profileName).
 					WithHint(readTheRecord())
 				refusedBy(rec, agentErr)
-				rec.Note = cut(textclean.Credentials(withRemedy(verr3)), maxReason)
+				rec.Note = agentlog.Clip(textclean.Credentials(withRemedy(verr3)), maxReason)
 				return errResult(agentErr), nil
 			}
 			for input, v := range dialled {
@@ -970,7 +970,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 // outcome is the call's, ran, and the code and the reason say what happened to
 // the answer.
 func withheld(e *agentlog.Entry, verr *view.Error) {
-	e.Outcome, e.Code, e.Reason = agentlog.Ran, cut(verr.Code, maxCode), cut(textclean.Credentials(verr.Message), maxReason)
+	e.Outcome, e.Code, e.Reason = agentlog.Ran, agentlog.Clip(verr.Code, maxCode), agentlog.Clip(textclean.Credentials(verr.Message), maxReason)
 }
 
 // fencedRefusal is what an agent is told when a call goes outside the fence of
@@ -1027,7 +1027,7 @@ func fencedRefusal(rec *agentlog.Entry, c plugin.Capability, ref string, conn co
 	// tool's schema (forAgent).
 	agent = agent.WithHint(hint).WithInput(person.Input)
 	refusedBy(rec, agent)
-	rec.Note = cut(textclean.Credentials(person.Message), maxReason)
+	rec.Note = agentlog.Clip(textclean.Credentials(person.Message), maxReason)
 	return agent
 }
 
