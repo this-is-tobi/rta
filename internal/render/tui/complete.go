@@ -303,6 +303,17 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.advanceForm()
 	}
 	c := cf.cap
+	// A plugin whose section rta could not apply is asked nothing, as its run
+	// is refused (runCmd): the listing would go to the plugin's default address
+	// with whatever credential the environment exports. First, before the
+	// coordinate or any credential is read, and settled like a fenced press so
+	// the next tab moves on.
+	cfg := m.configFor(c)
+	if cfg.withheld != nil {
+		cf.fetchedFor[f.Name] = box.typed
+		m.refuse(cfg.withheld.Message + " — tab moves on")
+		return m, nil
+	}
 	// Resolved from the full values and stripped only for the request, the
 	// same split startRun makes: the picker's answer is exactly what decides
 	// which environment's credentials the listing runs with, and a first cut
@@ -337,7 +348,6 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refuse(words + " — tab moves on")
 		return m, nil
 	}
-	cfg := m.configFor(c)
 	// The connection's fence resolves too, as it does for a run: a sibling a
 	// fence of one entry fills, or a list it fills whole, is what the call will
 	// carry, and a listing that depends on it (the clusters of the namespaces)
@@ -366,10 +376,9 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return completeMsg{form: cf, field: f.Name, err: verr}
 			}
 		}
-		resolved := plugin.Resolve(c, plugin.Inputs{
-			Caller: values, Profile: filled, ProfileName: name, Config: cfg.values,
-			ConfigSection: cfg.section, Fence: fence,
-		})
+		resolved := plugin.Resolve(c, cfg.inputs(plugin.Inputs{
+			Caller: values, Profile: filled, ProfileName: name, Fence: fence,
+		}))
 		// The box's own text is the partial, whatever any layer had in mind for
 		// this field: a listing narrows on what is typed, not on a default. For a
 		// list that text is the element being typed, as the string it is: the
@@ -462,10 +471,9 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) heldByFence(ref string, conn config.Connection, c plugin.Capability, f plugin.Field,
 	values map[string]any, partial string,
 ) string {
-	cfg := m.configFor(c)
-	b := profile.FenceBreached(ref, conn, c, plugin.Inputs{
-		Caller: values, Config: cfg.values, ConfigSection: cfg.section, Unfinished: f.Name,
-	}, os.LookupEnv)
+	b := profile.FenceBreached(ref, conn, c, m.configFor(c).inputs(plugin.Inputs{
+		Caller: values, Unfinished: f.Name,
+	}), os.LookupEnv)
 	if b == nil && !continuesAnEntry(profile.FenceOf(conn), f, partial) {
 		b = &plugin.FenceBreach{Input: f}
 	}
