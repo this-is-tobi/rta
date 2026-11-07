@@ -296,6 +296,44 @@ func TestHTTPTransportRequiresABearerToken(t *testing.T) {
 	}
 }
 
+// One credential holds at most maxSessions sessions open, its oldest closed as
+// it opens one more, and another credential's are never closed for it: opening
+// sessions was a free way for any token holder to exhaust the server's memory.
+func TestACredentialHoldsAtMostItsCapOfSessions(t *testing.T) {
+	addr := startRemote(t, Options{}, StaticTokenVerifier(map[string]string{
+		"tok-a-0123456789abcdef": "alice", "tok-b-0123456789abcdef": "bob"}))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	open := func(token string) *sdk.ClientSession {
+		t.Helper()
+		client := sdk.NewClient(&sdk.Implementation{Name: "test-client", Version: "0"}, nil)
+		session, err := client.Connect(ctx,
+			&sdk.StreamableClientTransport{Endpoint: "http://" + addr, HTTPClient: authedClient(token)}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = session.Close() })
+		return session
+	}
+
+	bob := open("tok-b-0123456789abcdef")
+	var alice []*sdk.ClientSession
+	for range maxSessions + 1 {
+		alice = append(alice, open("tok-a-0123456789abcdef"))
+	}
+	if err := alice[0].Ping(ctx, nil); err == nil {
+		t.Errorf("alice's oldest session still answers after she opened %d more", maxSessions)
+	}
+	for i, s := range alice[1:] {
+		if err := s.Ping(ctx, nil); err != nil {
+			t.Errorf("alice's session %d of the newest %d was closed: %v", i+1, maxSessions, err)
+		}
+	}
+	if err := bob.Ping(ctx, nil); err != nil {
+		t.Errorf("bob's session was closed for alice's: %v", err)
+	}
+}
+
 // This is the test that answers whether the SDK carries a per-request
 // TokenInfo down to the ctx a registered ToolHandler actually receives, over
 // the real Streamable HTTP transport rather than the in-memory one every
