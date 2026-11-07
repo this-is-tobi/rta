@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -202,7 +204,7 @@ func whySummary(found []component, inv inventory, truncated bool) view.KeyValue 
 	pairs := []view.Pair{
 		{Key: "package", Value: c.name},
 		{Key: "version", Value: strings.Join(versions, ", ")},
-		{Key: "ecosystem", Value: strings.Join(sortedSet(ecos), ", ")},
+		{Key: "ecosystem", Value: strings.Join(slices.Sorted(maps.Keys(ecos)), ", ")},
 		{Key: "declared in", Value: filepath.Base(c.source)},
 	}
 
@@ -232,15 +234,6 @@ func whySummary(found []component, inv inventory, truncated bool) view.KeyValue 
 			Value: "stopped at " + strconv.Itoa(maxManifests) + " manifests — narrow the path to cover the rest"})
 	}
 	return view.KeyValue{Pairs: pairs}
-}
-
-func sortedSet(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // whyTree draws the package at the root and what requires it beneath, upwards

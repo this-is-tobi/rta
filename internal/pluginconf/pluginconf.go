@@ -29,6 +29,8 @@ package pluginconf
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -393,9 +395,9 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 		for _, key := range flatten(r.sections[ns], "") {
 			if len(readers[key]) == 0 {
 				hint := "`rta explain` lists the inputs a capability takes"
-				if guess := near.Word(key, sortedKeys(readers)); guess != "" {
+				if guess := near.Word(key, slices.Sorted(maps.Keys(readers))); guess != "" {
 					hint = fmt.Sprintf("did you mean %q?", guess)
-				} else if where := near.Qualified(key, sortedKeys(readers)); len(where) > 0 {
+				} else if where := near.Qualified(key, slices.Sorted(maps.Keys(readers))); len(where) > 0 {
 					hint = "it is spelled with the capability that reads it: " + strings.Join(where, " or ")
 				}
 				problems = append(problems, Problem{Section: ns, Key: key,
@@ -475,15 +477,6 @@ func Readers(reg *registry.Registry, ns string) map[string][]plugin.Field {
 		}
 	}
 	return readers
-}
-
-func sortedKeys(readers map[string][]plugin.Field) []string {
-	keys := make([]string, 0, len(readers))
-	for k := range readers {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // nestedSpelling is a dotted key as the block that states it, in the one-line

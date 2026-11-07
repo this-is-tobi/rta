@@ -5,7 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
@@ -107,7 +108,7 @@ func ConnStamp(key string, c config.Connection) string {
 	// surely as a host does, one layer further in.
 	write("key", key, "kube", c.Kube, "ssh", c.SSH,
 		"secretsFrom", c.SecretsFrom, "tunnelTLS", fmt.Sprintf("%t", c.TunnelTLS))
-	for _, k := range sortedKeys(c.Set) {
+	for _, k := range slices.Sorted(maps.Keys(c.Set)) {
 		write("set", k, canonical(c.Set[k]))
 	}
 	// The fence is part of what a grant consents to, in the direction that
@@ -117,10 +118,10 @@ func ConnStamp(key string, c config.Connection) string {
 	// the person never saw. Either edit re-asks, the way a changed host does.
 	// Order within a list is part of what is written and moves the stamp too —
 	// the conservative direction, which costs one extra question.
-	for _, k := range sortedKeys(c.Only) {
+	for _, k := range slices.Sorted(maps.Keys(c.Only)) {
 		write("only", k, canonical(c.Only[k]))
 	}
-	for _, k := range sortedKeys(c.Secrets) {
+	for _, k := range slices.Sorted(maps.Keys(c.Secrets)) {
 		// The reference, not the value.
 		write("secret", k, c.Secrets[k])
 	}
@@ -239,7 +240,7 @@ func canonical(v any) string {
 	case map[string]any:
 		var b strings.Builder
 		b.WriteString("map:")
-		for _, k := range sortedKeys(t) {
+		for _, k := range slices.Sorted(maps.Keys(t)) {
 			appendPart(&b, canonical(k))
 			appendPart(&b, canonical(t[k]))
 		}
@@ -250,13 +251,4 @@ func canonical(v any) string {
 		// to print the same way.
 		return fmt.Sprintf("go:%#v", t)
 	}
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

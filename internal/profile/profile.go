@@ -26,6 +26,7 @@ package profile
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -1048,17 +1049,6 @@ func noteInertSet(name, key string, conn config.Connection, ns string, inst Inst
 	return notes
 }
 
-// readerKeys is the config keys a map of readers holds, sorted: the closed set a
-// misspelt one is matched against.
-func readerKeys(readers map[string][]plugin.Field) []string {
-	keys := make([]string, 0, len(readers))
-	for k := range readers {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // fillableReaders is every input in ns a profile may fill, by config key: a
 // key serves each capability in the namespace that declares it, and they
 // need not agree about what it takes (pluginconf.SharedField has the cases).
@@ -1342,9 +1332,9 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 func unreadKey(name, key, k, ns, block string, readers map[string][]plugin.Field, reach map[string]keyReach) Problem {
 	reason := fmt.Sprintf("nothing in %s reads %q", ns, k)
 	hint := "`rta explain <capability>` lists the config keys it reads"
-	if guess := near.Word(k, readerKeys(readers)); guess != "" {
+	if guess := near.Word(k, slices.Sorted(maps.Keys(readers))); guess != "" {
 		hint = fmt.Sprintf("did you mean %q?", guess)
-	} else if where := near.Qualified(k, readerKeys(readers)); len(where) > 0 {
+	} else if where := near.Qualified(k, slices.Sorted(maps.Keys(readers))); len(where) > 0 {
 		hint = "it is spelled with the capability that reads it: " + strings.Join(where, " or ")
 	}
 	if declared, isKey := reach[k]; isKey {

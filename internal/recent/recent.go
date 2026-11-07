@@ -37,10 +37,10 @@ package recent
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/url"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
@@ -207,7 +207,7 @@ func Record(surface plugin.Surface, c plugin.Capability, profile string, values 
 		f.Inputs = Values{}
 	}
 	changed := false
-	for _, key := range sortedKeys(fresh) {
+	for _, key := range slices.Sorted(maps.Keys(fresh)) {
 		for _, value := range fresh[key] {
 			if promote(f.Inputs, key, value) {
 				changed = true
@@ -411,7 +411,7 @@ func prune(f *file) {
 	for _, k := range f.Order {
 		known[k] = true
 	}
-	for _, k := range sortedInputs(f.Inputs) {
+	for _, k := range slices.Sorted(maps.Keys(f.Inputs)) {
 		if !known[k] {
 			f.Order = append([]string{k}, f.Order...)
 		}
@@ -425,22 +425,4 @@ func prune(f *file) {
 			delete(f.Inputs, k)
 		}
 	}
-}
-
-func sortedKeys(m map[string][]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sortedInputs(m Values) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
