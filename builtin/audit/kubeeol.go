@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"sort"
@@ -332,7 +333,7 @@ func (g *grader) gradeKubelets(r *findings.Report, nodes []nodeVersionItem) *vie
 	if verr != nil {
 		return verr
 	}
-	for _, v := range sortedKeys(byVersion) {
+	for _, v := range slices.Sorted(maps.Keys(byVersion)) {
 		names := byVersion[v]
 		sort.Strings(names)
 		for i, n := range names {
@@ -577,12 +578,3 @@ func cycleNames(releases []eolapi.Release) string {
 }
 
 func daysBetween(from, to time.Time) int { return int(to.Sub(from).Hours() / 24) }
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}

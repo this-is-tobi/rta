@@ -577,7 +577,7 @@ func primaryOfAStatus(palette map[string]string) (distinct, bool) {
 func withoutStatus(l Layer, colors map[string]string) (map[string]string, []Problem) {
 	var problems []Problem
 	rest := make(map[string]string, len(colors))
-	for _, slot := range sortedKeys(colors) {
+	for _, slot := range slices.Sorted(maps.Keys(colors)) {
 		if slot == GradesKey {
 			problems = append(problems, Problem{Source: l.Source, Field: l.written(slot),
 				Reason: "sets how status is drawn, which only your own config file does",
@@ -603,7 +603,7 @@ func withoutStatus(l Layer, colors map[string]string) (map[string]string, []Prob
 func withoutUnseen(l Layer, colors map[string]string) (map[string]string, []Problem) {
 	var problems []Problem
 	seen := make(map[string]string, len(colors))
-	for _, slot := range sortedKeys(colors) {
+	for _, slot := range slices.Sorted(maps.Keys(colors)) {
 		hex := colors[slot]
 		if !slices.Contains(textSlots, slot) {
 			seen[slot] = hex
@@ -633,15 +633,6 @@ func withoutUnseen(l Layer, colors map[string]string) (map[string]string, []Prob
 		problems = append(problems, p)
 	}
 	return seen, problems
-}
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // fold is the palette the layers make, every slot, and which layer each slot's
