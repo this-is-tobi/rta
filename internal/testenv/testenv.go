@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -37,11 +38,18 @@ import (
 // and a `git init` among them flipped core.bare of the shared repository. The variables
 // that name a repository are dropped, so that a fixture is made in the directory the test
 // names.
+//
+// **So is the terminal they are run from.** rta draws its tables and trees in ASCII
+// under TERM=dumb, TERM=linux or a locale that is not UTF-8 (cli.ASCIIOnly), and a bare
+// `rta` answers TERM=dumb with help. The samples the docs quote are drawn in box
+// characters, so the tests holding them to rta's output failed from an editor's shell,
+// which sets TERM=dumb, and passed on CI, which sets neither. A test of either
+// behaviour sets the variable itself.
 func Isolate(dir string) error {
 	if err := pinGoToolchain(); err != nil {
 		return err
 	}
-	for _, name := range gitRepositoryVariables {
+	for _, name := range slices.Concat(gitRepositoryVariables, terminalVariables) {
 		if err := os.Unsetenv(name); err != nil {
 			return err
 		}
@@ -72,6 +80,9 @@ var gitRepositoryVariables = []string{
 	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX",
 }
+
+// terminalVariables are the variables rta reads to decide what the terminal can draw.
+var terminalVariables = []string{"TERM", "LC_ALL", "LC_CTYPE", "LANG"}
 
 func pinGoToolchain() error {
 	names := []string{"GOCACHE", "GOMODCACHE", "GOPATH", "GOENV"}
