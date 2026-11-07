@@ -54,7 +54,11 @@ func resolveData() (dir string, problem error) {
 	if d := os.Getenv("RTA_DATA_DIR"); d != "" {
 		return d, nil
 	}
-	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
+	// A relative XDG_DATA_HOME is not one, as the base directory specification
+	// says and OwnConfigDir already holds: honoured, it put the state in
+	// whatever directory rta ran in, the failure the stranded directory exists
+	// to prevent.
+	if x := os.Getenv("XDG_DATA_HOME"); filepath.IsAbs(x) {
 		return filepath.Join(x, "rta"), nil
 	}
 	if home := homeDir(); home != "" {
