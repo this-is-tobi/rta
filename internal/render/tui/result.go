@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -869,6 +870,41 @@ func (m Model) canRerun() bool {
 	return true
 }
 
+// moreRows is the limit M re-runs a cut table with: twice the rows it came back
+// with, held to the limit input's own maximum, or false when the table is whole,
+// cannot be re-run, takes no limit, or is at its most already.
+//
+// "15 of 425 rows" over a wide terminal's empty half left one way to more:
+// e, find the limit box, type a number. A web table answers the same thing
+// with a "load more" under its last row; this is that, on one key, reusing the
+// re-run.
+func (m Model) moreRows() (int, bool) {
+	t, ok := m.result.view.(view.Table)
+	if !ok || t.Total <= len(t.Rows) || len(t.Rows) == 0 || !m.canRerun() {
+		return 0, false
+	}
+	i := slices.IndexFunc(m.current.Inputs, func(f plugin.Field) bool {
+		return f.Name == "limit" && f.Type == plugin.Int
+	})
+	if i < 0 {
+		return 0, false
+	}
+	next := 2 * len(t.Rows)
+	var most float64
+	switch hi := m.current.Inputs[i].Max.(type) {
+	case int:
+		most = float64(hi)
+	case int64:
+		most = float64(hi)
+	case float64:
+		most = hi
+	}
+	if most > 0 && float64(next) > most {
+		next = int(most)
+	}
+	return next, next > len(t.Rows)
+}
+
 // resultFooterItems is the result pane's bar: only the keys that apply right
 // now. Actionable views lead with their actions; row actions stay hidden until
 // there is a row to act on.
@@ -927,6 +963,9 @@ func (m Model) resultFooterItems() []hintItem {
 	// actionable view's does.
 	if m.sortable() {
 		keys = append(keys, item(bindSort))
+	}
+	if _, ok := m.moreRows(); ok {
+		keys = append(keys, item(bindMore))
 	}
 	// Outside the branch: `e` answers at any scroll position, and a pane that
 	// only advertises it halfway down is advertising it where nobody is.
