@@ -345,6 +345,7 @@ lint: $(GOLANGCI) ## golangci-lint, with .golangci.yml's linters, as the host an
 FUZZTIME ?= 20s
 FUZZ_TARGETS := internal/textclean:FuzzTerminal internal/textclean:FuzzModel \
 	internal/pathguard:FuzzCheck internal/plugindist:FuzzParseOCIRef \
+	internal/plugindist:FuzzParseManifest \
 	internal/mcp:FuzzLoadTokenFile internal/operator:FuzzLoadRoster \
 	internal/yamlguard:FuzzRefuseAnchors \
 	builtin/audit:FuzzGradeMail builtin/audit:FuzzMailDomain \

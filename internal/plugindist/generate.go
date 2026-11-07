@@ -107,6 +107,11 @@ func Generate(ctx context.Context, req GenerateRequest) ([]byte, Manifest, *view
 				WithHint("`--homepage` is where a person reads more, and an index only " +
 					"carries https for it")
 		}
+		if verr := cleanLine("homepage", req.Homepage, maxManifestHomepage); verr != nil {
+			return nil, Manifest{}, view.Errorf("plugin.manifest.homepage", "%s", verr.Message).
+				WithHint("`--homepage` is shown to a person choosing a plugin, so it is held to one " +
+					"visible line, the way a summary is")
+		}
 	}
 	seenPlatform := map[string]bool{}
 	for _, src := range req.Platforms {
@@ -120,6 +125,15 @@ func Generate(ctx context.Context, req GenerateRequest) ([]byte, Manifest, *view
 		seenPlatform[key] = true
 	}
 
+	// Neither APIVersion nor Annotations, and not for want of a flag. A
+	// manifest that states an apiVersion is refused by every rta that has
+	// not heard of it, and an index is regenerated for every plugin at once
+	// by whichever rta its release job runs, so writing the key here would
+	// hide the whole catalogue from every release older than that one. The
+	// first release to write either does it deliberately, for the manifests
+	// that need it, and states the lowest apiVersion that carries every claim
+	// it makes. Until then the output is byte for byte what it has always
+	// been, and a test holds it there.
 	m := Manifest{
 		Name:     declared.Name,
 		Version:  version,

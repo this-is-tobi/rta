@@ -41,6 +41,46 @@ Search answers from the manifests alone — nothing is fetched and nothing is ex
 
 The safety column says what a plugin can do *and* what it asks to read, because both decide whether you want it. A row reading `all read · none needs a grant until a profile names one · asks for kubeconfig` is a plugin that changes nothing and wants your cluster credentials, and the first half alone would be true and misleading. "None needs a grant" is about a call that names no connection: a read costs a grant the moment it names a [profile](../20-using/40-profiles.md), which is how a plugin that talks to a service is nearly always used, so the row says until one does. The same clause ends `declares` on the install prompt and `reachable by default` on `rta grant list --detail` when none of them needs a grant and a capability in them takes a profile; a count above none is true as it stands, and the reads beside it are the profile's the same way. The count in a search row is of what the manifest claims, every capability that is not a read, because a manifest cannot say which ones refuse an agent outright. `declares` counts what an agent can be granted and says how many more are for a person at a terminal, so `5 need a grant` in the row is `3 need a grant · 2 are for a person at a terminal` once the bytes are in hand and the two lines agree. The receipt of `rta grant allow pg --profile staging` counts a third thing, every capability the grant covers, reads included: a call that names a profile needs a grant whatever its class.
 
+### What a manifest may say
+
+A manifest holds the keys rta reads and nothing else. A key rta does not read **refuses the manifest**, and the refusal names the key, so an author who writes `signature:` hears that nothing checks it instead of believing something does. A misspelling is heard the same way. The prose a manifest shows, which is its summaries, its homepage and the values of its annotations, is refused rather than cleaned when it holds a control or invisible character, so a claim displays as what it is.
+
+Two keys are about the file and not about the plugin.
+
+**`apiVersion`** says which version of this format the manifest is written in, and comes first in the file. It is `rta/v1`. A manifest that states none is read as `rta/v1`, and always will be, because every manifest an index already holds lacks the key. Stating `rta/v1` is accepted too. `rta plugin manifest` states none today, because a manifest that states one is refused by every release that does not know the key.
+
+A manifest that states a newer version, `rta/v2` say, is refused for that and nothing else, whatever else in it is new. The code is `plugin.index.apiversion`, and the message stands on its own: `apiVersion "rta/v2" is newer than rta/v1, which this rta (0.59.0) reads — upgrade rta`. Search lists the rest of the index and puts that line beside the rows. Install refuses with the same sentence, where it would otherwise say that no index carries the plugin. `rta plugin index update` names each manifest it cannot read once the pull is done. Any other value, such as `rta/v0`, `v1` or `rta.v1`, is a slip in the manifest and is refused as a malformed one.
+
+The version is about reading the file and never about trust. What an install records and pins is the digest of the bytes rta hashed itself, whatever a manifest is stamped with.
+
+**`annotations`** is the one place a key rta does not read may go. It is a map of strings, with at most 16 entries:
+
+```yaml
+apiVersion: rta/v1
+name: mytool
+version: 1.2.0
+summary: What mytool does, in one line
+homepage: https://github.com/you/rta-plugin-mytool
+platforms:
+  - os: linux
+    arch: amd64
+    url: https://github.com/you/rta-plugin-mytool/releases/download/v1.2.0/mytool_linux_amd64
+    sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+capabilities:
+  - id: mytool.status
+    safety: read
+annotations:
+  license: Apache-2.0
+  example.com/owner: platform-team
+  release: "1.10"
+```
+
+A key is `name` or `prefix/name`, 63 characters at most in all, in lowercase letters, digits, `-`, `_` and `.`, and each part begins and ends with a letter or digit. A value is one line of at most 120 characters. An annotation outside those bounds refuses the manifest and names the annotation. Quote the values: YAML reads an unquoted `1.10` as a number, and it arrives as `1.1`.
+
+**Annotations mean nothing to rta.** Nothing reads one, compares it with the binary, records it or shows it. A `signature`, `trusted` or `verified` annotation is not a claim, and nothing hangs from it, so an index that wants a signature checked gets none from this.
+
+**What is a field and what is an annotation.** Anything a reader must understand to decide safely is a field of a new `apiVersion`, never an annotation: a claim that is compared, a restriction, a changed meaning, a removal. A reader refuses a manifest it cannot read in full instead of skipping what it does not understand. An annotation is only ever something a reader loses nothing by missing. An rta from before these keys existed refuses a manifest stating either one, as an unknown key.
+
 ## Installing
 
 ```bash

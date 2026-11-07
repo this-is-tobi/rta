@@ -40,6 +40,11 @@ import (
 // them, so the thing worth adding here is that there are more and where to see
 // them. An operator who fixes one index and re-runs to discover the next is
 // being handed the same answer in instalments.
+//
+// Counted as problems and not as indexes, because they are not the same
+// number: a problem is a manifest or an index that could not be read, and one
+// attached index holding a dozen manifests this rta is too old for is a dozen
+// of them.
 func withOthers(problems []*view.Error) *view.Error {
 	verr := problems[0]
 	if len(problems) == 1 {
@@ -47,9 +52,9 @@ func withOthers(problems []*view.Error) *view.Error {
 	}
 	// The word alone after the number: format.Count carries its own count,
 	// and the hint read "2 more attached 2 indexes".
-	hint := fmt.Sprintf("%d more attached %s could not be read either — "+
+	hint := fmt.Sprintf("%d more %s in the attached indexes — "+
 		"`rta plugin index list` shows every one", len(problems)-1,
-		format.Plural(len(problems)-1, "index", "indexes"))
+		format.Plural(len(problems)-1, "problem", "problems"))
 	if verr.Hint != "" {
 		hint = verr.Hint + ". " + hint
 	}
@@ -1021,19 +1026,38 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			// A pinned index was left where it was attached, and "updated"
 			// alone would read as "current" for it. Named here, with the ref,
 			// so nobody waits for a pin to move.
+			//
+			// An index that moved is read again, because "updated" alone would
+			// read as "readable" for it: the pull is refused when nothing in
+			// the index can be read, and said nothing when only some of it
+			// could not, so a manifest the upstream had just moved past this
+			// rta was missing from search with no word of it from the command
+			// that fetched it. Each is named, as `index list` names them.
 			var pinned []string
+			var unreadable []*view.Error
 			for _, ix := range plugindist.Indexes() {
 				if name != "" && ix.Name != name {
 					continue
 				}
 				if ref := plugindist.IndexPin(cmd.Context(), ix); ref != "" {
 					pinned = append(pinned, ix.Name+" (pinned at "+ref+", left there)")
+					continue
+				}
+				if !opts.dryRun {
+					_, bad := plugindist.Manifests(ix)
+					unreadable = append(unreadable, bad...)
 				}
 			}
 			if len(pinned) > 0 {
 				body += "; " + strings.Join(pinned, ", ")
 			}
-			return renderView(cmd, opts, view.Text{Body: body})
+			if len(unreadable) == 0 {
+				return renderView(cmd, opts, view.Text{Body: body})
+			}
+			return renderView(cmd, opts, view.Sections{
+				Items:    []view.Section{{ID: "update", Title: "Update", View: view.Text{Body: body}}},
+				Warnings: asWarnings(unreadable),
+			})
 		},
 	})
 	root.AddCommand(&cobra.Command{

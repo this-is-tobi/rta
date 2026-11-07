@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -308,5 +309,54 @@ func TestAnAnswerIsYesOnlyWhenItSaysSo(t *testing.T) {
 		if !strings.HasPrefix(out.String(), "Attach? [y/N] ") {
 			t.Errorf("the question was not written first: %q", out.String())
 		}
+	}
+}
+
+// The attach was a success because something in the index read, and the line
+// that reports it counted what read. An index with a manifest this rta is too
+// old for said "claims 1 plugin" of a catalogue of two, which is how somebody
+// decides the second does not exist.
+func TestTheOfferSaysHowManyManifestsItCannotRead(t *testing.T) {
+	s := newOfferSession(t)
+	s.terminal, s.answer = true, true
+	attachFirstPartyIndex = func(context.Context) *view.Error {
+		s.attached++
+		if verr := writeIndex("official", noBuildHerePG); verr != nil {
+			return verr
+		}
+		ahead := "apiVersion: rta/v2\n" + strings.ReplaceAll(noBuildHerePG, "pg", "redis")
+		if err := os.WriteFile(filepath.Join(paths.Indexes(), "official", "index", "redis.yaml"), []byte(ahead), 0o644); err != nil {
+			return view.Errorf("test.index", "%v", err)
+		}
+		return nil
+	}
+
+	_, errOut, _ := s.run("plugin", "install", "pg")
+	const want = "attached official, which claims 1 plugin and holds 1 manifest this rta cannot read"
+	if !strings.Contains(errOut, want) {
+		t.Fatalf("stderr = %q, want it to say %q", errOut, want)
+	}
+}
+
+// A plugin an attached index carries in a form this rta cannot read is not a
+// plugin no index carries. Offering the first-party index there would answer
+// "upgrade rta" with a clone, at a terminal, of an index that says the same.
+func TestAnIndexAheadOfThisRtaDoesNotEarnTheFirstPartyOffer(t *testing.T) {
+	s := newOfferSession(t)
+	s.terminal, s.answer = true, true
+	if verr := writeIndex("lab", "apiVersion: rta/v2\n"+noBuildHerePG); verr != nil {
+		t.Fatal(verr)
+	}
+
+	_, _, err := s.run("plugin", "install", "pg")
+	var verr *view.Error
+	if !errors.As(err, &verr) || verr.Code != plugindist.CodeAPIVersion || !strings.Contains(verr.Message, "upgrade rta") {
+		t.Fatalf("err = %v, want %s saying to upgrade rta", err, plugindist.CodeAPIVersion)
+	}
+	if len(s.asked) != 0 || s.attached != 0 {
+		t.Errorf("asked %v and attached %d times, want the refusal and no offer", s.asked, s.attached)
+	}
+	if slices.Contains(notFoundCodes, plugindist.CodeAPIVersion) {
+		t.Errorf("%s is among the not-found codes", plugindist.CodeAPIVersion)
 	}
 }
