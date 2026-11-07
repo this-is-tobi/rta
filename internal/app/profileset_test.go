@@ -754,14 +754,15 @@ func TestAddingAForwardFreesTheKeysItFills(t *testing.T) {
 	}
 }
 
-// A key that only means something beside the TLS mode a forward turns off is as
-// dead as one the forward fills (profile.DeadUnderForward), and is freed the same
-// way: `profile set` kept it, and the connection check then refused the
-// connection the command had just written over it.
-func TestAddingAForwardFreesATLSAdjacentKey(t *testing.T) {
+// The TLS switch is one of the keys a forward fills: it turns the mode off
+// itself, so a stated one is removed beside a new forward. The name the
+// certificate is checked for is not — it carries no endpoint role, and a plugin
+// reads it as a request for TLS over the forward, so removing it would drop a
+// check the operator wrote on purpose.
+func TestAddingAForwardFreesTheTLSModeAndKeepsTheNameItIsCheckedFor(t *testing.T) {
 	reg := setRegistry(t)
 	if err := reg.Register(plugin.Plugin{
-		Name: "tlsdb", Summary: "a database whose CA is read only under TLS",
+		Name: "tlsdb", Summary: "a database whose certificate is checked for a name",
 		Capabilities: []plugin.Capability{{
 			ID: "tlsdb.status", Summary: "status", Safety: plugin.Read,
 			Inputs: []plugin.Field{
@@ -772,7 +773,7 @@ func TestAddingAForwardFreesATLSAdjacentKey(t *testing.T) {
 				{Name: "sslmode", Type: plugin.String, Default: "verify-full", Config: "sslmode", Local: true,
 					Endpoint: plugin.EndpointTLS, Options: []string{"disable", "require", "verify-full"}, Help: "tls"},
 				{Name: "tls-server-name", Type: plugin.String, Config: "tls-server-name", Local: true,
-					TLSAdjacent: true, Help: "the name the certificate is checked against"},
+					Help: "the name the certificate is checked against"},
 				{Name: "dbname", Type: plugin.String, Config: "dbname", Local: true, Help: "database"},
 			},
 			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
@@ -785,19 +786,26 @@ func TestAddingAForwardFreesATLSAdjacentKey(t *testing.T) {
     plugins:
       tlsdb:
         set:
+          sslmode: verify-full
           tls-server-name: db.internal
           dbname: orders
 `
 	out, errOut, err := runWith(t, reg, before,
 		"profile", "set", "staging", "--plugin", "tlsdb", "--kube", "prod/db/svc/postgres:5432")
 	if err != nil {
-		t.Fatalf("adding a forward was refused over a key it makes dead: %v %q", err, errOut)
+		t.Fatalf("adding a forward was refused over keys it replaces: %v %q", err, errOut)
 	}
-	if body := configOf(t); strings.Contains(body, "tls-server-name") || !strings.Contains(body, "dbname: orders") {
-		t.Errorf("the TLS-adjacent key survived beside the forward, or a live one went:\n%s", body)
+	body := configOf(t)
+	if strings.Contains(body, "sslmode") {
+		t.Errorf("the TLS switch survived beside a forward that turns it off:\n%s", body)
 	}
-	if !strings.Contains(out, "set.tls-server-name") {
-		t.Errorf("the removal has no receipt:\n%s", out)
+	for _, kept := range []string{"tls-server-name: db.internal", "dbname: orders"} {
+		if !strings.Contains(body, kept) {
+			t.Errorf("%q was removed though the forward does not fill it:\n%s", kept, body)
+		}
+	}
+	if !strings.Contains(out, "set.sslmode") || strings.Contains(out, "set.tls-server-name") {
+		t.Errorf("the receipt does not name exactly the removed switch:\n%s", out)
 	}
 }
 

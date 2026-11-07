@@ -11,6 +11,7 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -464,10 +465,6 @@ func fullDeclaration() plugin.Plugin {
 				{Name: "bucket", Type: plugin.String, Help: "bucket", Live: true},
 				// And on a list, which a plugin may now mark the same way.
 				{Name: "buckets", Type: plugin.StringSlice, Help: "buckets", Live: true},
-				// TLSAdjacent needs its own input rather than riding one already
-				// declared here: addr already carries a non-zero Endpoint, and
-				// TLSAdjacent's own contract is that it carries none.
-				{Name: "ca-file", Type: plugin.String, Help: "ca", Local: true, TLSAdjacent: true},
 				// Remote and With cross as data: a host that lost either would
 				// put the remote server's box back on every local form.
 				{Name: "server", Type: plugin.String, Help: "server", Local: true, Remote: true},
@@ -494,6 +491,33 @@ func TestTheDeclarationSurvivesARoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("the declaration did not survive:\n want %#v\n  got %#v", want, got)
+	}
+}
+
+// A plugin built on an SDK that still set the retired tag 16 on an input stays
+// loadable: the decoder keeps a tag it has no field for and reads nothing
+// from it, so the input arrives as the plain one it is and the host loses only
+// what the tag once asked of it. An installed plugin cannot be rebuilt by the
+// host, and refusing it for a number that is reserved would turn a removal
+// into an outage for whoever has not run `rta plugin upgrade`.
+func TestAnInputFromAPluginThatStillSendsTheRetiredTagDecodes(t *testing.T) {
+	plain := plugin.Field{Name: "ca-file", Type: plugin.String, Help: "ca", Local: true}
+	raw, err := proto.Marshal(FieldToProto(plain))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = protowire.AppendTag(raw, 16, protowire.VarintType)
+	raw = protowire.AppendVarint(raw, 1)
+	var f rtav1.Field
+	if err := proto.Unmarshal(raw, &f); err != nil {
+		t.Fatalf("the retired tag broke decoding: %v", err)
+	}
+	got, ok := FieldFromProto(&f)
+	if !ok {
+		t.Fatal("the input's type did not decode")
+	}
+	if !reflect.DeepEqual(got, plain) {
+		t.Errorf("the input did not decode as the plain one:\n want %#v\n  got %#v", plain, got)
 	}
 }
 

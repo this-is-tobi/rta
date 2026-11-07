@@ -66,9 +66,7 @@ func checkOnly(name, key string, conn config.Connection, ns string, inst Install
 		// value no call resolves to, the way checkSet refuses the `set:` line
 		// beside it: said for the same reason, and before the list's own shape,
 		// which is not the more fundamental complaint.
-		overridden := slices.ContainsFunc(readers[k], func(r plugin.Field) bool {
-			return r.Endpoint != plugin.EndpointNone || r.TLSAdjacent
-		})
+		overridden := slices.ContainsFunc(readers[k], func(r plugin.Field) bool { return r.Endpoint != plugin.EndpointNone })
 		if conn.Tunnelled() && overridden {
 			add(fmt.Sprintf("`only: %s` fences a value the forward `%s:` opens overrides", k, conn.TunnelKey()),
 				"remove it, or remove `"+conn.TunnelKey()+":` to connect directly")

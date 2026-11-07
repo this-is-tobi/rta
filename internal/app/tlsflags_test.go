@@ -43,17 +43,17 @@ func usageOf(t *testing.T, c plugin.Capability, args ...string) *view.Error {
 func TestAFlagThatSaysTLSIsAnsweredWithTheInputThatTurnsItOn(t *testing.T) {
 	mode := plugin.Field{Name: "sslmode", Type: plugin.String, Local: true, Endpoint: plugin.EndpointTLS,
 		Options: []string{"disable", "require", "verify-full"}}
-	adjacent := plugin.Field{Name: "tls-server-name", Type: plugin.String, TLSAdjacent: true}
+	decoy := plugin.Field{Name: "tls-server-name", Type: plugin.String}
 	address := plugin.Field{Name: "address", Type: plugin.String, Local: true, Endpoint: plugin.EndpointURL}
 
 	for _, word := range []string{"tls", "ssl", "https"} {
-		hint := usageOf(t, tlsDemo("demo.db.status", mode, adjacent), "--"+word).Hint
+		hint := usageOf(t, tlsDemo("demo.db.status", mode, decoy), "--"+word).Hint
 		if !strings.Contains(hint, "--sslmode turns TLS on") || !strings.Contains(hint, "disable, require, verify-full") ||
 			strings.Contains(hint, "tls-server-name") {
 			t.Errorf("--%s on a capability with a TLS mode: hint = %q", word, hint)
 		}
 	}
-	hint := usageOf(t, tlsDemo("demo.vault.status", address, adjacent), "--tls").Hint
+	hint := usageOf(t, tlsDemo("demo.vault.status", address, decoy), "--tls").Hint
 	if !strings.Contains(hint, "https:// address in --address") || strings.Contains(hint, "tls-server-name") {
 		t.Errorf("--tls on a capability whose address carries the scheme: hint = %q", hint)
 	}
