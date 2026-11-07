@@ -22,7 +22,7 @@ func TestAPinToTheSwitchedOnEnvironmentRidesOnItsBind(t *testing.T) {
 	if verr := profile.SaveSelection(profile.Selection{Active: "prod"}); verr != nil {
 		t.Fatal(verr)
 	}
-	msgs := unbatch(m.syncActive())
+	msgs := answers(m.syncActive())
 	var names []string
 	for _, msg := range msgs {
 		if b, ok := msg.(boundMsg); ok {

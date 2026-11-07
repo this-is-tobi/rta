@@ -91,7 +91,7 @@ func TestAnUpgradingWriteBacksUpTheOriginalCiphertextFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.SetWorkFactor(scryptWorkFactor)
+	r.SetWorkFactor(ScryptWorkFactor)
 	var buf bytes.Buffer
 	w, err := age.Encrypt(&buf, r)
 	if err != nil {

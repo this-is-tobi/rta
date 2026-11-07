@@ -553,11 +553,17 @@ func firstErr(a, b error) error {
 	return b
 }
 
-// scryptWorkFactor overrides age's default passphrase hardening. Zero keeps
+// ScryptWorkFactor overrides age's default passphrase hardening. Zero keeps
 // age's own calibration (~1s per unlock), which is the right cost for a
 // secret store and the only value shipped. Tests lower it: they encrypt and
 // decrypt hundreds of times, and what they are checking is never the KDF.
-var scryptWorkFactor = 0
+//
+// Exported, as guard's and operator's are, for the suites outside this package
+// that drive a real store: the TUI's and the commands'. They paid the full
+// derivation, ten times slower under the race detector, so one TUI test took
+// 25 s and the TUI's race pass was CI's longest job. It shapes only what this
+// process writes: a store made elsewhere costs what it was made with.
+var ScryptWorkFactor = 0
 
 // scryptTurn is how many passphrase derivations this process runs at once:
 // one. Each holds about 256 MiB for about a second at age's own work factor,
@@ -785,8 +791,8 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 		if err != nil {
 			return nil, nil, nil, view.Errorf("kv.passphrase.invalid", "%v", err).WithInput("passphrase")
 		}
-		if scryptWorkFactor > 0 {
-			r.SetWorkFactor(scryptWorkFactor)
+		if ScryptWorkFactor > 0 {
+			r.SetWorkFactor(ScryptWorkFactor)
 		}
 		return []age.Recipient{r}, nil, nil, nil
 	}
