@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"maps"
 	"time"
 
 	"charm.land/bubbles/v2/list"
@@ -632,6 +633,16 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		if m.sortable() {
 			nm, cmd := m.startSortPick()
 			return nm, cmd, true
+		}
+	case "M":
+		if limit, ok := m.moreRows(); ok {
+			values := maps.Clone(m.lastValues)
+			if values == nil {
+				values = map[string]any{}
+			}
+			values["limit"] = limit
+			m.lastValues = values
+			return m, m.startRun(m.current, values, m.lastYes), true
 		}
 	case "q":
 		return m.quit()
