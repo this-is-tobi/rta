@@ -1048,7 +1048,8 @@ func (m Model) searchResults() []plugin.Capability {
 	for i, c := range caps {
 		items[i] = itemOf(c)
 	}
-	found := rankItems(m.query, items)
+	find, _ := searchCall(m.query)
+	found := rankItems(find, items)
 	out := make([]plugin.Capability, len(found))
 	for n, i := range found {
 		out[n] = caps[i]

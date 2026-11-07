@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/match"
@@ -27,6 +29,56 @@ type searchItem struct {
 
 func itemOf(c plugin.Capability) searchItem {
 	return searchItem{ID: c.ID, Summary: c.Summary, Keywords: c.Keywords}
+}
+
+// searchCall splits a query typed the way this screen writes a call —
+// `grant.allow target=sys.ps ttl=15m`, the spelling every hint on it uses
+// (plugin.SurfaceTUI's Call) — into the words that find the capability and the
+// inputs the call states. The hints read as something to type, and typing one
+// found the capability and dropped every argument: the form opened empty.
+func searchCall(query string) (find string, given [][2]string) {
+	var words []string
+	for _, w := range strings.Fields(query) {
+		if name, value, ok := strings.Cut(w, "="); ok && name != "" {
+			given = append(given, [2]string{name, value})
+			continue
+		}
+		words = append(words, w)
+	}
+	return strings.Join(words, " "), given
+}
+
+// givenValues is what a call typed into the search bar states for c, typed as
+// the form reads its boxes back (typedValue), or why it cannot be taken: an
+// input c does not have, a toggle that is not a yes or a no. A secret is never
+// taken from the bar, which shows what is typed into it; the form asks for it
+// in a masked box. A hint's placeholder, `<capability>`, is left for the form
+// to ask.
+func givenValues(c plugin.Capability, given [][2]string) (map[string]any, string) {
+	out := map[string]any{}
+	for _, kv := range given {
+		name, text := kv[0], kv[1]
+		i := slices.IndexFunc(c.Inputs, func(f plugin.Field) bool { return f.Name == name })
+		if i < 0 {
+			return nil, c.ID + " has no input " + name
+		}
+		f := c.Inputs[i]
+		switch {
+		case f.Type.Sensitive():
+			return nil, name + " is a secret, and the search bar shows what is typed — the form asks for it"
+		case strings.HasPrefix(text, "<") && strings.HasSuffix(text, ">"):
+			continue
+		case f.Type == plugin.Bool:
+			b, err := strconv.ParseBool(text)
+			if err != nil {
+				return nil, name + " is a yes or a no: true or false"
+			}
+			out[name] = b
+		default:
+			out[name] = typedValue(f, text)
+		}
+	}
+	return out, ""
 }
 
 // rankItems is the indexes of the items query finds, best first; equal ones
