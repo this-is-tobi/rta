@@ -242,7 +242,7 @@ A command that takes more than one id says so with dots in its usage — `rta no
 
 ## Piping in
 
-A few capabilities read a pipe when the argument naming their input is left out: `debug ansi` the text it explains, `keys restore` the seed words, `codec jwt` the token and `codec jwk` the key. For the last three that is the point — a pipe keeps a bearer token or a seed phrase out of `ps` and out of your shell history, where an argument is readable by every user on the machine for as long as the call runs:
+A few capabilities read a pipe when the argument naming their input is left out: `debug ansi` the text it explains, `keys restore` the seed words, `codec jwt` the token, `codec jwk` the key, and `codec b64`, `codec hex` and `codec url` the value, taken byte for byte as `base64` takes it, so `echo` encodes the line break it adds and `printf %s` does not. For the seed words, the token and the key that is the point — a pipe keeps a bearer token or a seed phrase out of `ps` and out of your shell history, where an argument is readable by every user on the machine for as long as the call runs:
 
 ```bash
 kubectl get secret app -o jsonpath='{.data.token}' | base64 -d | rta codec jwt
