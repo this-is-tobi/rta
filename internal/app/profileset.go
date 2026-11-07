@@ -892,7 +892,7 @@ func freeEndpointKeys(conn *config.Connection, ns string, reg *registry.Registry
 			continue
 		}
 		for _, f := range c.Inputs {
-			if f.Endpoint == plugin.EndpointNone || !plugin.ProfileFillable(c, f) {
+			if !profile.DeadUnderForward(f) || !plugin.ProfileFillable(c, f) {
 				continue
 			}
 			// `set:` is keyed by Field.Config and `secrets:` by Field.Name.

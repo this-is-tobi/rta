@@ -731,10 +731,9 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 				declared[f.Name] = true
 				// Endpoint-role fields are overridden directly; a
 				// TLSAdjacent one depends on an EndpointTLS field the same
-				// tunnel forces off (plugin.Field.TLSAdjacent's own doc
-				// comment has the full reasoning) — both are exactly as
-				// dead, so both get the same repair.
-				if !tunnelled || (f.Endpoint == plugin.EndpointNone && !f.TLSAdjacent) {
+				// tunnel forces off — both are exactly as dead, so both get
+				// the same repair (profile.DeadUnderForward).
+				if !tunnelled || !profile.DeadUnderForward(f) {
 					continue
 				}
 				_, stated := conn.Set[f.Name]
