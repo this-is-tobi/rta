@@ -34,6 +34,11 @@ func blameCapability() plugin.Capability {
 			"it. It spends at most two seconds on that history: a line it has not traced by then " +
 			"carries the commit it had reached, marked ^ as git marks a boundary, meaning the line " +
 			"is at least that old.",
+		Agent: "One row per line: who last changed it, when, and the commit. `from` and `limit` show a " +
+			"window of the lines, and the total is the file's length. Refuses a version of the file over " +
+			"16 MiB, or a history over 64 MiB. It spends at most two seconds on history: a line not traced " +
+			"by then carries the commit it had reached, marked ^ as git marks a boundary, meaning the line " +
+			"is at least that old.",
 		NoPreview: true,
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),

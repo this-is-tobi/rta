@@ -140,6 +140,11 @@ func Plugin() plugin.Plugin {
 					"may be incomplete: this reports what arrived rather than filling the gap from a trust " +
 					"store, so a bundle never silently differs from what the server serves. The PEM comes " +
 					"back in the response. " + overMCPReadsAFile,
+				Agent: "The certificates as PEM, for a ConfigMap, a Dockerfile COPY or `update-ca-certificates`; " +
+					"`cert.chain` draws them to be read. `include` chooses which: chain (the default) is everything " +
+					"the host presented, leaf the end-entity certificate alone, issuers the chain without the leaf. " +
+					"A presented chain is what the host chose to send and may be incomplete: this reports what " +
+					"arrived and never fills the gap from a trust store. " + overMCPReadsAFile,
 				Inputs: []plugin.Field{
 					targetField,
 					{Name: "include", Type: plugin.String, Config: "include", Default: "chain",
@@ -184,13 +189,12 @@ func Plugin() plugin.Plugin {
 					"first, which puts an expired one ahead of one with a year to run; each row names its host. Over " +
 					"MCP a target is never a file, and each host listed needs a grant, since a certificate's own words " +
 					"are tool output, as a banner is.",
-				Agent: "Connects to each host in `targets` over TLS and reports when its certificate ends: the " +
-					"time left, the date and a status — ok, WARN once it ends within `warn-days`, EXPIRED, or " +
-					"INVALID before it begins; TLS 1.0 and 1.1 are flagged beside it. The chain the host sends " +
-					"is graded and the certificate that ends first sets the row, named when it is not the leaf. " +
-					"A host that cannot be reached is its row's ERROR and does not stop the rest. Rows are the " +
-					"most urgent first, not in the order listed, and each names its host. A target is never a " +
-					"file here, and a certificate's own words are tool output. Each host needs a grant.",
+				Agent: "Connects to each host in `targets` over TLS and reports when its certificate ends: time " +
+					"left, date and a status (ok, WARN within `warn-days`, EXPIRED, INVALID before it begins), " +
+					"with TLS 1.0 and 1.1 flagged. The chain the host sends is graded and the certificate that " +
+					"ends first sets the row, named when it is not the leaf. An unreachable host is its row's " +
+					"ERROR and stops nothing. Rows are most urgent first, each naming its host. A target is " +
+					"never a file here, and each host needs a grant.",
 				Inputs: []plugin.Field{
 					{Name: "targets", Type: plugin.StringSlice, Positional: true, Required: true,
 						Help: "hosts to check (host[:port], or an https:// URL)"},

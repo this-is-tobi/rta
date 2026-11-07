@@ -46,6 +46,11 @@ func listCapability() plugin.Capability {
 			"the templates whose name contains it, or to one kind when the term is main, global " +
 			"or community. Without one the first templates are listed and the total says how " +
 			"many there are; `limit` shows more.",
+		Agent: "The templates in the github/gitignore repository, with the name `gitignore.show` takes for " +
+			"each: main ones (languages, frameworks, tools), global ones (operating systems, editors) and " +
+			"community ones. A `term` narrows to templates whose name contains it, or to one kind when it " +
+			"is main, global or community. Without one the first templates are listed and the total says " +
+			"how many there are; `limit` shows more.",
 		Examples: []plugin.Example{
 			{Title: "everything about node", Inputs: map[string]any{"term": "node"}},
 			{Title: "the global templates", Inputs: map[string]any{"kind": "global", "limit": 100}},

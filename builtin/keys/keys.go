@@ -53,6 +53,11 @@ func Plugin() plugin.Plugin {
 					"single seed to encode as words. An Exposed column appears only when some key's " +
 					"permissions let another account on this machine read it, which is a credential exposure " +
 					"and the reason ssh stops accepting that key.",
+				Agent: "Keys are found by their PEM preamble, not an id_* name, so a key under any name is listed. " +
+					"Only public data is read: the .pub sibling for type, fingerprint and comment, and whether the " +
+					"private key is passphrase-protected, checked without a passphrase. Nothing is decrypted. " +
+					"Backup-eligible means ed25519, the one type with a single seed to encode as words. An Exposed " +
+					"column appears only when another account on this machine can read a key.",
 				NoPreview: true,
 				Run:       runList,
 			},

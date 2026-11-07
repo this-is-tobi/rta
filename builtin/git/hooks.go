@@ -35,6 +35,12 @@ func hooksCapability() plugin.Capability {
 			"config is read as `git.config` reads it; an include this cannot decide is not followed, " +
 			"and a warning says how many. Over MCP a link leading out of the roots is not followed " +
 			"and is listed active, as git may run what it leads to.",
+		Agent: "The hooks directory (core.hooksPath, else the repository's own) and which entries git would " +
+			"run, judged as git judges them: named exactly (a `.sample` suffix never runs) and executable, " +
+			"a symbolic link by what it leads to. Anything else with a hook's name, a directory or a " +
+			"named pipe, is one git tries to run and cannot, failing the command it guards, and is listed " +
+			"as fails. Over MCP a link leading outside the roots is not followed and is listed active, " +
+			"as git may run what it leads to.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},

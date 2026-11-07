@@ -21,9 +21,13 @@ import (
 
 const (
 	// authoredBudget bounds the plugin-written text of one tool: its summary
-	// and its description, without rta's lines or its keywords. About two
-	// hundred tokens.
-	authoredBudget = 800
+	// and its description, without rta's lines or its keywords. About a
+	// hundred and fifty tokens. It was 800 until the longest built-in tools
+	// were given a text of their own for the model (plugin.Capability.Agent),
+	// each kept to what a model needs to call it: the rationale and the
+	// terminal's detail stay in Description for `--help`. What a plugin is held
+	// to is sdktest's own figure, which moves plugins first.
+	authoredBudget = 600
 	// inputBudget bounds one input's description.
 	inputBudget = 160
 )

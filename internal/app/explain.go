@@ -12,6 +12,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
+	"github.com/this-is-tobi/rta/internal/toolcall"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -153,7 +154,7 @@ func inputsTable(c plugin.Capability) view.Table {
 	}
 	if c.Detailed {
 		t.Rows = append(t.Rows, []string{"detail", string(plugin.Bool), "", "false", "", "", "", "", "", "", "",
-			"return the full detailed view instead of the compact summary"})
+			toolcall.DetailHelp})
 	}
 	t.Total = len(t.Rows)
 	return t
@@ -392,7 +393,7 @@ func cardOf(reg *registry.Registry, c plugin.Capability) view.KeyValue {
 		// schema's description, since the disagreement is the bug.
 		pairs = append(pairs, view.Pair{
 			Key:   "input:detail",
-			Value: string(plugin.Bool) + ", default false — return the full detailed view instead of the compact summary",
+			Value: string(plugin.Bool) + ", default false — " + toolcall.DetailHelp,
 		})
 	}
 	return view.KeyValue{Pairs: pairs}

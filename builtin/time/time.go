@@ -82,12 +82,11 @@ func Plugin() plugin.Plugin {
 					"night it went back, is answered as one of the two with the other named in an " +
 					"`ambiguous` row; one it never showed is refused.",
 				Agent: "`when` takes an epoch number at any precision, an RFC3339 stamp, a plain date, or a " +
-					"duration either side of now (`90m ago`, `in 2h`, `+90m`); a bare number's unit is chosen " +
-					"by magnitude and stated in the `read-as` row. `zone` adds an IANA timezone. For now the " +
-					"rows are utc, " +
-					"local and epoch; `detail` adds `relative` and `epoch-ms`, and a named instant always " +
-					"gets them. A local time the clock showed twice is answered as one, with the other in " +
-					"`ambiguous`; one it never showed is refused.",
+					"duration either side of now (`90m ago`, `in 2h`); a bare number's unit is chosen by " +
+					"magnitude and stated in the `read-as` row. `zone` adds an IANA timezone. Rows are utc, " +
+					"local and epoch for now; `detail` adds `relative` and `epoch-ms`, always given for a named " +
+					"instant. A local time the clock showed twice is answered as one, the other in `ambiguous`; " +
+					"one it never showed is refused.",
 				Inputs: []plugin.Field{
 					{Name: "when", Type: plugin.String, Positional: true, Default: "now",
 						Help: "an instant: now, an epoch number, 2026-09-04T12:00:00Z, 2026-09-04, or a relative duration like \"90m ago\""},

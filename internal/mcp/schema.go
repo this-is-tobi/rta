@@ -21,17 +21,48 @@ import (
 // all of them chooses nothing.
 //
 // Only what holds without exception goes here. What changes per tool — the
-// safety class, a grant, a narrowed scope — stays in the description, where
+// safety class, whether it needs a grant — stays in the description, where
 // rta's own words come last (agentText).
-const instructions = "rta is a security boundary in front of this machine, not a shell. " +
+//
+// Two things here used to be said in every tool that they were true of, and
+// each is true of all of them, which is what let it move:
+//
+// The grant command. A tool that needs a grant ended on a sentence of about 170
+// bytes naming it, `rta grant allow kv.get`, and the record the grant could be
+// narrowed to: the same sentence with one word changed, on every tool that
+// costs a grant, close to 6 KB of the built-in catalogue's list. The command is
+// the tool's name spelled with dots, which is exact, because an ID segment
+// cannot hold an underscore (idRe in pkg/plugin) and so kv_get maps back to
+// kv.get with nothing lost. It names the capability and never its plugin, as the
+// refusal does: a model relays the command it was given, and the plugin's would
+// let every capability of it through on that profile, destructive ones
+// included, for a person who was asked about one. The narrowing is not said
+// here at all: the refusal names the record, profile and agent each uncovered
+// call needs (grant.refuseMissing), which is where a model is told what a
+// grant must say, with the call in front of it.
+//
+// Whose filesystem a path is. It was appended to the description of every path
+// input, because a model reading "file" has every reason to think of its own
+// working directory when the path is resolved on the machine running rta. That
+// is a fact about every path argument, so it is said here once.
+var instructions = "rta is a security boundary in front of this machine, not a shell. " +
 	"Every tool answers with one JSON object whose \"type\" names its shape (table, keyvalue, text, sections, ...). " +
 	"A table is cut when its \"total\" is more than the rows sent, or when it has none " +
 	"and a warning says the list continues; the tool's \"limit\" or a narrower call shows the rest. " +
 	"A failure is {\"type\":\"error\",\"code\",\"message\",\"hint\",\"input\"}: the hint says what to change in the call, " +
 	"or whose the fix is. A command in a hint (`rta ...`) is the operator's to run and you have no terminal, so say what " +
-	"is needed and ask the operator rather than retrying. A tool that needs a grant is refused until a person issues one for you: " +
-	"every one whose Safety is above read, and some reads that reach out or reveal; a tool's own text says when it needs one. " +
+	"is needed and ask the operator rather than retrying. A tool that needs a grant is refused until a person issues one, " +
+	"which you cannot: " + plugin.AskOperator("grant allow <id>") + ", the tool's name with dots (kv.get for kv_get). " +
+	"Every tool whose Safety is above read needs one, and some reads that reach out or reveal; " +
+	"a tool's own text says when it does. " +
 	"A path argument names a file on the machine running rta, under the roots the operator started it with."
+
+// grantSentence is the whole of what a tool's own text says of a grant: that
+// it needs one. Said by the host after the plugin's frame, so that a model
+// asks the person for a grant instead of retrying a call that cannot work, and
+// so that a plugin cannot word it as free; how to get one is the handshake's
+// (instructions).
+const grantSentence = "Requires a grant."
 
 // profileInstructions is the one sentence about the "profile" argument, said
 // at the handshake when any tool offers it. It sat at the end of the
@@ -43,9 +74,18 @@ const instructions = "rta is a security boundary in front of this machine, not a
 // inventory is not something an ungranted caller gets — but the fact that
 // "profile" is required and gated is what stops a model ignoring it or
 // guessing at it. The argument's own description in each schema says the
-// same of that tool in one line.
+// same of that tool in a few words, and has to stand on its own, because a
+// client that connected before the first profile was written holds the tool
+// with the argument and not this sentence.
+//
+// The command carries the profile because a grant that names no connection
+// covers no call that names one, and a call on a namespace with connections
+// has to name one: the command for the capability alone would be run,
+// succeed, and leave every call refused (grant.refuseMissing says the same
+// of the refusal).
 const profileInstructions = "A tool with a \"profile\" argument reaches connections the operator configured: " +
-	"naming one needs a grant a person issued for that exact profile, so ask the operator which to use."
+	"naming one needs a grant a person issued for that exact profile (`rta grant allow <id> --profile <name>`), " +
+	"so ask the operator which to use."
 
 // revealInstructions is the one sentence about what to do with a value a tool
 // hands back from a store, said at the handshake when any tool offered here
@@ -146,7 +186,7 @@ func handshakeInstructions(offered []plugin.Capability, opts Options) string {
 // (registry.Origin): a namespace a built-in holds is refused to every plugin,
 // and a capability whose origin is unknown is framed, the side that costs a
 // marker rather than a model's trust.
-func agentText(c plugin.Capability, tools map[string]bool, profiled, authored bool) string {
+func agentText(c plugin.Capability, tools map[string]bool, authored bool) string {
 	var b strings.Builder
 	if authored {
 		b.WriteString(plugin.AuthoredOpen + "\n")
@@ -178,35 +218,7 @@ func agentText(c plugin.Capability, tools map[string]bool, profiled, authored bo
 		b.WriteString("\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.")
 	}
 	if grant.Required(c, "") {
-		// Said here as well as enforced in the gate, so a model asks the
-		// person for a grant instead of retrying a call that cannot work.
-		b.WriteString("\n\nRequires a grant a person issued for this capability")
-		if c.Scope != "" {
-			// Every record the call names, since a grant has to cover each:
-			// told only of the key a rename moves, a model narrows its request
-			// to that and is refused for the name it moves it to.
-			fmt.Fprintf(&b, " (optionally narrowed to one %q", c.Scope)
-			for _, also := range c.ScopeAlso {
-				fmt.Fprintf(&b, " and one %q", also)
-			}
-			b.WriteString(")")
-		}
-		// A grant that names no connection covers no call that names one, and
-		// a call on a namespace with connections has to name one: the command
-		// for the capability alone would be run, succeed, and leave every
-		// call refused (grant.refuseMissing says the same of the refusal).
-		//
-		// The capability and not its plugin, as the refusal names it: a model
-		// relays the command it was given, and the plugin's would have let
-		// every capability of it through on that profile, destructive ones
-		// included, for a person who was asked about this one.
-		if profiled {
-			b.WriteString(". You cannot issue one yourself — " +
-				plugin.AskOperator("grant allow "+c.ID+" --profile <profile>") +
-				", naming the profile you call it with.")
-		} else {
-			b.WriteString(". You cannot issue one yourself — " + plugin.AskOperator("grant allow "+c.ID) + ".")
-		}
+		b.WriteString("\n\n" + grantSentence)
 	}
 	return b.String()
 }
@@ -215,19 +227,15 @@ func agentText(c plugin.Capability, tools map[string]bool, profiled, authored bo
 // annotations from the safety class.
 func toolDef(c plugin.Capability, opts Options) *sdk.Tool {
 	falseHint, trueHint := false, true
-	ann := &sdk.ToolAnnotations{
-		// Derived from the ID, not from Summary. Title is emitted as its own
-		// field, outside the description, where the authorship frame below
-		// cannot reach it — so plugin prose there would be text rta appears to
-		// have written, in the one place a client is most likely to render
-		// prominently and least likely to render with context.
-		//
-		// The words of the ID rather than the tool name, because "cert inspect"
-		// is both readable and the command a person would run, where
-		// "cert_inspect" only repeats the name field one key away.
-		Title:          strings.Join(c.Words(), " "),
-		IdempotentHint: c.Idempotent,
-	}
+	// No Title, and none to be set from Summary. A title is emitted as its own
+	// field, outside the description, where the authorship frame cannot reach
+	// it, so plugin prose there would be text rta appears to have written, in
+	// the one place a client is most likely to render prominently and least
+	// likely to render with context. It used to be the ID's words ("cert
+	// inspect"), which a model never receives and which only repeats the name
+	// one key away: about 2 KB of the built-in catalogue's list, for a label a
+	// client that wants one can make from the name. The spec makes it optional.
+	ann := &sdk.ToolAnnotations{IdempotentHint: c.Idempotent}
 	switch c.Safety {
 	case plugin.Read:
 		ann.ReadOnlyHint = true
@@ -240,7 +248,7 @@ func toolDef(c plugin.Capability, opts Options) *sdk.Tool {
 	profiles := opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))
 	return &sdk.Tool{
 		Name:        plugin.ToolName(c.ID),
-		Description: agentText(c, opts.tools, toolcall.TakesProfile(c, profiles), opts.pluginAuthored(c)),
+		Description: agentText(c, opts.tools, opts.pluginAuthored(c)),
 		Annotations: ann,
 		InputSchema: nameInSchema(toolcall.InputSchema(c, profiles, opts.pluginConfig(c)), opts.tools),
 	}

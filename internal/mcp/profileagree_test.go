@@ -71,15 +71,18 @@ func agreeServer(t *testing.T) *sdk.ClientSession {
 
 // Whether a tool takes a profile is one fact, and every place that says
 // something about it said it from its own copy of the condition: the schema
-// published the argument, listed it as required, the tool's text told a model
-// a grant names a connection, and the host refused a call that named none.
+// published the argument, listed it as required, the handshake told a model a
+// grant names a connection, and the host refused a call that named none.
 // Held together over a server with connections in some namespaces and not in
 // others, so an edit to one of them cannot leave a client validating against
 // a schema the host does not hold it to.
 func TestEveryAnswerAboutAToolsProfileAgrees(t *testing.T) {
 	s := agreeServer(t)
+	if got := s.InitializeResult().Instructions; !strings.Contains(got, "`rta grant allow <id> --profile <name>`") {
+		t.Errorf("a server with tools that take a profile never tells a model a grant names one:\n%s", got)
+	}
 	// takes is whether a call names a connection; grant is whether the tool
-	// costs a grant, which is when its text says what the grant names.
+	// costs a grant, which is when its text says so.
 	table := map[string]struct{ takes, grant bool }{
 		"pg_query": {true, false}, "pg_drop": {true, true}, "cache_stats": {true, false},
 		"db_status": {false, false}, "db_drop": {false, true}, "clock_now": {false, false},
@@ -109,12 +112,11 @@ func TestEveryAnswerAboutAToolsProfileAgrees(t *testing.T) {
 		if required := slices.Contains(schema.Required, "profile"); required != want {
 			t.Errorf("%s: the schema requires profile = %v, want %v", name, required, want)
 		}
-		if said := strings.Contains(tool.Description, "--profile <profile>"); said != (row.takes && row.grant) {
-			t.Errorf("%s: the text tells a model a grant names a connection = %v, want %v:\n%s",
-				name, said, row.takes && row.grant, tool.Description)
+		if said := strings.HasSuffix(tool.Description, "\n\n"+grantSentence); said != row.grant {
+			t.Errorf("%s: the text says the tool needs a grant = %v, want %v:\n%s", name, said, row.grant, tool.Description)
 		}
-		if row.grant && !row.takes && !strings.Contains(tool.Description, "grant allow db.drop") {
-			t.Errorf("%s: a tool with no connection is told to ask for a grant naming one:\n%s", name, tool.Description)
+		if strings.Contains(tool.Description, "grant allow") || strings.Contains(tool.Description, "--profile") {
+			t.Errorf("%s: the text carries a grant command, which is the handshake's to say once:\n%s", name, tool.Description)
 		}
 		res := callTool(t, s, name, map[string]any{})
 		refused := res.IsError && strings.Contains(contentText(t, res), "core.profile.required")

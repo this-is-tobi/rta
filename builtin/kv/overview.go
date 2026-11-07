@@ -57,6 +57,12 @@ func overviewCapability() plugin.Capability {
 			"it says so, says what supplies one, and still answers the rest. `kv.status` is the cheaper " +
 			"question and never decrypts. With `detail`: the biggest top-level folders, and who can open a " +
 			"store locked to keys.",
+		Agent: "How many keys and folders of each kind, the bytes of values, the age of the newest and " +
+			"oldest, and what is kept beside the live keys: earlier values (`kv.history`) and removed " +
+			"keys (`kv.restore`). Then where the store is, when it last changed, how it is locked and " +
+			"whether this environment can open it. Never a value. It never asks for what opens the " +
+			"store: with no key at hand it says so and answers the rest, and `kv.status` is cheaper. " +
+			"`detail` adds the biggest top-level folders and who can open a store locked to keys.",
 		Inputs: unlockFields(),
 		// The dashboard's kv tile, which is about the store rather than any
 		// entry, so what it offers is the two things you want from there.

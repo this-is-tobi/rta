@@ -34,20 +34,19 @@ func InputSchema(c plugin.Capability, profiles []string, config map[string]any) 
 		prop := map[string]any{"description": f.Help}
 		switch f.Type {
 		case plugin.Path:
+			// A string like any other here. Whose filesystem it names was said
+			// in each path's description, a line repeated on every tool that
+			// takes one; the handshake says it once for all of them
+			// (internal/mcp's instructions).
 			prop["type"] = "string"
-			// Whose filesystem this is cannot be inferred from a field called
-			// "file": a model reading that has every reason to think of its
-			// own working directory, and the path is resolved on the machine
-			// running rta. Saying so is the difference between a relative path
-			// that works and one that quietly means something else.
-			prop["description"] = strings.TrimSpace(f.Help + " (a path on the machine running rta)")
 		case plugin.Duration:
 			prop["type"] = "string"
 			// A string with a grammar, and a range that no schema keyword can
 			// hold for text, so it is said in the description: a model
 			// reading "timeout: string" sends 30, which is refused for its
 			// missing unit, and a client enforcing the pattern catches that
-			// before the round trip.
+			// before the round trip. The pattern stays whatever the prose
+			// costs: it is the one half of this a client can enforce.
 			prop["pattern"] = plugin.DurationPattern
 			prop["description"] = strings.TrimSpace(f.Help + " (" + durationText(f) + ")")
 		case plugin.Int:
@@ -129,12 +128,12 @@ func InputSchema(c plugin.Capability, profiles []string, config map[string]any) 
 	// does — while the schema published alongside offered no way to ask for
 	// it. An agent could only reach the richest views in the catalogue by
 	// sending an undeclared argument, which a schema-enforcing client strips.
+	//
+	// No "default": a boolean left out is false to a model and to the host, and
+	// the key was bytes on every tool that offers the input, which is as many as
+	// have a detailed view.
 	if c.Detailed {
-		props["detail"] = map[string]any{
-			"type":        "boolean",
-			"description": "return the full detailed view instead of the compact summary",
-			"default":     false,
-		}
+		props["detail"] = map[string]any{"type": "boolean", "description": DetailHelp}
 	}
 	// The one thing an agent may say about where a call goes: the *name* of a
 	// connection the operator wrote in their own file. Never an address, a
@@ -169,12 +168,7 @@ func InputSchema(c plugin.Capability, profiles []string, config map[string]any) 
 	// next listed or called (internal/mcp's profileTools), which is also what
 	// sends tools/list_changed.
 	if TakesProfile(c, profiles) {
-		props["profile"] = map[string]any{
-			"type": "string",
-			"description": "name one of the connections the operator configured — required: this area has " +
-				"connections, so a call that names none is refused. " +
-				"Refused unless a person has issued a grant naming this exact profile.",
-		}
+		props["profile"] = map[string]any{"type": "string", "description": profileHelp}
 		required = append(required, "profile")
 	}
 	schema := map[string]any{
@@ -193,6 +187,16 @@ func InputSchema(c plugin.Capability, profiles []string, config map[string]any) 
 	}
 	return schema
 }
+
+// DetailHelp is what the "detail" input says of itself, on the schema a model
+// reads and in `rta explain`: one wording, so the two cannot disagree.
+const DetailHelp = "full detailed view"
+
+// profileHelp is what the "profile" input says of itself. It has to stand on
+// its own: the handshake sentence about profiles is written when the server
+// starts and a client that connected before the first profile was configured
+// holds this tool, with the argument, and not that sentence.
+const profileHelp = "the operator's connection to use: required, and a grant must name it"
 
 // TakesProfile reports whether a call to c names a connection, and has to:
 // the capability can run against one (plugin.Profilable) and the operator has
@@ -232,7 +236,7 @@ func emptyDefault(v any) bool {
 // durationText is how a Duration input says what it takes: the unit every
 // value carries and the range it is held to, when it declares one.
 func durationText(f plugin.Field) string {
-	text := "a duration with its unit, such as 30s, 5m or 2h"
+	text := "with its unit, e.g. 30s, 5m"
 	if bounds := f.Bounds(); bounds != "" {
 		text += "; " + bounds
 	}

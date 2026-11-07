@@ -48,7 +48,9 @@ type tool struct {
 	Schema      map[string]any `json:"input_schema"`
 }
 
-func surface(t *testing.T, opts mcp.Options) []tool {
+// listedTools is what tools/list answers over the real registry, as a client
+// receives it.
+func listedTools(t *testing.T, opts mcp.Options) []*sdk.Tool {
 	t.Helper()
 	reg, err := NewRegistry()
 	if err != nil {
@@ -70,8 +72,14 @@ func surface(t *testing.T, opts mcp.Options) []tool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := make([]tool, 0, len(res.Tools))
-	for _, tl := range res.Tools {
+	return res.Tools
+}
+
+func surface(t *testing.T, opts mcp.Options) []tool {
+	t.Helper()
+	listed := listedTools(t, opts)
+	out := make([]tool, 0, len(listed))
+	for _, tl := range listed {
 		entry := tool{Name: tl.Name, Description: tl.Description}
 		if tl.Annotations != nil {
 			entry.ReadOnly = tl.Annotations.ReadOnlyHint

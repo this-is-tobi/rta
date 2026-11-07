@@ -36,6 +36,12 @@ func overviewCapability() plugin.Capability {
 			"status, log and branches views their own capabilities return — one shape, not a " +
 			"second implementation of each. The working tree is read as `git.status` reads it, and past its " +
 			"two seconds the overview is refused as git.status.timeout.",
+		Agent: "A verdict (warn when a merge or rebase is half done, paths are unmerged or the upstream is " +
+			"gone), the branch checked out (or a detached HEAD), what it tracks as of the last fetch, with " +
+			"that fetch's age once it is a day old, whether the tree is clean, the stash and the latest " +
+			"commit. `detail` expands into the status, log and branches views their own tools return. The " +
+			"tree is read as `git.status` reads it, and past two seconds the overview is refused as " +
+			"git.status.timeout.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},

@@ -47,6 +47,12 @@ func statusCapability() plugin.Capability {
 			"patterns; a pattern file past that, or a .gitignore that is a symbolic link, is skipped with a " +
 			"warning. Past two seconds it " +
 			"is refused as git.status.timeout, never answered with a cleaner tree.",
+		Agent: "One row per path with a staged change, an unstaged change, or neither yet. A path a merge " +
+			"stopped on is listed as git lists it (UU, AA, UD, DU); a staged move with unchanged content is " +
+			"one `R` row, `old -> new` in Path. A submodule at another commit or with changes inside is " +
+			"modified. Ignore files apply, up to 1 MiB and 10000 patterns; a larger one, or a .gitignore " +
+			"that is a symbolic link, is skipped with a warning. Past two seconds it is refused as " +
+			"git.status.timeout, never answered with a cleaner tree.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},

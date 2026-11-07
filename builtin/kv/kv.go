@@ -143,6 +143,11 @@ func Plugin() plugin.Plugin {
 					"`match` is the \"which one was it called?\" filter: a substring of the name or " +
 					"the description, case-insensitive, so a `match` of aws finds " +
 					"`prod-deploy-key` when the description is the only place the word AWS appears.",
+				Agent: "Key names, kind, size, description, when it changed and, once a value has been replaced, " +
+					"how many earlier values `kv.history` keeps. Never a value or a preview. `folder` is one folder " +
+					"of the tree `kv.tree` draws (`db/` for `db/password`); `match` is a case-insensitive substring " +
+					"of the name or the description, so `aws` finds a key whose description alone says AWS. " +
+					"`detail` adds the source filename of anything stored from disk.",
 				Inputs: unlockFields([]plugin.Field{
 					folderField,
 					{Name: "kind", Type: plugin.String, Options: kinds,
@@ -198,7 +203,7 @@ func Plugin() plugin.Plugin {
 				Run:     runList,
 			},
 			{
-				ID: "kv.get", Summary: "Reveal a stored value", Keywords: []string{"secret", "password", "read", "retrieve", "credential", "decrypt"}, Safety: plugin.Write, Idempotent: true,
+				ID: "kv.get", Summary: "Reveal a stored value", Keywords: []string{"secret", "password", "read", "retrieve", "credential", "decrypt", "store"}, Safety: plugin.Write, Idempotent: true,
 				NeedsGrant: true, Scope: "key", Reveals: true,
 				Description: "Classified as a write, because revealing a secret is the " +
 					"sensitive act: an agent needs a grant naming the key it may read, issued by a person. A " +
@@ -277,6 +282,12 @@ func Plugin() plugin.Plugin {
 					"secret and keeps the old one, the last " + strconv.Itoa(maxRevisions) + " values listed by `kv.history` and brought back " +
 					"by `kv.restore` with a `revision`. It still needs a per-key grant: an agent that can " +
 					"overwrite a secret can break what reads it, undo or not.",
+				Agent: "Stores `value` under `key`. A call with no `value` is refused unless `description` or `kind` " +
+					"relabel an entry that exists, which leaves the secret and both timestamps alone. The kind " +
+					"(certificate, private key, json, file, string) is detected from the content unless `kind` " +
+					"says otherwise. Overwriting keeps the old value among the last " + strconv.Itoa(maxRevisions) +
+					" listed by `kv.history` and brought back by `kv.restore` with a `revision`. Needs a per-key " +
+					"grant; who can read the store is `kv.rekey`'s.",
 				Inputs: creatingFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to set",
 						Suggest: suggestKeys},
@@ -340,6 +351,11 @@ func Plugin() plugin.Plugin {
 					"`kv.rm`'s question. A grant has to cover both names, `key` and `new-name`, because a " +
 					"key's name decides which grants can read it; a folder grant covers a move inside the " +
 					"folder.",
+				Agent: "Moves the entry to `new-name` inside the store with its value, description, kind, source, " +
+					"history and timestamps; the value is never decrypted outside memory, so this is the rename " +
+					"that reveals nothing. A name already taken is refused, not overwritten (that is `kv.rm`'s " +
+					"question). A grant must cover both `key` and `new-name`; a folder grant covers a move inside " +
+					"the folder.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to rename",
 						Suggest: suggestKeys},
@@ -363,6 +379,11 @@ func Plugin() plugin.Plugin {
 					"somebody notices. Who can open the store does not change: removing the last entry " +
 					"leaves an empty store locked to the same keys, not an unlocked one. To rename " +
 					"rather than replace, `kv.rename` moves an entry without its value ever leaving memory.",
+				Agent: "The key leaves the listing and every read, but the entry is kept aside whole, history " +
+					"included, where `kv.list` shows it with `removed` and `kv.restore` brings it back. `purge` " +
+					"has no undo: the entry and everything it held are destroyed, and a key removed earlier is " +
+					"finished off too. Removing the last entry leaves an empty store locked to the same keys. " +
+					"`kv.rename` moves an entry without removing it.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to remove",
 						Suggest: suggestKeys},
@@ -442,6 +463,11 @@ func Plugin() plugin.Plugin {
 					"things are refused rather than confirmed: a store that cannot be opened, and a change " +
 					"that locks out every key the operator holds. Old copies of the file stay readable by the " +
 					"old keys; re-keying does not reach into backups.",
+				Agent: "Decrypts the store and writes it back under a new set of readers, the one operation that " +
+					"changes who can read what is stored. Adding is the default: `generate` makes a dedicated age " +
+					"key and keeps the existing readers; `only` makes the set exclusive, and with `generate` swaps " +
+					"one lock for the other. A store that cannot be opened, and a change that locks out every key " +
+					"the operator holds, are refused. Old copies and backups stay readable by the old keys.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "generate", Type: plugin.Bool,
 						Help: "create a dedicated age key for this store and add it"},
