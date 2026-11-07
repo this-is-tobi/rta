@@ -105,10 +105,10 @@ func TestALongListDrawsTheSameTileWhenOnlyWhatItShowsIsDrawn(t *testing.T) {
 	}
 }
 
-// The layout a paint or a scroll works out is theirs alone: a model an answer
-// or a key leaves behind holds none, or the next paint would draw the tiles
-// where the last one put them.
-func TestNoKeyOrAnswerLeavesALayoutBehind(t *testing.T) {
+// The layout a paint, a scroll or a click works out is theirs alone: a model an
+// answer, a key or a click leaves behind holds none, or the next paint would
+// draw the tiles where the last one put them.
+func TestNoKeyClickOrAnswerLeavesALayoutBehind(t *testing.T) {
 	m := largeDashboard(t)
 	_ = m.View()
 	if m.layout != nil {
@@ -122,6 +122,20 @@ func TestNoKeyOrAnswerLeavesALayoutBehind(t *testing.T) {
 	if answered.(Model).layout != nil {
 		t.Error("an answer left its layout on the model")
 	}
+	clicked, _ := answered.(Model).Update(onATile(t, m))
+	if clicked.(Model).layout != nil {
+		t.Error("a click left its layout on the model")
+	}
+}
+
+// onATile is a left click on the first row of capability tiles.
+func onATile(tb testing.TB, m Model) tea.MouseClickMsg {
+	tb.Helper()
+	click := tea.MouseClickMsg{X: 20, Y: m.banner + 1 + m.searchHeight() + 2, Button: tea.MouseLeft}
+	if m.tileAt(click.X, click.Y-m.banner) < 1 {
+		tb.Fatal("the click is not on a capability tile")
+	}
+	return click
 }
 
 // A tile that answers again with a shorter list gets a shorter row on the next
@@ -143,6 +157,14 @@ func BenchmarkALargeDashboardPaint(b *testing.B) {
 	m := largeDashboard(b)
 	for b.Loop() {
 		_ = m.View()
+	}
+}
+
+func BenchmarkALargeDashboardClick(b *testing.B) {
+	m := largeDashboard(b)
+	click := onATile(b, m)
+	for b.Loop() {
+		_, _ = m.Update(click)
 	}
 }
 

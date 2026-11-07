@@ -17,15 +17,20 @@ import (
 type scriptedRuns struct {
 	errs []*view.Error
 	runs int
+	// answer is what a run that does not fail returns: the text "up" when nil.
+	answer view.View
 }
 
 func (a *scriptedRuns) next() (view.View, error) {
 	e := a.errs[min(a.runs, len(a.errs)-1)]
 	a.runs++
-	if e == nil {
-		return view.Text{Body: "up"}, nil
+	switch {
+	case e != nil:
+		return nil, e
+	case a.answer != nil:
+		return a.answer, nil
 	}
-	return nil, e
+	return view.Text{Body: "up"}, nil
 }
 
 func refused() *view.Error {
