@@ -180,16 +180,21 @@ func strictPolicy(d DenySet, name string) []string {
 }
 
 // certPaths is where SSL_CERT_FILE and SSL_CERT_DIR point, each as given and
-// where it leads: the file, and each directory of the list.
+// where it leads: the file, and each directory of the list. Held to a named
+// path's rules (CheckPath), since they are paths named for every plugin to
+// read: one that is the home directory, holds it or leads to it gives nothing.
 func certPaths() []string {
 	var out []string
-	if f := os.Getenv("SSL_CERT_FILE"); filepath.IsAbs(f) {
-		out = append(out, withTarget(f)...)
-	}
-	for _, dir := range filepath.SplitList(os.Getenv("SSL_CERT_DIR")) {
-		if filepath.IsAbs(dir) {
-			out = append(out, withTarget(dir)...)
+	add := func(p string) {
+		if filepath.IsAbs(p) {
+			if _, verr := CheckPath(p); verr == nil {
+				out = append(out, withTarget(p)...)
+			}
 		}
+	}
+	add(os.Getenv("SSL_CERT_FILE"))
+	for _, dir := range filepath.SplitList(os.Getenv("SSL_CERT_DIR")) {
+		add(dir)
 	}
 	return out
 }

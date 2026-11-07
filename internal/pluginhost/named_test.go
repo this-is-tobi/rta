@@ -94,3 +94,33 @@ func TestAFileUnderANamedPathIsReadable(t *testing.T) {
 		t.Error("a file in a credential location carved out of the named path is readable")
 	}
 }
+
+// A named path is held to CheckPath's rules at every launch, and not only on the
+// day it was named: whoever can write the directory it sits in can swap it for a
+// link to the home directory afterwards, and the launch leaves it out rather than
+// hand the plugin all of home.
+func TestANamedPathSwappedForTheHomeDirectoryIsLeftOut(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("RTA_DATA_DIR", filepath.Join(home, ".local", "share", "rta"))
+	t.Setenv("RTA_CONFIG", filepath.Join(home, ".config", "rta", "config.yaml"))
+	t.Setenv("RTA_KV_IDENTITY", "")
+	ca := filepath.Join(t.TempDir(), "team-ca")
+	if err := os.Mkdir(ca, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	d, err := ResolveAllowing(nil, []string{ca})
+	if err != nil || len(d.Named) == 0 {
+		t.Fatalf("the named directory is not given: %q, %v", d.Named, err)
+	}
+
+	if err := os.Remove(ca); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(home, ca); err != nil {
+		t.Fatal(err)
+	}
+	if d, err = ResolveAllowing(nil, []string{ca}); err != nil || len(d.Named) != 0 {
+		t.Errorf("the path swapped for a link to home still hands over %q (%v)", d.Named, err)
+	}
+}

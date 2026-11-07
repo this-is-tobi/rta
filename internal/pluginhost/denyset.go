@@ -293,8 +293,16 @@ func ResolveAllowing(granted []plugin.Need, named []string) (DenySet, error) {
 			d.NoRead = append(d.NoRead, withTarget(p)...)
 		}
 	}
+	// Held to CheckPath at every launch, and not only on the day it was named:
+	// a path is where it leads now, and one swapped for a link to the home
+	// directory after it was granted handed the plugin all of it under strict,
+	// the very thing the rule refused when the path was named. One that no
+	// longer passes is left out, so the plugin is refused it as it is anything
+	// nobody named, and `rta plugin access` marks it.
 	for _, p := range named {
-		d.Named = append(d.Named, withTarget(p)...)
+		if _, verr := CheckPath(p); verr == nil {
+			d.Named = append(d.Named, withTarget(p)...)
+		}
 	}
 	d.NoAccess, d.NoRead, d.Named = dedupe(d.NoAccess), dedupe(d.NoRead), dedupe(d.Named)
 	d.NoMove = ancestors(append(append([]string{}, d.NoAccess...), d.NoRead...))
