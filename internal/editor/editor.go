@@ -34,17 +34,23 @@ func Command() []string {
 	return []string{"vi"}
 }
 
-// Run starts argv on path with the terminal and waits for it to end. A var so
-// a test, which has neither a terminal to hand over nor an editor to hand it
-// to, can stand in for a person.
-var Run = func(argv []string, path string) error {
+// Run starts argv on path with the terminal and waits for it to end.
+func Run(argv []string, path string) error {
+	// The key an editor binds to interrupt — emacs's C-g — sends SIGINT to the
+	// whole foreground group, rta included, and the editor is being used, not
+	// asking rta to stop. Lent here, around Start, so a test standing in for the
+	// editor still runs inside the lend it is held to: kv kept its own launcher
+	// for exactly that, lending at its call site, and the two copies drifted.
+	defer shutdown.LendTerminal()()
+	return Start(argv, path)
+}
+
+// Start runs argv on path and waits. A var so a test, which has neither a
+// terminal to hand over nor an editor to hand it to, can stand in for a person.
+var Start = func(argv []string, path string) error {
 	cmd := exec.Command(argv[0], append(argv[1:], path)...)
 	// The editor gets the terminal, whole. Anything less and a full-screen
 	// editor draws into a pipe.
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdio.Real(), os.Stdout, os.Stderr
-	// The key an editor binds to interrupt — emacs's C-g — sends SIGINT to the
-	// whole foreground group, rta included, and the editor is being used, not
-	// asking rta to stop.
-	defer shutdown.LendTerminal()()
 	return cmd.Run()
 }
