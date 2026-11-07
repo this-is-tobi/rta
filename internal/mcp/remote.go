@@ -110,7 +110,7 @@ func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts Remote
 		// only excuses TokenInfo.Expiration being zero, never overrides it
 		// when set.
 		AllowMissingExpiration: true,
-	})(handler)
+	})(limitSessions(server, handler))
 	root := authed
 	if opts.Operator != nil {
 		mux := http.NewServeMux()

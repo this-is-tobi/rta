@@ -26,6 +26,8 @@ The label is what [the record](./40-audit-trail.md) shows for the credential tha
 
 A rejected token is answered slower from the same address after five failures in a minute, doubling up to two seconds: a guess a second becomes a guess every two, and an operator who mistyped once never notices. Behind a reverse proxy every client shares the address, so a guessing attacker slows the operators beside it for as long as the guessing lasts — that trade is taken rather than trusting a `Forwarded` header the attacker writes.
 
+A credential holds at most 16 sessions open at once, and opening one more closes its oldest. A session costs memory until its client ends it, and opening one is a single request, so 5000 of them on one valid token held memory that nothing gave back. One credential's sessions are never closed for another's. A client whose session was closed is answered 404, and opens a new one as the protocol asks.
+
 `--http` refuses to start with neither configured. `--consent` over `--http` additionally requires `--operators` — a parked call waits for a person, enrolled operators answering over [the operator channel](./66-operators.md) are the only people positioned to be that person, and a control nobody can exercise must not be allowed to pretend it works.
 
 [TLS](../95-reference/10-glossary.md#acronyms) is not this process's job. Bind to a private address and put a reverse proxy, ingress or service mesh in front of it for termination. A bind that other machines can reach — `0.0.0.0`, `:8443`, an interface address — is announced at startup, because on that transport the token is the whole credential and it crosses the wire as it is.
