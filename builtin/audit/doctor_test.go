@@ -57,7 +57,8 @@ func TestTheDenyBlockDerivesTheVerbsOfMixedPlugins(t *testing.T) {
 		t.Errorf("verbs = %v, want audit doctor alone", got)
 	}
 	block := denyBlock(testCatalog)
-	for _, want := range []string{`"Bash(rta audit doctor:*)"`, `"Bash(rta kv:*)"`, `"Bash(rta grant:*)"`} {
+	for _, want := range []string{`"Bash(rta audit doctor:*)"`, `"Bash(rta kv:*)"`, `"Bash(rta grant:*)"`,
+		`"Bash(rta plugin install:*)"`, `"Bash(rta plugin upgrade:*)"`, `"Bash(rta plugin index:*)"`} {
 		if !strings.Contains(block, want) {
 			t.Errorf("the block is missing %s:\n%s", want, block)
 		}
