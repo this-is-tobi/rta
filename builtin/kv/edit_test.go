@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/editor"
 	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -20,8 +21,8 @@ import (
 func stubEditor(t *testing.T, write func(path string, seen []byte) []byte) *editorRun {
 	t.Helper()
 	run := &editorRun{}
-	origLaunch, origCan := launchEditor, canPrompt
-	launchEditor = func(_ []string, path string) error {
+	origLaunch, origCan := editor.Start, canPrompt
+	editor.Start = func(_ []string, path string) error {
 		run.calls++
 		run.path = path
 		seen, err := os.ReadFile(path)
@@ -35,7 +36,7 @@ func stubEditor(t *testing.T, write func(path string, seen []byte) []byte) *edit
 		return os.WriteFile(path, write(path, seen), 0o600)
 	}
 	canPrompt = func(req plugin.Request) bool { return req.Surface() == plugin.SurfaceCLI }
-	t.Cleanup(func() { launchEditor, canPrompt = origLaunch, origCan })
+	t.Cleanup(func() { editor.Start, canPrompt = origLaunch, origCan })
 	return run
 }
 
@@ -342,27 +343,6 @@ func TestEditFilenameCannotLeaveTheDirectory(t *testing.T) {
 	// opening as one long line.
 	if got := editFilename("creds", "json"); got != "creds.json" {
 		t.Errorf("json buffer = %q", got)
-	}
-}
-
-// $EDITOR routinely carries flags, and a windowed editor without its wait
-// flag returns before you have saved. Treating the whole string as a program
-// name looked for an executable literally called "code --wait".
-func TestEditorCommandKeepsTheFlagsPeopleHaveInTheirEnvironment(t *testing.T) {
-	t.Setenv("VISUAL", "")
-	t.Setenv("EDITOR", "code --wait")
-	if got := editorCommand(); len(got) != 2 || got[0] != "code" || got[1] != "--wait" {
-		t.Errorf("editorCommand() = %q", got)
-	}
-	// $VISUAL wins where both are set, which is what the convention says.
-	t.Setenv("VISUAL", "nvim")
-	if got := editorCommand(); got[0] != "nvim" {
-		t.Errorf("editorCommand() = %q, want $VISUAL", got)
-	}
-	t.Setenv("VISUAL", "")
-	t.Setenv("EDITOR", "")
-	if got := editorCommand(); got[0] != "vi" {
-		t.Errorf("editorCommand() = %q, want vi, the editor POSIX guarantees", got)
 	}
 }
 

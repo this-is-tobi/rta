@@ -6,15 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/builtin/internal/pathin"
+	"github.com/this-is-tobi/rta/internal/editor"
 	"github.com/this-is-tobi/rta/internal/shutdown"
-	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -29,35 +28,6 @@ import (
 // reason. macOS has no equivalent; its per-user $TMPDIR is already mode 0700,
 // which is the next best thing.
 const shmDir = "/dev/shm"
-
-// editorCommand resolves which editor to run, and with what.
-func editorCommand() []string {
-	for _, env := range []string{"VISUAL", "EDITOR"} {
-		// $EDITOR routinely carries flags — "code --wait", "emacsclient -nw",
-		// "subl -w" — so the value is split rather than treated as a program
-		// name. Splitting rather than handing it to a shell is deliberate:
-		// somebody's $EDITOR is not a script we should be expanding $, ` and
-		// ; out of on their behalf.
-		if fields := strings.Fields(os.Getenv(env)); len(fields) > 0 {
-			return fields
-		}
-	}
-	// vi, not nano: POSIX requires it, so it is the one editor that is
-	// certainly installed, and refusing to run until somebody exports a
-	// variable is a worse answer than an unfamiliar editor.
-	return []string{"vi"}
-}
-
-// launchEditor runs the editor against the file and waits for it. Overridable
-// in tests, which have neither a terminal to hand over nor an editor to hand
-// it to.
-var launchEditor = func(argv []string, path string) error {
-	cmd := exec.Command(argv[0], append(argv[1:], path)...)
-	// The editor gets the terminal, whole. Anything less and a full-screen
-	// editor draws into a pipe.
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdio.Real(), os.Stdout, os.Stderr
-	return cmd.Run()
-}
 
 // editDir makes a directory only this user can enter, preferring one that
 // never reaches a disk.
@@ -208,7 +178,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 				"`, edit that, then `" + req.Surface().Call("kv.set", keyArg(key), plugin.Arg{Name: "file", Value: plugin.Placeholder("file")}) + "`")
 	}
 
-	argv := editorCommand()
+	argv := editor.Command()
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would open %s (%s, %s) in %s",
 			textclean.Record(key), e.Kind, format.Bytes(len(e.Value)), argv[0])}, nil
@@ -232,12 +202,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	if err := os.WriteFile(path, e.Value, 0o600); err != nil {
 		return nil, view.Errorf("kv.edit.notemp", "writing the value to edit: %v", err)
 	}
-	// The editor has the terminal, and the key it binds to interrupt — emacs's
-	// C-g — sends SIGINT to rta as well: the editor's, while it runs.
-	takeBack := shutdown.LendTerminal()
-	err := launchEditor(argv, path)
-	takeBack()
-	if err != nil {
+	if err := editor.Run(argv, path); err != nil {
 		return nil, view.Errorf("kv.edit.failed", "%s: %v", argv[0], err).
 			WithHint("nothing was changed — set $EDITOR to something on this machine")
 	}

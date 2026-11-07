@@ -16,11 +16,11 @@ import (
 // editor was shown, so a test can act on the note a reopened editor carries.
 func editing(t *testing.T, steps ...func(shown string) string) (opened *[]string) {
 	t.Helper()
-	was, wasRun, wasTTY := editorTerminal, editor.Run, isTTY
+	was, wasRun, wasTTY := editorTerminal, editor.Start, isTTY
 	editorTerminal = func() bool { return true }
 	isTTY = func() bool { return true }
 	var shown []string
-	editor.Run = func(_ []string, path string) error {
+	editor.Start = func(_ []string, path string) error {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -31,7 +31,7 @@ func editing(t *testing.T, steps ...func(shown string) string) (opened *[]string
 		}
 		return os.WriteFile(path, []byte(steps[len(shown)-1](string(raw))), 0o600)
 	}
-	t.Cleanup(func() { editorTerminal, editor.Run, isTTY = was, wasRun, wasTTY })
+	t.Cleanup(func() { editorTerminal, editor.Start, isTTY = was, wasRun, wasTTY })
 	return &shown
 }
 
@@ -237,8 +237,8 @@ func TestConfigEditDryRunOpensNothing(t *testing.T) {
 func TestConfigEditWorksOnAPrivateCopyThatIsRemoved(t *testing.T) {
 	var where string
 	editing(t, func(shown string) string { return shown })
-	run := editor.Run
-	editor.Run = func(argv []string, path string) error {
+	run := editor.Start
+	editor.Start = func(argv []string, path string) error {
 		where = path
 		info, err := os.Stat(filepath.Dir(path))
 		if err != nil || info.Mode().Perm() != 0o700 {
