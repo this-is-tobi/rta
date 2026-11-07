@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -48,10 +49,23 @@ func typed(t *testing.T, m Model, text string) Model {
 	return m
 }
 
+// On the last box of a first stage enter and the fast keys both open the second,
+// so one entry says it, answering to both: the bar read "enter next ·
+// ⇧enter/alt+enter/ctrl+s next".
 func TestTheFastKeySaysNextOverTheFirstStageAndSubmitOverTheLast(t *testing.T) {
 	m := stageOne(t, stagedCap(plugin.Field{Name: "key", Type: plugin.String, Positional: true, Required: true}))
-	if bar := plain(m.footerFor(modeForm)); !strings.Contains(bar, "ctrl+s next") || strings.Contains(bar, "submit") {
-		t.Errorf("stage one bar = %q, want the fast key to say next", bar)
+	bar := plain(m.footerFor(modeForm))
+	if strings.Count(bar, "next step") != 1 || !strings.Contains(bar, "enter next step") || strings.Contains(bar, "submit") {
+		t.Errorf("stage one bar = %q, want enter to say next step, once", bar)
+	}
+	var taught string
+	for _, it := range m.screenItems(modeForm) {
+		if slices.Contains(it.keys, "ctrl+s") {
+			taught = it.label
+		}
+	}
+	if taught != "next step" {
+		t.Errorf("ctrl+s on stage one is taught as %q, want the entry saying next step", taught)
 	}
 	second := pressEnter(t, typed(t, m, "mykey"))
 	if second.form == nil || !second.form.final {

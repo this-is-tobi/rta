@@ -646,12 +646,17 @@ func (m Model) screenItems(screen mode) []hintItem {
 			// The first stage of a form that asks in two only moves on to the
 			// second, whichever of the keys is pressed.
 			if !m.form.final {
-				fastWord = "next"
+				fastWord = "next step"
 			}
 		}
-		return append(hints,
-			labelled(bindOpen, m.formEnterWord()), labelled(bindFastSubmit, fastWord), labelled(bindBack, escWord),
-		)
+		enter := labelled(bindOpen, m.formEnterWord())
+		// Where enter and the fast keys do the same, one entry teaches both
+		// (alias): the last box of a first stage read "enter next ·
+		// ⇧enter/alt+enter/ctrl+s next".
+		if enter.label == fastWord {
+			return append(hints, alias(enter, bindFastSubmit.keys...), labelled(bindBack, escWord))
+		}
+		return append(hints, enter, labelled(bindFastSubmit, fastWord), labelled(bindBack, escWord))
 	case modeTheme:
 		var hints []hintItem
 		if m.themePick != nil {
