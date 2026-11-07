@@ -1065,9 +1065,9 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 		// asked of the connection, whoever wrote the tile, and a refused tile is
 		// a visible error in its panel rather than a quiet read of somewhere
 		// the profile says it does not reach.
-		if verr := profile.Fenced(profileName, conn, t.cap, plugin.Inputs{
-			Caller: t.values, Config: cfg.values, ConfigSection: cfg.section,
-		}, os.LookupEnv, plugin.SurfaceTUI); verr != nil {
+		if verr := profile.Fenced(profileName, conn, t.cap, cfg.inputs(plugin.Inputs{
+			Caller: t.values,
+		}), os.LookupEnv, plugin.SurfaceTUI); verr != nil {
 			return tileMsg{key: key, idx: idx, err: verr}
 		}
 		dialled, via, closeTunnel, verr := profile.Dial(ctx, profileName, conn, t.cap, t.values, plugin.SurfaceTUI)
@@ -1094,10 +1094,10 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 			}
 			filled = merged
 		}
-		req := plugin.ResolveRequest(t.cap, plugin.Inputs{
-			Caller: t.values, Profile: filled, ProfileName: profileName, Tunnel: via, Config: cfg.values,
-			ConfigSection: cfg.section, Fence: profile.FenceOf(conn), HoldAmbient: cfg.displaced,
-		}, false, false).WithSurface(plugin.SurfaceTUI)
+		req := plugin.ResolveRequest(t.cap, cfg.inputs(plugin.Inputs{
+			Caller: t.values, Profile: filled, ProfileName: profileName, Tunnel: via,
+			Fence: profile.FenceOf(conn),
+		}), false, false).WithSurface(plugin.SurfaceTUI)
 		v, err := t.cap.Run(ctx, req)
 		if err != nil {
 			if timed := deadlineHit(); timed != nil {

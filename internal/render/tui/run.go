@@ -66,11 +66,9 @@ const forwardCeiling = 15 * time.Minute
 // credentials answers boxes the seed had to leave empty (environmentNotes).
 func (m Model) formSeed(c plugin.Capability, defaults map[string]any, on string) (map[string]any, map[string]bool, formEnv) {
 	name, filled, conn := m.profileSeed(c, on)
-	cfg := m.configFor(c)
-	seed := plugin.Resolve(c, plugin.Inputs{
-		Caller: defaults, Profile: filled, ProfileName: name, Config: cfg.values,
-		ConfigSection: cfg.section, Fence: profile.FenceOf(conn),
-	})
+	seed := plugin.Resolve(c, m.configFor(c).inputs(plugin.Inputs{
+		Caller: defaults, Profile: filled, ProfileName: name, Fence: profile.FenceOf(conn),
+	}))
 	derived := map[string]bool{}
 	for input := range seed {
 		if _, given := defaults[input]; !given {
@@ -395,6 +393,19 @@ func configOf(pc PluginConfig, c plugin.Capability) statedConfig {
 	return cfg
 }
 
+// inputs lays the config half of a call's inputs over in: the values, the
+// heading they were read under, and HoldAmbient for a run that displaced the
+// section. One method for every place this package assembles a call — the run
+// and its preview, a tile, a form's seed, a tab — because the half a site
+// writes out by hand is the half the next site leaves out: tab completion
+// carried neither HoldAmbient nor the withheld refusal beside it, so one tab
+// after an upgrade sent the credential the environment exports to the
+// plugin's default address, the call the run had been refusing to make.
+func (cfg statedConfig) inputs(in plugin.Inputs) plugin.Inputs {
+	in.Config, in.ConfigSection, in.HoldAmbient = cfg.values, cfg.section, cfg.displaced
+	return in
+}
+
 // runCmd executes a capability off the update loop. yes reflects an explicit
 // in-TUI confirmation for destructive capabilities. The result pane owns the
 // whole screen, so detail-capable capabilities are asked for their full view
@@ -476,10 +487,10 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 		}
 		// Resolve rather than "fill defaults only when nothing was given":
 		// a caller who supplies one value must not lose the other defaults.
-		req := plugin.ResolveRequest(c, plugin.Inputs{
-			Caller: values, Profile: filled, ProfileName: profileName, Tunnel: via, Config: cfg.values,
-			ConfigSection: cfg.section, Fence: profile.FenceOf(conn), HoldAmbient: cfg.displaced,
-		}, dryRun, yes).WithSurface(plugin.SurfaceTUI)
+		req := plugin.ResolveRequest(c, cfg.inputs(plugin.Inputs{
+			Caller: values, Profile: filled, ProfileName: profileName, Tunnel: via,
+			Fence: profile.FenceOf(conn),
+		}), dryRun, yes).WithSurface(plugin.SurfaceTUI)
 		// A default, not an override. Forcing detail on unconditionally made
 		// the D toggle on kv.list dead: toggleView set detail=false, this put
 		// it back to true one line later, and the handler only ever saw true.
@@ -650,10 +661,9 @@ func (m Model) resolveProfile(c plugin.Capability, values map[string]any,
 	// Held to the connection's fence on every run, the cached bind included —
 	// the cache is what the environment *is*, and the fence is about what this
 	// call asks of it — and before anything is fetched or opened for it.
-	cfg := m.configFor(c)
-	if verr := profile.Fenced(name, conn, c, plugin.Inputs{
-		Caller: withoutPicker(c, values), Config: cfg.values, ConfigSection: cfg.section,
-	}, os.LookupEnv, plugin.SurfaceTUI); verr != nil {
+	if verr := profile.Fenced(name, conn, c, m.configFor(c).inputs(plugin.Inputs{
+		Caller: withoutPicker(c, values),
+	}), os.LookupEnv, plugin.SurfaceTUI); verr != nil {
 		return "", nil, config.Connection{}, verr
 	}
 	return name, filled, conn, nil
