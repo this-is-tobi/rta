@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/this-is-tobi/rta/builtin/kv"
 	"github.com/this-is-tobi/rta/internal/testenv"
 )
 
@@ -45,6 +46,9 @@ func TestMain(m *testing.M) {
 	// --yes, as it is in a script, and not asked about on whatever terminal
 	// `go test` was started from. A test of the question says otherwise.
 	confirmTerminal = func() bool { return false }
+	// A store a test makes is cheap to open: what a command says of it is never
+	// the KDF's cost.
+	kv.ScryptWorkFactor = 10
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)

@@ -28,7 +28,7 @@ import (
 // encrypts and decrypts hundreds of times and never tests the KDF itself;
 // at age's shipped work factor it would spend minutes doing nothing else.
 func TestMain(m *testing.M) {
-	scryptWorkFactor = 10
+	ScryptWorkFactor = 10
 	// No test reads the terminal: one that lets a person be asked answers
 	// this question itself (newTerminal), and every other is answered no.
 	promptWhoReads = func() (bool, error) { return false, nil }

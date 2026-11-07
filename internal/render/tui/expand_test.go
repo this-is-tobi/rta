@@ -33,30 +33,16 @@ func twoInstanceConfig() config.Config {
 
 // land runs whatever syncActive returned — one bind, or a batch of the
 // environment's and the pins', which is itself a batch — and hands each
-// landing to Update, the way the runtime would.
+// landing to Update, the way the runtime would. Clocks are left alone
+// (answers): the dashboard's refresh tick is five real seconds, and one test
+// waited them out.
 func land(t *testing.T, m Model, cmd tea.Cmd) Model {
 	t.Helper()
-	for _, msg := range unbatch(cmd) {
+	for _, msg := range answers(cmd) {
 		next, _ := m.Update(msg)
 		m = next.(Model)
 	}
 	return m
-}
-
-func unbatch(cmd tea.Cmd) []tea.Msg {
-	if cmd == nil {
-		return nil
-	}
-	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
-	if !ok {
-		return []tea.Msg{msg}
-	}
-	var out []tea.Msg
-	for _, c := range batch {
-		out = append(out, unbatch(c)...)
-	}
-	return out
 }
 
 func TestAPinnedTileExpandsIntoTheProfilesConnections(t *testing.T) {

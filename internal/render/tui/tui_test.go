@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	teatest "github.com/charmbracelet/x/exp/teatest/v2"
 
+	"github.com/this-is-tobi/rta/builtin/kv"
 	"github.com/this-is-tobi/rta/internal/boxlist"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -72,6 +73,9 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Setenv("RTA_DATA_DIR", dir)
+	// A store a test makes is cheap to open: what is drawn of it is never the
+	// KDF's cost, which under the race detector was a quarter of a minute a test.
+	kv.ScryptWorkFactor = 10
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
