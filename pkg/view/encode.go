@@ -10,11 +10,30 @@ import (
 )
 
 // Envelope is the discriminated wire form of a View: {"type": ..., ...body}.
-// It is the single encoding shared by --output json|yaml and the MCP bridge,
-// so scripts and agents can switch on "type".
+// It is the one encoding shared by --output json|yaml and the MCP bridge, so
+// scripts and agents can switch on "type". What one of them is given and
+// another is not is an opt-in on the Envelope (Records) or a cut made after it
+// (the bridge leaves a table's values out), never a second encoder.
 type Envelope struct {
 	Type string `json:"type"`
 	View View   `json:"-"`
+	// Records adds a "records" array to every table in the view, at any depth:
+	// the rows again, one object per row, keyed by column (addRecords).
+	//
+	// **Opt-in, and only `-o json` and `-o yaml` opt in.** Written always, and
+	// then cut where it is unwanted, it would have made every future consumer of
+	// the encoding inherit a third copy of every row and a strip site to forget:
+	// an MCP answer is sent the cells alone (a model reads `926.4 GiB` as well as
+	// the bytes, and values and records would each be that table again), the csv
+	// of a page is flattened from this encoding and would grow a rows' worth of
+	// paths, and the TUI's copy-as-JSON travels over OSC 52, where a larger
+	// payload is the cost and nothing reads the difference. So the field is
+	// false everywhere that was not asked for it, and those outputs are the
+	// bytes they were by construction, not by a delete that has to be kept in
+	// step.
+	//
+	// Never encoded under its own name; the encoder writes the array.
+	Records bool `json:"-"`
 }
 
 // TypeOf returns the discriminator string for a View.
@@ -185,6 +204,9 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 			m["values"] = values
 		}
 	}
+	if e.Records {
+		addRecords(m)
+	}
 	return Marshal(m)
 }
 
@@ -258,6 +280,12 @@ func withArrays(v View) View {
 	return v
 }
 
+// ToMap returns v's envelope as a generic map with no records, which is what
+// the MCP bridge, the csv of a page and sdktest read: the encoding Envelope
+// writes by default. A caller that wants records, as `-o yaml` does, builds the
+// Envelope and asks it (Envelope.ToMap).
+func ToMap(v View) (map[string]any, error) { return Envelope{View: v}.ToMap() }
+
 // ToMap returns the envelope as a generic map, for non-JSON encoders (YAML).
 //
 // **UseNumber, and it is not a detail.** encoding/json decodes every number
@@ -273,8 +301,8 @@ func withArrays(v View) View {
 // number written without a fraction reads back as an integer, one with a
 // fraction as a float, and one that no Go number holds exactly as the
 // json.Number it is, its own text (asWritten says which).
-func ToMap(v View) (map[string]any, error) {
-	raw, err := Marshal(Envelope{View: v})
+func (e Envelope) ToMap() (map[string]any, error) {
+	raw, err := Marshal(e)
 	if err != nil {
 		return nil, fmt.Errorf("encoding view: %w", err)
 	}

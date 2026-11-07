@@ -512,7 +512,7 @@ func TestDashboardAddOfAnAutomaticTileIsRefusedOrTakesItsPlace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(list, `"db.status"`) != 1 || !strings.Contains(list, "added") {
+	if rowsMentioning(t, list, "db.status") != 1 || !strings.Contains(list, "added") {
 		t.Errorf("list = %q, want one db.status row, the added one", list)
 	}
 	out, errOut, err = run("dashboard", "rm", "db.status")

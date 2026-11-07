@@ -161,11 +161,14 @@ func Render(w io.Writer, v view.View, opts Options) error {
 	if opts.Format != JSON {
 		v = sanitize(v)
 	}
+	// Records are the two formats a script reads a table in, and no other
+	// consumer of the encoding is given them: csv flattens the same map for a
+	// page, where a third copy of every row would be paths nobody asked for.
 	switch opts.Format {
 	case JSON:
-		return writeJSON(w, view.Envelope{View: view.Redact(v)})
+		return writeJSON(w, view.Envelope{View: view.Redact(v), Records: true})
 	case YAML:
-		m, err := view.ToMap(view.Redact(v))
+		m, err := view.Envelope{View: view.Redact(v), Records: true}.ToMap()
 		if err != nil {
 			return err
 		}

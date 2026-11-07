@@ -251,10 +251,10 @@ ARCHIVE=~/audit/rta.jsonl
 cursor=$(jq -rs 'map(.seq | tonumber) | max // 0' "$ARCHIVE" 2>/dev/null)
 cursor=${cursor:-0}
 rta agent log --after "$cursor" --limit 500 -o json \
-  | jq -c '[.columns[].name] as $c | .rows[] | [$c, .] | transpose | map({(.[0]): .[1]}) | add' >> "$ARCHIVE"
+  | jq -c '.records[]' >> "$ARCHIVE"
 ```
 
-Each line of the archive is one call keyed by column name (`seq`, `at`, `capability`, `outcome`, `authorized`, `why`...), so it is read the same by `jq`, by Promtail and by whoever opens it in a month. A run on a machine with no archive yet starts from `0`: `jq` finds no file, prints nothing, and the second line gives the cursor its start.
+Each line of the archive is one call keyed by column name (`seq`, `at`, `capability`, `outcome`, `authorized`, `why`...), so it is read the same by `jq`, by Promtail and by whoever opens it in a month. The keys of a line come out in alphabetical order, which no reader depends on. A run on a machine with no archive yet starts from `0`: `jq` finds no file, prints nothing, and the second line gives the cursor its start.
 
 Run it on a timer and the archive grows by what happened and nothing else. The cursor lives in the archive itself, so there is no second file to lose, and a run that finds nothing new writes nothing.
 

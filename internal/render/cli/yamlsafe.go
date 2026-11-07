@@ -46,11 +46,22 @@ func yamlSafe(v any) any {
 	case json.Number:
 		return plainNumber(t)
 	case map[string]any:
+		quoted := make(map[any]any)
 		out := make(map[string]any, len(t))
 		for k, val := range t {
-			out[k] = yamlSafe(val)
+			if needsQuotedKey(k) {
+				quoted[quotedScalar(k)] = yamlSafe(val)
+			} else {
+				out[k] = yamlSafe(val)
+			}
 		}
-		return out
+		if len(quoted) == 0 {
+			return out
+		}
+		for k, val := range out {
+			quoted[k] = val
+		}
+		return quoted
 	case []any:
 		out := make([]any, len(t))
 		for i, val := range t {
@@ -60,6 +71,25 @@ func yamlSafe(v any) any {
 	}
 	return v
 }
+
+// needsQuotedKey is a map key the encoder would write as itself and every
+// parser would read as another, or reject: the same tab, and a newline.
+//
+// A key is where this stopped being only a value's problem. A table's records
+// are keyed by its column names, and a name is whoever wrote the plugin's
+// string: a SQL alias, a header read from a file. Measured the same way as the
+// value above: a tab in a key is written plain and read back with the tab gone
+// (`col<TAB>col` is `colcol`), so a record's field had a name nobody gave it,
+// and a newline in one is written as a block scalar, `|-` on a line of its own,
+// which is not a key at all and fails the whole document to parse — a table
+// that encoded without trouble before it had records. A value that merely
+// contains a newline survives as a block scalar, so the value case has never
+// needed this half.
+//
+// The keys that do not need it are left as the strings they are, and a map
+// without such a key is written exactly as it was: the encoder orders both
+// kinds of map by the key's text, so quoting a key moves nothing.
+func needsQuotedKey(k string) bool { return strings.ContainsAny(k, "\t\n") }
 
 // quotedScalar is a string that writes itself as a double-quoted YAML scalar,
 // which is the one style that can carry a tab.

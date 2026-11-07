@@ -177,6 +177,37 @@ func TestTheFullLogIsTheSameColumnsWhateverTheRowsHoldAndAtIsTheRecordsOwnInstan
 	}
 }
 
+// **A shipper that reads `.records[]` gets the lines it read before, field for
+// field.** The log's columns are the record's own fields, and the two that have
+// a kind, `at` and `outcome`, are written in the full log as the text of their
+// value: the instant as RFC 3339 in UTC to the second, the outcome as the word
+// it grades by. A record holds a timestamp as its value and a status as its
+// cell, so for this table the two are one string, and a record is the line a
+// shipper built from `columns` and `rows`. Were `at` ever shown with a zone or
+// a fraction its value would not match, and this is where that is found.
+func TestEveryCellOfTheFullLogIsItsValueWhereverItHasOne(t *testing.T) {
+	defer compact.Pretend(false)()
+	seed(t)
+	tbl := logTable(t, nil)
+	if len(tbl.Rows) == 0 {
+		t.Fatal("no rows, so this proves nothing")
+	}
+	valued := 0
+	for i, row := range tbl.Rows {
+		for j, text := range row {
+			if value := tbl.Value(i, j); value != "" {
+				valued++
+				if value != text {
+					t.Errorf("row %d, %q: the cell reads %q and its value %q", i, tbl.Columns[j].Name, text, value)
+				}
+			}
+		}
+	}
+	if valued < 2*len(tbl.Rows) {
+		t.Errorf("only %d cells of %d rows hold a value, want an at and an outcome in each", valued, len(tbl.Rows))
+	}
+}
+
 // The compact listing is the one a person reads at a terminal, and it keeps
 // the local time of day.
 func TestTheCompactLogKeepsTheLocalTimeOfDay(t *testing.T) {

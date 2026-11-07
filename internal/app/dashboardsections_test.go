@@ -110,7 +110,7 @@ func TestDashboardAddOfTheAutomaticTileWithOnlyASectionTakesItsPlace(t *testing.
 		t.Errorf("the receipt does not say the entry took the automatic tile's place:\n%s", out)
 	}
 	list, _, err := run("dashboard", "list", "-o", "json")
-	if err != nil || strings.Count(list, `"db.status"`) != 1 || !strings.Contains(list, `"host"`) {
+	if err != nil || rowsMentioning(t, list, "db.status") != 1 || !strings.Contains(list, `"host"`) {
 		t.Errorf("list = %v\n%s", err, list)
 	}
 }
