@@ -537,7 +537,7 @@ func open(req plugin.Request, endSessionOnWrongKey bool) (store, *view.Error) {
 	if verr != nil {
 		return store{}, verr
 	}
-	r, err := age.Decrypt(bytes.NewReader(data), identities...)
+	r, err := decrypt(data, identities...)
 	if err != nil {
 		return store{}, wrongKey(req, endSessionOnWrongKey)
 	}
@@ -624,7 +624,7 @@ func saveTo(sf plugin.Surface, s store, recipients []age.Recipient, specs []stri
 		return view.Errorf("kv.store.encode", "encoding store: %v", err)
 	}
 	var buf bytes.Buffer
-	w, err := age.Encrypt(&buf, recipients...)
+	w, err := encrypt(&buf, recipients...)
 	if err != nil {
 		return view.Errorf("kv.store.encrypt", "encrypting store: %v", err)
 	}

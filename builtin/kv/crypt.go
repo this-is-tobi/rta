@@ -23,8 +23,10 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 
@@ -557,6 +559,56 @@ func firstErr(a, b error) error {
 // decrypt hundreds of times, and what they are checking is never the KDF.
 var scryptWorkFactor = 0
 
+// scryptTurn is how many passphrase derivations this process runs at once:
+// one. Each holds about 256 MiB for about a second at age's own work factor,
+// and an MCP server answers calls side by side, so sixteen kv reads from one
+// agent (kv.list needs no grant) held 4.3 GB at once: a laptop swapping, or a
+// pod killed, over calls nobody chose to make. One at a time keeps the peak at
+// one derivation's, and a queued call waits only the second it would have
+// spent anyway. A store locked to keys derives nothing and never waits.
+var scryptTurn = make(chan struct{}, 1)
+
+// takeTurn waits for scryptTurn and returns its release: the derivation's memory
+// handed back to the system, then the turn. That is what holds the peak at one
+// derivation's. Without it sixteen calls taking turns still peaked at 551 MiB
+// against 293 MiB for one call alone, and a collection alone (runtime.GC) only
+// some of the time: the freed 256 MiB stayed resident until the background
+// scavenger came round, and once anything small was placed in it the next
+// derivation was given fresh pages beside it. A few milliseconds against the
+// derivation's few hundred.
+func takeTurn() (release func()) {
+	scryptTurn <- struct{}{}
+	return func() {
+		debug.FreeOSMemory()
+		<-scryptTurn
+	}
+}
+
+// decrypt is age.Decrypt, in scryptTurn when one of the identities is a
+// passphrase: the derivation runs as the header is opened.
+func decrypt(ciphertext []byte, identities ...age.Identity) (io.Reader, error) {
+	if slices.ContainsFunc(identities, func(id age.Identity) bool {
+		_, ok := id.(*age.ScryptIdentity)
+		return ok
+	}) {
+		defer takeTurn()()
+	}
+	return age.Decrypt(bytes.NewReader(ciphertext), identities...)
+}
+
+// encrypt is age.Encrypt, in scryptTurn when one of the recipients is a
+// passphrase: the derivation runs as the file key is wrapped, before the
+// writer is returned.
+func encrypt(dst io.Writer, recipients ...age.Recipient) (io.WriteCloser, error) {
+	if slices.ContainsFunc(recipients, func(r age.Recipient) bool {
+		_, ok := r.(*age.ScryptRecipient)
+		return ok
+	}) {
+		defer takeTurn()()
+	}
+	return age.Encrypt(dst, recipients...)
+}
+
 // keyMode names how the store is currently locked.
 type keyMode string
 
@@ -619,7 +671,7 @@ func readKeys(req plugin.Request, ciphertext []byte) ([]age.Identity, *view.Erro
 			// rekey — falls through to the refusal below exactly as before.
 			if passphrase := lookupPassphrase(req); passphrase != "" {
 				if id, err := age.NewScryptIdentity(passphrase); err == nil {
-					if _, decErr := age.Decrypt(bytes.NewReader(ciphertext), id); decErr == nil {
+					if _, decErr := decrypt(ciphertext, id); decErr == nil {
 						return []age.Identity{id}, nil
 					}
 				}
