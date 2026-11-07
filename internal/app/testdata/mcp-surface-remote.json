@@ -1,15 +1,14 @@
 [
   {
     "name": "audit_kube_eol",
-    "description": "Software past or near its end of life: the control plane, the kubelets, and every image's release\n\nThe control plane's version, every node's kubelet and the release each running image's tag names, graded against endoflife.date as `eol_check` grades one product: past its end of life fails, within warn-days of it warns, supported passes with the date. An image is recognised by its name through the catalogue's aliases and its tag read as a release (15.4 is postgresql 15, bookworm is debian 12). An image endoflife.date does not track, a floating tag and a digest with no tag count in the overall line as checks that could not run, and the detail page lists each with its reason. Narrowed to a namespace it grades that namespace's images and the control plane, and says the nodes were not examined.\n\nAlso called: kubernetes, outdated, unsupported, upgrade, stale, components.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"namespace\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.kube.eol`.",
+    "description": "Software past or near its end of life: the control plane, the kubelets, and every image's release\n\nGrades the control plane, every node's kubelet and each running image's release against endoflife.date as `eol_check` does: past end of life fails, within `warn-days` warns, else passes with the date. Images are matched by name through the catalogue's aliases, the tag read as a release. An untracked image, floating tag or tagless digest is a check that could not run, and `detail` lists each. A `namespace` grades only its images and the control plane.\n\nAlso called: kubernetes, outdated, unsupported, upgrade, stale, components.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "namespace": {
@@ -27,15 +26,14 @@
   },
   {
     "name": "audit_kube_netpol",
-    "description": "Namespaces with no NetworkPolicy — unrestricted pod-to-pod traffic\n\nEvery non-system namespace checked for at least one NetworkPolicy. With none, the cluster's default applies: every pod in the namespace can reach every other pod, in either direction. Cites CIS Kubernetes Benchmark 2.0.1 5.3.2.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"namespace\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.kube.netpol`.",
+    "description": "Namespaces with no NetworkPolicy — unrestricted pod-to-pod traffic\n\nEvery non-system namespace checked for at least one NetworkPolicy. With none, the cluster's default applies: every pod in the namespace can reach every other pod, in either direction. Cites CIS Kubernetes Benchmark 2.0.1 5.3.2.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "namespace": {
@@ -48,15 +46,14 @@
   },
   {
     "name": "audit_kube_podsecurity",
-    "description": "Pods running privileged, in a host namespace, or with root not excluded\n\nEvery pod cluster-wide, checked against three Pod Security Standards controls: a privileged container (fail), hostNetwork/hostPID/hostIPC (fail), and whether anything in the pod asserts non-root (warn), meaning that neither the pod nor any container sets runAsNonRoot or a non-zero runAsUser. Init and ephemeral containers count as main ones. The non-root check approximates Kubernetes' securityContext merge rather than simulating it: a pod that asserts non-root at the pod level and never overrides it per container is not flagged, while one relying only on an image's own non-root USER is. A namespace narrows which pods are read, and a clean result says so, never that no pod in the cluster is affected.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"namespace\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.kube.podsecurity`.",
+    "description": "Pods running privileged, in a host namespace, or with root not excluded\n\nEvery pod cluster-wide against three Pod Security Standards controls: a privileged container (fail), hostNetwork, hostPID or hostIPC (fail), and no assertion of non-root (warn), meaning neither the pod nor any container sets runAsNonRoot or a non-zero runAsUser. Init and ephemeral containers count. The non-root check approximates the securityContext merge: a pod asserting it at pod level is not flagged, one relying on the image's own USER is. A `namespace` narrows which pods are read.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "namespace": {
@@ -69,15 +66,14 @@
   },
   {
     "name": "audit_kube_quotas",
-    "description": "Namespaces with no ResourceQuota — unbounded resource consumption\n\nEvery non-system namespace checked for at least one ResourceQuota. CIS Kubernetes Benchmark has no numbered control for this — confirmed absent rather than assumed — so this cites NSA/CISA Kubernetes Hardening Guidance's \"Resource policies\" section instead.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly — the system-namespace filter exists so a cluster-wide sweep stays quiet, not to refuse a direct question.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"namespace\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.kube.quotas`.",
+    "description": "Namespaces with no ResourceQuota — unbounded resource consumption\n\nEvery non-system namespace checked for at least one ResourceQuota. CIS Kubernetes Benchmark has no numbered control for this, so it cites the NSA/CISA Kubernetes Hardening Guidance's \"Resource policies\". A `namespace` checks that one, a system namespace included when named.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "namespace": {
@@ -90,15 +86,14 @@
   },
   {
     "name": "audit_kube_rbac",
-    "description": "Broad RBAC: cluster-admin bindings and wildcard rules\n\nEvery ClusterRoleBinding to cluster-admin, and every Role/ClusterRole rule using a wildcard verb, resource or apiGroup. cluster-admin bound to system:authenticated or system:unauthenticated grades fail, the default system:masters binding is info, anything else warns — sometimes a real operator's binding, always worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles belong to no namespace, so they are not examined at all — reported in the result rather than left implied, since a scoped run that silently skipped the cluster-admin check would read as a clean RBAC posture. RoleBindings are never read; the result says so.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"namespace\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.kube.rbac`.",
+    "description": "Broad RBAC: cluster-admin bindings and wildcard rules\n\nEvery ClusterRoleBinding to cluster-admin and every Role or ClusterRole rule with a wildcard verb, resource or apiGroup. cluster-admin bound to system:authenticated or system:unauthenticated fails, the default system:masters binding is info, anything else warns. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3. A `namespace` checks that namespace's Roles only: ClusterRoleBindings and ClusterRoles are not examined, and the result says so. RoleBindings are never read.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "namespace": {
@@ -111,15 +106,14 @@
   },
   {
     "name": "audit_mail",
-    "description": "Audit a domain's email authentication: SPF, DKIM, DMARC, MTA-STS\n\nAnswers \"can somebody send mail as this domain\" from the records the domain publishes: SPF (present, singular, how it ends, how close to RFC 7208's ten-lookup limit), DMARC (policy, rollout percentage, whether anything reports back), DKIM for a given selector, MTA-STS and TLS-RPT (only the TXT record that advertises the policy is read, not the policy file), and MX, including RFC 7505's null MX, a hardening measure rather than an omission. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With `detail`: one section per area plus the cited references with lookup URLs. A handful of lookups of names derived from the domain by rule, and nothing is enumerated, which is why DKIM needs its selector.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"domain\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.mail`.",
+    "description": "Audit a domain's email authentication: SPF, DKIM, DMARC, MTA-STS\n\nAnswers \"can somebody send mail as this domain\" from the records it publishes: SPF (and how close it is to the ten-lookup limit), DMARC policy and reporting, DKIM for the `selector` you give (selectors are not enumerated), MTA-STS and TLS-RPT (the TXT record only) and MX, a null MX included. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. `detail` adds a section per area and the references.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "domain": {
@@ -132,7 +126,7 @@
         },
         "timeout": {
           "default": "15s",
-          "description": "lookup timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m)",
+          "description": "lookup timeout (with its unit, e.g. 30s, 5m; from 1s to 5m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -145,15 +139,14 @@
   },
   {
     "name": "audit_web",
-    "description": "Audit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request, graded: TLS version and cipher, certificate validity, expiry and signature algorithm, the security headers a host should send (HSTS, CSP checked for weak directives like unsafe-inline, X-Frame-Options/frame-ancestors, cross-origin isolation), CORS behavior (probed with an Origin no real browser would send, to catch blind reflection), cookie flags, and the version/stack details a host should not leak. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With `detail`: one section per area plus the cited references with lookup URLs. It only inspects the response the host volunteers, plus the one Origin header the CORS probe adds.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.web`.",
+    "description": "Audit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request to `host`, graded: TLS version and cipher, certificate validity and expiry, the security headers it should send (HSTS, CSP, framing, cross-origin isolation), CORS reflection, cookie flags and leaked version details. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. `detail` adds a section per area and the references. Only the response the host volunteers is inspected.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "host": {
@@ -162,7 +155,7 @@
         },
         "timeout": {
           "default": "15s",
-          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m)",
+          "description": "request timeout (with its unit, e.g. 30s, 5m; from 1s to 5m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -182,12 +175,12 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only) (a path on the machine running rta)",
+          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only)",
           "type": "string"
         },
         "timeout": {
           "default": "10s",
-          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "description": "connect timeout (with its unit, e.g. 30s, 5m; from 1s to 2m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -200,7 +193,7 @@
   },
   {
     "name": "cert_expiry",
-    "description": "Check certificate expiry for one or more hosts\n\nConnects to each host in `targets` over TLS and reports when its certificate ends: the time left, the date and a status — ok, WARN once it ends within `warn-days`, EXPIRED, or INVALID before it begins; TLS 1.0 and 1.1 are flagged beside it. The chain the host sends is graded and the certificate that ends first sets the row, named when it is not the leaf. A host that cannot be reached is its row's ERROR and does not stop the rest. Rows are the most urgent first, not in the order listed, and each names its host. A target is never a file here, and a certificate's own words are tool output. Each host needs a grant.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"targets\"). You cannot issue one yourself — ask the operator to run `rta grant allow cert.expiry`.",
+    "description": "Check certificate expiry for one or more hosts\n\nConnects to each host in `targets` over TLS and reports when its certificate ends: time left, date and a status (ok, WARN within `warn-days`, EXPIRED, INVALID before it begins), with TLS 1.0 and 1.1 flagged. The chain the host sends is graded and the certificate that ends first sets the row, named when it is not the leaf. An unreachable host is its row's ERROR and stops nothing. Rows are most urgent first, each naming its host. A target is never a file here, and each host needs a grant.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -215,7 +208,7 @@
         },
         "timeout": {
           "default": "10s",
-          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "description": "connect timeout (with its unit, e.g. 30s, 5m; from 1s to 2m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         },
@@ -240,12 +233,12 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only) (a path on the machine running rta)",
+          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only)",
           "type": "string"
         },
         "timeout": {
           "default": "10s",
-          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "description": "connect timeout (with its unit, e.g. 30s, 5m; from 1s to 2m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -258,7 +251,7 @@
   },
   {
     "name": "cert_pem",
-    "description": "Print the certificate chain as PEM\n\nThe certificates as PEM, for a ConfigMap, a Dockerfile COPY or `update-ca-certificates`; `cert_chain` draws them to be read. `include` chooses which: chain (the default) is everything the host presented, leaf the end-entity certificate alone, and issuers the chain without the leaf, which is what a ca-bundle behind a private CA has to hold. A presented chain is what the host chose to send and may be incomplete: this reports what arrived rather than filling the gap from a trust store, so a bundle never silently differs from what the server serves. The PEM comes back in the response. Over MCP it reads a PEM or DER file under the server's roots and dials no host; `cert_expiry` checks a live host, with a grant.\n\nSafety: read.",
+    "description": "Print the certificate chain as PEM\n\nThe certificates as PEM, for a ConfigMap, a Dockerfile COPY or `update-ca-certificates`; `cert_chain` draws them to be read. `include` chooses which: chain (the default) is everything the host presented, leaf the end-entity certificate alone, issuers the chain without the leaf. A presented chain is what the host chose to send and may be incomplete: this reports what arrived and never fills the gap from a trust store. Over MCP it reads a PEM or DER file under the server's roots and dials no host; `cert_expiry` checks a live host, with a grant.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -275,12 +268,12 @@
           "type": "string"
         },
         "target": {
-          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only) (a path on the machine running rta)",
+          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only)",
           "type": "string"
         },
         "timeout": {
           "default": "10s",
-          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "description": "connect timeout (with its unit, e.g. 30s, 5m; from 1s to 2m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -300,12 +293,12 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only) (a path on the machine running rta)",
+          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only)",
           "type": "string"
         },
         "timeout": {
           "default": "10s",
-          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "description": "connect timeout (with its unit, e.g. 30s, 5m; from 1s to 2m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -368,7 +361,7 @@
   },
   {
     "name": "codec_jwk",
-    "description": "Read a JSON Web Key or key set: type, size, thumbprint, and whether it is private\n\nTakes one JWK or a whole key set, an issuer's jwks_uri answer, and says what each key is: its type and size, whether its point is on its curve, its kid, use and alg, and the RFC 7638 thumbprint a DPoP cnf.jkt or a pinned key is compared against. Names a key holding private material, which a published set never should, and two keys sharing a kid. A certificate chain in x5c is read and checked against the key beside it. Private members are never printed.\n\nSafety: read.",
+    "description": "Read a JSON Web Key or key set: type, size, thumbprint, and whether it is private\n\nTakes one JWK or a whole key set (an issuer's jwks_uri answer) and says what each key is: type and size, whether its point is on its curve, kid, use and alg, and the RFC 7638 thumbprint a DPoP cnf.jkt or a pinned key is compared against. Names a key holding private material, which a published set never should, and two keys sharing a kid. An x5c chain is read and checked against the key beside it. Private members are never printed.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -387,7 +380,7 @@
   },
   {
     "name": "codec_jwt",
-    "description": "Decode a JWT, JWS or JWE for inspection: headers, claims, dates\n\nDecodes a signed token (JWS), an encrypted one (JWE) or the JSON form of either, and names what a strict parser would refuse: a padded segment, a repeated member, an empty signature. A JWE's content is not read, because decrypting takes the recipient's key: a private key, a shared key or a password, depending on its alg. Unverified, and labeled so, unless `key` is given: a public key, certificate or issuer's key set, which you fetch, since this never fetches a URL. Then the signature is checked, the algorithm is decided by the key and never by the token, and a mismatch is an error naming why. An HMAC signature is checked only against a shared secret the operator keeps in a file, never one an agent passes.\n\nSafety: read.",
+    "description": "Decode a JWT, JWS or JWE for inspection: headers, claims, dates\n\nDecodes a signed token (JWS), an encrypted one (JWE) or the JSON form of either, and names what a strict parser would refuse. A JWE's content is not read. Unverified, and labeled so, unless `key` is given: a public key, certificate or issuer's key set, which you fetch, since this never fetches a URL. Then the signature is checked by the algorithm the key decides, never the token, and a mismatch is an error. An HMAC signature is checked only against a shared secret the operator keeps in a file.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -437,7 +430,7 @@
   },
   {
     "name": "debug_ansi",
-    "description": "Break down the escape sequences and hidden characters in a string\n\nWalks the input as a terminal would and names what each printable run or escape sequence does: the modes a program leaves set when it garbles a terminal (hidden cursor, alternate screen, mouse reporting, bracketed paste), the requests a terminal answers into the input, and the OSC sequences worth knowing on sight (title, hyperlink, a clipboard write, decoded). Also names the characters that hide themselves, bidi overrides, zero-width characters, C1 controls, tag characters and variation-selector runs, decoded to what they invisibly carry, as a prompt injection hides in a sentence. An escape written out as a log shows it — \\033, \\x1b, \\e, \\u001b or ^[ ahead of [ or ] — is read as the character, and said to be.\n\nSafety: read.",
+    "description": "Break down the escape sequences and hidden characters in a string\n\nWalks `input` as a terminal would and names what each printable run or escape sequence does: modes left set (hidden cursor, alternate screen, mouse reporting), terminal requests and OSC sequences, decoded. Also names characters that hide themselves (bidi overrides, zero-width, C1 controls, tag characters), decoded to what they invisibly carry, as a prompt injection hides in a sentence. An escape written out as text (\\033, \\x1b, \\e, ^[) is read as the character, and said to be.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -456,7 +449,7 @@
   },
   {
     "name": "eol_check",
-    "description": "Whether a product, or one of its release cycles, is still supported\n\nLooks up a product on endoflife.date and grades every release cycle by how close it is to its own end-of-life date. Name one cycle to see just that row — or the version running, 16.2, for the cycle it belongs to, 16 — or a range of them — 13..16, 15.., ..16 — to see every numbered cycle inside it; leave it out to see every cycle still supported and the latest one that has ended, or pass `all` for every one. Aliases work — \"postgres\" and \"postgresql\" name the same product.\n\nSafety: read.",
+    "description": "Whether a product, or one of its release cycles, is still supported\n\nLooks up `product` on endoflife.date and grades every release cycle by how close it is to its end-of-life date. Name one `cycle` (or the version running, 16.2, for its cycle, 16) or a range (13..16, 15.., ..16) to see just those; leave it out to see every supported cycle and the latest one that has ended, or pass `all`. Aliases work: \"postgres\" and \"postgresql\" name the same product.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -545,8 +538,7 @@
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         }
       },
@@ -656,7 +648,7 @@
   },
   {
     "name": "gitignore_list",
-    "description": "List the templates github/gitignore offers\n\nLists the templates in the github/gitignore repository, with the name `gitignore_show` takes for each: the main ones for languages, frameworks and tools, the global ones for operating systems and editors, and the community ones. A term narrows the list to the templates whose name contains it, or to one kind when the term is main, global or community. Without one the first templates are listed and the total says how many there are; `limit` shows more.\n\nAlso called: ignore, template, generate.\n\nSafety: read.",
+    "description": "List the templates github/gitignore offers\n\nThe templates in the github/gitignore repository, with the name `gitignore_show` takes for each: main ones (languages, frameworks, tools), global ones (operating systems, editors) and community ones. A `term` narrows to templates whose name contains it, or to one kind when it is main, global or community. Without one the first templates are listed and the total says how many there are; `limit` shows more.\n\nAlso called: ignore, template, generate.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -710,7 +702,7 @@
   },
   {
     "name": "http_delete",
-    "description": "DELETE a URL\n\nAlso called: api, endpoint, request.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.delete`.",
+    "description": "DELETE a URL\n\nAlso called: api, endpoint, request.\n\nSafety: destructive.\n\nRequires a grant.",
     "destructive_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -733,7 +725,7 @@
         },
         "timeout": {
           "default": "30s",
-          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m)",
+          "description": "request timeout (with its unit, e.g. 30s, 5m; from 1s to 10m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         },
@@ -750,7 +742,7 @@
   },
   {
     "name": "http_get",
-    "description": "GET a URL and show status, timing and body\n\nAlso called: api, endpoint, request, fetch, curl, download.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.get`.",
+    "description": "GET a URL and show status, timing and body\n\nAlso called: api, endpoint, request, fetch, curl, download.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -773,7 +765,7 @@
         },
         "timeout": {
           "default": "30s",
-          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m)",
+          "description": "request timeout (with its unit, e.g. 30s, 5m; from 1s to 10m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         },
@@ -790,7 +782,7 @@
   },
   {
     "name": "http_head",
-    "description": "HEAD a URL and show status, timing, type and declared size\n\nAlso called: api, endpoint, request.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.head`.",
+    "description": "HEAD a URL and show status, timing, type and declared size\n\nAlso called: api, endpoint, request.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -813,7 +805,7 @@
         },
         "timeout": {
           "default": "30s",
-          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m)",
+          "description": "request timeout (with its unit, e.g. 30s, 5m; from 1s to 10m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         },
@@ -830,7 +822,7 @@
   },
   {
     "name": "http_post",
-    "description": "POST to a URL with an optional body\n\nAlso called: api, endpoint, request, submit.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.post`.",
+    "description": "POST to a URL with an optional body\n\nAlso called: api, endpoint, request, submit.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -856,7 +848,7 @@
         },
         "timeout": {
           "default": "30s",
-          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m)",
+          "description": "request timeout (with its unit, e.g. 30s, 5m; from 1s to 10m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         },
@@ -873,7 +865,7 @@
   },
   {
     "name": "http_put",
-    "description": "PUT to a URL with an optional body\n\nAlso called: api, endpoint, request.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.put`.",
+    "description": "PUT to a URL with an optional body\n\nAlso called: api, endpoint, request.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -900,7 +892,7 @@
         },
         "timeout": {
           "default": "30s",
-          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m)",
+          "description": "request timeout (with its unit, e.g. 30s, 5m; from 1s to 10m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         },
@@ -933,7 +925,7 @@
   },
   {
     "name": "kv_env",
-    "description": "Print stored values as shell exports\n\nOutput for a shell to evaluate, which loads secrets into its session without ever writing them to a file. Key names become environment names (db-password → DB_PASSWORD). A `format` of dotenv writes .env syntax instead. Same grant requirement as `kv_get`: this reveals values. Naming no key means every key, which is a wider ask and needs a grant for `kv_env` itself rather than one per key.\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.env`.",
+    "description": "Print stored values as shell exports\n\nOutput for a shell to evaluate, which loads secrets into its session without ever writing them to a file. Key names become environment names (db-password → DB_PASSWORD). A `format` of dotenv writes .env syntax instead. Same grant requirement as `kv_get`: this reveals values. Naming no key means every key, which is a wider ask and needs a grant for `kv_env` itself rather than one per key.\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -965,7 +957,7 @@
   },
   {
     "name": "kv_get",
-    "description": "Reveal a stored value\n\nClassified as a write, because revealing a secret is the sensitive act: an agent needs a grant naming the key it may read, issued by a person. A grant authorizes revealing a value, not choosing where on this machine it gets written, so the value comes back in the response.\n\nAlso called: secret, password, read, retrieve, credential, decrypt.\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
+    "description": "Reveal a stored value\n\nClassified as a write, because revealing a secret is the sensitive act: an agent needs a grant naming the key it may read, issued by a person. A grant authorizes revealing a value, not choosing where on this machine it gets written, so the value comes back in the response.\n\nAlso called: secret, password, read, retrieve, credential, decrypt, store.\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1003,7 +995,7 @@
   },
   {
     "name": "kv_init",
-    "description": "Set up how the store is encrypted\n\nDone once. `generate` makes a dedicated age key for this store and uses it: no passphrase to type, and unlike an SSH login key, one whose loss costs this store and nothing else. A passphrase store needs no init, which is what the store is by default. Locking it to a key that already exists, or adding readers, is the operator's to do.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.init`.",
+    "description": "Set up how the store is encrypted\n\nDone once. `generate` makes a dedicated age key for this store and uses it: no passphrase to type, and unlike an SSH login key, one whose loss costs this store and nothing else. A passphrase store needs no init, which is what the store is by default. Locking it to a key that already exists, or adding readers, is the operator's to do.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1019,15 +1011,14 @@
   },
   {
     "name": "kv_list",
-    "description": "List stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description, when it changed and — once any value has been replaced — how many earlier values `kv_history` still keeps for each. With `detail`: the source filename of anything stored from disk.\n\n`folder` is one folder of the tree `kv_tree` draws, `db/` for `db/password` and `db/user`: only the keys under it.\n\n`match` is the \"which one was it called?\" filter: a substring of the name or the description, case-insensitive, so a `match` of aws finds `prod-deploy-key` when the description is the only place the word AWS appears.\n\nSafety: read.",
+    "description": "List stored keys (names and metadata only, never values)\n\nKey names, kind, size, description, when it changed and, once a value has been replaced, how many earlier values `kv_history` keeps. Never a value or a preview. `folder` is one folder of the tree `kv_tree` draws (`db/` for `db/password`); `match` is a case-insensitive substring of the name or the description, so `aws` finds a key whose description alone says AWS. `detail` adds the source filename of anything stored from disk.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "folder": {
@@ -1072,7 +1063,7 @@
   },
   {
     "name": "kv_rekey",
-    "description": "Change which keys can open the store\n\nThe store is decrypted and written back under a new set of keys, the one operation that changes who can read what is already stored. Adding is the default: `generate` makes a dedicated age key and leaves the existing readers alone, so a store locked to an SSH key gains one that needs no passphrase. `only` makes the set exclusive instead, and with `generate` switches the lock from one key to the other. Two things are refused rather than confirmed: a store that cannot be opened, and a change that locks out every key the operator holds. Old copies of the file stay readable by the old keys; re-keying does not reach into backups.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.rekey`.",
+    "description": "Change which keys can open the store\n\nDecrypts the store and writes it back under a new set of readers, the one operation that changes who can read what is stored. Adding is the default: `generate` makes a dedicated age key and keeps the existing readers; `only` makes the set exclusive, and with `generate` swaps one lock for the other. A store that cannot be opened, and a change that locks out every key the operator holds, are refused. Old copies and backups stay readable by the old keys.\n\nSafety: destructive.\n\nRequires a grant.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1091,7 +1082,7 @@
   },
   {
     "name": "kv_rename",
-    "description": "Rename a key, keeping its value and its history\n\nThe entry moves inside the store, the value is never decrypted into anything but memory, and its description, kind, source and timestamps travel with it: the one way to rename that reveals nothing, where `kv_get`, `kv_set` and `kv_rm` took two grants and put the secret in the open. A name already taken is refused rather than overwritten, since that would destroy the secret in it, which is `kv_rm`'s question. A grant has to cover both names, `key` and `new-name`, because a key's name decides which grants can read it; a folder grant covers a move inside the folder.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\" and one \"new-name\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rename`.",
+    "description": "Rename a key, keeping its value and its history\n\nMoves the entry to `new-name` inside the store with its value, description, kind, source, history and timestamps; the value is never decrypted outside memory, so this is the rename that reveals nothing. A name already taken is refused, not overwritten (that is `kv_rm`'s question). A grant must cover both `key` and `new-name`; a folder grant covers a move inside the folder.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1114,7 +1105,7 @@
   },
   {
     "name": "kv_restore",
-    "description": "Bring back a removed key, or an earlier value of one\n\nWith no `revision`, a key `kv_rm` removed comes back exactly as it was, history included. With one, the key's current value is replaced by that earlier one — the number `kv_history` lists, 1 being the most recent — and the value being replaced joins the history in turn, so a restore is itself undoable.\n\nA removed key whose name has since been reused is refused rather than merged: rename the live one first, or purge the removed one.\n\nAlso called: deleted.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.restore`.",
+    "description": "Bring back a removed key, or an earlier value of one\n\nWith no `revision`, a key `kv_rm` removed comes back exactly as it was, history included. With one, the key's current value is replaced by that earlier one — the number `kv_history` lists, 1 being the most recent — and the value being replaced joins the history in turn, so a restore is itself undoable.\n\nA removed key whose name has since been reused is refused rather than merged: rename the live one first, or purge the removed one.\n\nAlso called: deleted.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1136,7 +1127,7 @@
   },
   {
     "name": "kv_rm",
-    "description": "Remove a stored key, keeping it restorable until purged\n\nThe key leaves the listing and every read of it, but the entry is kept aside whole — value, history and all — inside the same encrypted store, where `kv_list` shows it with `removed` and `kv_restore` brings it back. That is the undo a mis-click needs. `purge` is the removal that has none: the entry and everything it ever held are gone when it returns, and it also finishes off a key removed earlier.\n\nDestructive either way, because a removed key is still a key nothing can read until somebody notices. Who can open the store does not change: removing the last entry leaves an empty store locked to the same keys, not an unlocked one. To rename rather than replace, `kv_rename` moves an entry without its value ever leaving memory.\n\nAlso called: delete, deleted.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rm`.",
+    "description": "Remove a stored key, keeping it restorable until purged\n\nThe key leaves the listing and every read, but the entry is kept aside whole, history included, where `kv_list` shows it with `removed` and `kv_restore` brings it back. `purge` has no undo: the entry and everything it held are destroyed, and a key removed earlier is finished off too. Removing the last entry leaves an empty store locked to the same keys. `kv_rename` moves an entry without removing it.\n\nAlso called: delete, deleted.\n\nSafety: destructive.\n\nRequires a grant.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1158,7 +1149,7 @@
   },
   {
     "name": "kv_set",
-    "description": "Set (or overwrite) a stored value\n\nThe value is given as `value`; a call with none is refused unless its `description` or `kind` relabel an entry that already exists, which leaves the secret and both timestamps untouched, so correcting what something is for does not reset the age `kv_list` reports. The kind (certificate, private key, json, file, string) is detected from the content unless `kind` says otherwise. Writing never changes who can read the store: that is `kv_rekey`. Setting a key that already exists replaces the secret and keeps the old one, the last 5 values listed by `kv_history` and brought back by `kv_restore` with a `revision`. It still needs a per-key grant: an agent that can overwrite a secret can break what reads it, undo or not.\n\nAlso called: secret, password, save, write, credential, encrypt.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.set`.",
+    "description": "Set (or overwrite) a stored value\n\nStores `value` under `key`. A call with no `value` is refused unless `description` or `kind` relabel an entry that exists, which leaves the secret and both timestamps alone. The kind (certificate, private key, json, file, string) is detected from the content unless `kind` says otherwise. Overwriting keeps the old value among the last 5 listed by `kv_history` and brought back by `kv_restore` with a `revision`. Needs a per-key grant; who can read the store is `kv_rekey`'s.\n\nAlso called: secret, password, save, write, credential, encrypt.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1233,15 +1224,14 @@
   },
   {
     "name": "net_dns",
-    "description": "Resolve DNS records for a name, or a name for an address\n\nA `type` of auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. The system resolver answers unless the operator has set another. With `detail`: the query, the resolver that answered, and how long it took.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"name\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.dns`.",
+    "description": "Resolve DNS records for a name, or a name for an address\n\nA `type` of auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. The system resolver answers unless the operator has set another. With `detail`: the query, the resolver that answered, and how long it took.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "name": {
@@ -1250,7 +1240,7 @@
         },
         "timeout": {
           "default": "5s",
-          "description": "query timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "description": "query timeout (with its unit, e.g. 30s, 5m; from 1s to 2m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         },
@@ -1279,7 +1269,7 @@
   },
   {
     "name": "net_ping",
-    "description": "Ping a host and report latency statistics\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.ping`.",
+    "description": "Ping a host and report latency statistics\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1302,7 +1292,7 @@
         },
         "timeout": {
           "default": "10s",
-          "description": "overall timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m)",
+          "description": "overall timeout (with its unit, e.g. 30s, 5m; from 1s to 5m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -1315,7 +1305,7 @@
   },
   {
     "name": "net_port",
-    "description": "TCP connect-scan ports on a host\n\nWhich ports answer, not what they say — `net_probe` shows the banner for one; this maps many at once. Needs a grant for the same reason: the host is the caller's choice.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.port`.",
+    "description": "TCP connect-scan ports on a host\n\nWhich ports answer, not what they say — `net_probe` shows the banner for one; this maps many at once. Needs a grant for the same reason: the host is the caller's choice.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1332,7 +1322,7 @@
         },
         "timeout": {
           "default": "2s",
-          "description": "timeout per port (a duration with its unit, such as 30s, 5m or 2h; from 1s to 1m)",
+          "description": "timeout per port (with its unit, e.g. 30s, 5m; from 1s to 1m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -1345,7 +1335,7 @@
   },
   {
     "name": "net_probe",
-    "description": "Open a TCP connection and report what answers\n\nProves the port accepts a connection, times the handshake, and shows the banner the service volunteers. `tls` completes a TLS handshake first and reports the negotiated version and cipher. It sends nothing and only waits for the banner; to speak first — the protocols that expect the client to open — use `net_send`, which is a write. Both need a grant: the destination is the caller's choice either way, and whatever it says back is read as tool output.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.probe`.",
+    "description": "Open a TCP connection and report what answers\n\nProves the port accepts a connection, times the handshake, and shows the banner the service volunteers. `tls` completes a TLS handshake first and reports the negotiated version and cipher. It sends nothing and only waits for the banner; to speak first — the protocols that expect the client to open — use `net_send`, which is a write. Both need a grant: the destination is the caller's choice either way, and whatever it says back is read as tool output.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1363,7 +1353,7 @@
         },
         "timeout": {
           "default": "5s",
-          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "description": "connect timeout (with its unit, e.g. 30s, 5m; from 1s to 2m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         },
@@ -1373,7 +1363,7 @@
         },
         "wait": {
           "default": "2s",
-          "description": "how long to wait for the service to say something (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "description": "how long to wait for the service to say something (with its unit, e.g. 30s, 5m; from 1s to 2m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -1387,7 +1377,7 @@
   },
   {
     "name": "net_send",
-    "description": "Send bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes what you give it, and shows the reply — how you poke a protocol that expects the client to speak first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in `data` are interpreted. `tls` speaks it over TLS. What arrives is executed by whatever is listening, and FLUSHALL empties a Redis, so it is destructive: a person is asked before it sends, and an AI agent needs an explicit grant. `net_probe` is the read-only half — connect, handshake, listen — and carries the same grant, since the destination is still the caller's to choose either way.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.send`.",
+    "description": "Send bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes `data` and shows the reply: how you poke a protocol where the client speaks first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in `data` are interpreted; `tls` speaks it over TLS. What arrives is executed by whatever is listening (FLUSHALL empties a Redis), so it is destructive. `net_probe` is the read-only half (connect, handshake, listen) and needs a grant too, since the destination is the caller's choice either way.\n\nSafety: destructive.\n\nRequires a grant.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1408,7 +1398,7 @@
         },
         "timeout": {
           "default": "5s",
-          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "description": "connect timeout (with its unit, e.g. 30s, 5m; from 1s to 2m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         },
@@ -1418,7 +1408,7 @@
         },
         "wait": {
           "default": "2s",
-          "description": "how long to wait for a reply (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "description": "how long to wait for a reply (with its unit, e.g. 30s, 5m; from 1s to 2m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -1433,7 +1423,7 @@
   },
   {
     "name": "net_trace",
-    "description": "Trace the route to a host, hop by hop\n\nICMP echo probes with a rising TTL: each hop that expires one reports itself. Answers the question ping cannot — not just \"is it reachable\" but \"where does it stop\". Silent hops show as *; that is a router declining to reply, not necessarily a fault.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.trace`.",
+    "description": "Trace the route to a host, hop by hop\n\nICMP echo probes with a rising TTL: each hop that expires one reports itself. Answers the question ping cannot — not just \"is it reachable\" but \"where does it stop\". Silent hops show as *; that is a router declining to reply, not necessarily a fault.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1464,7 +1454,7 @@
         },
         "timeout": {
           "default": "2s",
-          "description": "timeout per probe (a duration with its unit, such as 30s, 5m or 2h; from 1s to 1m)",
+          "description": "timeout per probe (with its unit, e.g. 30s, 5m; from 1s to 1m)",
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         }
@@ -1477,7 +1467,7 @@
   },
   {
     "name": "note_add",
-    "description": "Add a note\n\nA title is enough. `todo` (or a due date, which implies it) makes it something to do; a parent makes it part of something bigger; markdown in the body is rendered on human surfaces.\n\nAlso called: remember, reminder, todo, task, jot, later.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.add`.",
+    "description": "Add a note\n\nA title is enough. `todo` (or a due date, which implies it) makes it something to do; a parent makes it part of something bigger; markdown in the body is rendered on human surfaces.\n\nAlso called: remember, reminder, todo, task, jot, later.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1518,7 +1508,7 @@
   },
   {
     "name": "note_done",
-    "description": "Check notes off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable through `note_list`'s `all`, and in `note_search`. Several ids check off several notes in one call, all or none: an id that is not a note refuses the call before anything changes. A plain note is made a to-do and checked off in the same call, since asking to be done with it says what it is.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.done`.",
+    "description": "Check notes off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable through `note_list`'s `all`, and in `note_search`. Several ids check off several notes in one call, all or none: an id that is not a note refuses the call before anything changes. A plain note is made a to-do and checked off in the same call, since asking to be done with it says what it is.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1540,7 +1530,7 @@
   },
   {
     "name": "note_edit",
-    "description": "Edit a note's title, body, tags, due date or parent\n\nEmpty fields keep their current value, and `clear` empties the ones it names: the body, the tags or the due date. A `tag` of - also clears all tags, and a `due` of none the due date.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.edit`.",
+    "description": "Edit a note's title, body, tags, due date or parent\n\nEmpty fields keep their current value, and `clear` empties the ones it names: the body, the tags or the due date. A `tag` of - also clears all tags, and a `due` of none the due date.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1606,8 +1596,7 @@
           "type": "boolean"
         },
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "parent": {
@@ -1628,7 +1617,7 @@
   },
   {
     "name": "note_reopen",
-    "description": "Reopen checked notes\n\nThe undo for `note_done`, for one id or several. Re-opening an already-open note is a no-op, not an error.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.reopen`.",
+    "description": "Reopen checked notes\n\nThe undo for `note_done`, for one id or several. Re-opening an already-open note is a no-op, not an error.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1650,7 +1639,7 @@
   },
   {
     "name": "note_rm",
-    "description": "Remove notes permanently\n\nSub-notes are re-parented to the removed note's parent, never deleted silently. Several ids remove several notes in one call, all or none, each one a record a grant or a consent has to cover.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow note.rm`.",
+    "description": "Remove notes permanently\n\nSub-notes are re-parented to the removed note's parent, never deleted silently. Several ids remove several notes in one call, all or none, each one a record a grant or a consent has to cover.\n\nSafety: destructive.\n\nRequires a grant.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1720,7 +1709,7 @@
   },
   {
     "name": "note_toggle",
-    "description": "Turn a note into a to-do, or a to-do back into a note\n\nThe switch between the two kinds of thing in the notebook. A note becomes an open to-do; a to-do becomes a note and forgets whether it was done, which is the point — a note has nothing to be done about.\n\nAlso called: todo.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.toggle`.",
+    "description": "Turn a note into a to-do, or a to-do back into a note\n\nThe switch between the two kinds of thing in the notebook. A note becomes an open to-do; a to-do becomes a note and forgets whether it was done, which is the point — a note has nothing to be done about.\n\nAlso called: todo.\n\nSafety: write.\n\nRequires a grant.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1738,15 +1727,14 @@
   },
   {
     "name": "time_at",
-    "description": "Convert an instant between epoch, UTC, local time and a named zone\n\n`when` takes an epoch number at any precision, an RFC3339 stamp, a plain date, or a duration either side of now (`90m ago`, `in 2h`, `+90m`); a bare number's unit is chosen by magnitude and stated in the `read-as` row. `zone` adds an IANA timezone. For now the rows are utc, local and epoch; `detail` adds `relative` and `epoch-ms`, and a named instant always gets them. A local time the clock showed twice is answered as one, with the other in `ambiguous`; one it never showed is refused.\n\nAlso called: now, date, clock.\n\nSafety: read.",
+    "description": "Convert an instant between epoch, UTC, local time and a named zone\n\n`when` takes an epoch number at any precision, an RFC3339 stamp, a plain date, or a duration either side of now (`90m ago`, `in 2h`); a bare number's unit is chosen by magnitude and stated in the `read-as` row. `zone` adds an IANA timezone. Rows are utc, local and epoch for now; `detail` adds `relative` and `epoch-ms`, always given for a named instant. A local time the clock showed twice is answered as one, the other in `ambiguous`; one it never showed is refused.\n\nAlso called: now, date, clock.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
+          "description": "full detailed view",
           "type": "boolean"
         },
         "when": {

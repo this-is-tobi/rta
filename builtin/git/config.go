@@ -42,6 +42,12 @@ func configCapability() plugin.Capability {
 			"Over MCP only the repository's own config, local and worktree, is returned, and an " +
 			"include of a file outside the server's roots is not followed: a warning names it and the " +
 			"file is never opened. Values that carry a credential are masked.",
+		Agent: "Every key set in system, global, local or worktree config, one row per file it is set in " +
+			"with its scope, before any overrides another (worktree over local over global over system, " +
+			"the command scope over all). Includes are " +
+			"followed as git follows them; one that cannot be decided is not read, and a warning says so. " +
+			"Over MCP only the repository's own config, local and worktree, is returned, and an include of " +
+			"a file outside the server's roots is named in a warning and never opened. Credentials are masked.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},

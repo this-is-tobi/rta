@@ -56,14 +56,12 @@ func Plugin() plugin.Plugin {
 					"With `detail`: every interface with MAC, MTU, flags and addresses of both families, " +
 					"per-interface traffic counters, the full resolver list, the proxy environment and " +
 					"the hosts file.",
-				Agent: "Local network state, read from this host alone: nothing leaves the machine. `status` is " +
-					"ok, or fail for no default route or no resolver; then `route` (gateway and interface), " +
-					"`traffic` (rx and tx per second over 500ms, leaving out the loopback and a container " +
-					"host's bridges and veth pairs), `dns` (the first resolver and how many fall back), " +
-					"`hosts` (names the hosts file adds, and how many are parked), `ip` (IPv4 addresses, the " +
-					"default route's interface first) and `proxy` when one is set, credentials masked. A line " +
-					"that cannot be read says so, and so does the status. `numbers` has the figures. `detail` " +
-					"adds every interface, the IPv6 addresses, every resolver and the hosts file.",
+				Agent: "Local network state, read from this host alone. `status` is ok, or fail for no default " +
+					"route or no resolver; then `route` (gateway and interface), `traffic` (rx and tx per " +
+					"second over 500ms), `dns` (first resolver, how many fall back), `hosts` (names the hosts " +
+					"file adds, how many are parked), `ip` (IPv4 addresses) and `proxy` when set, credentials " +
+					"masked. A line that cannot be read says so; `numbers` has the figures. `detail` adds every " +
+					"interface, IPv6 addresses, every resolver and the hosts file.",
 				Run: runOverview,
 			},
 			{
@@ -85,6 +83,12 @@ func Plugin() plugin.Plugin {
 					"privileges: Linux reads the whole socket table but can only name the process behind " +
 					"sockets it may look into, so the Process column empties; macOS reads through lsof, which " +
 					"shows only what the caller may see, so the row is absent entirely.",
+				Agent: "Every TCP and UDP socket open here, with its bound address, how far that reaches " +
+					"(loopback, one address, or all interfaces) and the process behind it. Two limits. UDP has no " +
+					"listening state, so a socket with a port and no peer shows whether it is a server or a " +
+					"resolver with a query in flight. And the answer is only as complete as the caller's " +
+					"privileges: Linux cannot name the process behind a socket it may not look into, so Process is " +
+					"empty; macOS reads through lsof, so the row is absent entirely.",
 				Inputs: []plugin.Field{
 					{Name: "port", Type: plugin.Int, Min: 1, Max: 65535,
 						Help: "only this port — the \"who has 8080\" question"},
@@ -229,6 +233,11 @@ func Plugin() plugin.Plugin {
 					"explicit grant. `net.probe` is the read-only half — connect, handshake, listen — " +
 					"and carries the same grant, since the destination is still the caller's to " +
 					"choose either way.",
+				Agent: "Opens a TCP connection, writes `data` and shows the reply: how you poke a protocol where " +
+					"the client speaks first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in `data` are interpreted; `tls` " +
+					"speaks it over TLS. What arrives is executed by whatever is listening (FLUSHALL empties a " +
+					"Redis), so it is destructive. `net.probe` is the read-only half (connect, handshake, listen) " +
+					"and needs a grant too, since the destination is the caller's choice either way.",
 				Inputs: []plugin.Field{
 					{Name: "host", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestHostnames, Help: "host to connect to"},
@@ -302,6 +311,11 @@ func Plugin() plugin.Plugin {
 					"governs name resolution for every process on the machine, and a wrong entry " +
 					"silently reroutes traffic instead of failing. Over MCP that means a per-capability " +
 					"grant naming this capability, or the net plugin, with a deadline on it.",
+				Agent: "A name resolves to one address, so this takes the name away from any other active entry " +
+					"rather than leaving two that race. Everything else in the file (comments, ordering, spacing) " +
+					"survives untouched, and the previous version is saved before the write. Destructive rather " +
+					"than write: it rewrites a root-owned file that governs name resolution for every process on " +
+					"the machine, and a wrong entry silently reroutes traffic instead of failing.",
 				Inputs: []plugin.Field{
 					{Name: "ip", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestAddresses, Help: "address to point at"},

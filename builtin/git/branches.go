@@ -33,6 +33,12 @@ func branchesCapability() plugin.Capability {
 			"row, and a branch checked out in another worktree is marked `worktree`: git refuses to " +
 			"check it out here. What a branch tracks is read from every file of config git reads, " +
 			"over MCP from the repository's own, as `git.remotes` reads a remote.",
+		Agent: "Every local branch, alphabetically, with the checked-out one marked, the remote branch it " +
+			"tracks and how far the two have drifted as of the last fetch; nothing here touches the " +
+			"network. `gone` in Status means the tracked remote branch no longer exists, the usual sign a " +
+			"merged branch can go. `all` adds remote-tracking branches as `remotes/<remote>/<name>`. A " +
+			"detached HEAD is its own row, and a branch checked out in another worktree is marked " +
+			"`worktree`. Tracking is read as `git.remotes` reads a remote.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "all", Type: plugin.Bool, Config: "all", Help: "include remote-tracking branches"},

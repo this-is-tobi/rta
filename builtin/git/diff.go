@@ -46,6 +46,12 @@ func diffCapability() plugin.Capability {
 			"coarsely. An untracked file under an ignore file `git.status` did not apply is named, never shown. " +
 			"Over MCP a link in the working tree is diffed only where it names a place under " +
 			"the roots.",
+		Agent: "Unified diff text. With no `commit`, every uncommitted change, staged and unstaged, against " +
+			"HEAD. `commit` diffs that commit against its parent (the root against the empty tree, a merge " +
+			"against its first parent); two arbitrary commits are not compared. Limits: 16 MiB per file, " +
+			"64 MiB and 10000 files in all, two seconds (past which it is refused as git.status.timeout); " +
+			"lines after the patch name each file left out or diffed coarsely. Over MCP a working-tree " +
+			"link is diffed only where it names a place under the roots.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "commit", Type: plugin.String, Suggest: suggestCommits,

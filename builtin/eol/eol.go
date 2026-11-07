@@ -46,6 +46,11 @@ func Plugin() plugin.Plugin {
 					"cycle inside it; leave it out to see every cycle still supported and the latest one that has " +
 					"ended, or pass `all` for every one. Aliases work — \"postgres\" " +
 					"and \"postgresql\" name the same product.",
+				Agent: "Looks up `product` on endoflife.date and grades every release cycle by how close it is to " +
+					"its end-of-life date. Name one `cycle` (or the version running, 16.2, for its cycle, 16) or a " +
+					"range (13..16, 15.., ..16) to see just those; leave it out to see every supported cycle and " +
+					"the latest one that has ended, or pass `all`. Aliases work: \"postgres\" and \"postgresql\" " +
+					"name the same product.",
 				// No dashboard tile: product is Required, so the automatic
 				// picker (every Read capability that needs no input)
 				// already skips this — stated anyway, the way pg states it

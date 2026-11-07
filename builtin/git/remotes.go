@@ -28,6 +28,12 @@ func remotesCapability() plugin.Capability {
 			"Read from every file of config git reads, as git reads it, including a " +
 			"url.<base>.insteadOf rewrite; over MCP only the repository's own config is read, as " +
 			"`git.config` shows it there. A credential embedded in a URL is masked.",
+		Agent: "Each remote with its URL, the config file that sets it and how many of its branches this " +
+			"repository knows from the last fetch (0 for a remote never fetched). A remote with a pushurl " +
+			"is two rows, and Use says which does what: git fetches from the first url and pushes to every " +
+			"pushurl where set, else every url. Read from every config file git reads, a " +
+			"url.<base>.insteadOf rewrite included; over MCP only the repository's own config, as " +
+			"`git.config` shows it there. Credentials in a URL are masked.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},

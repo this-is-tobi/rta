@@ -96,6 +96,11 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"finding cites an OWASP Top 10:2025 category and a MITRE CWE. With `detail`: one section " +
 					"per area plus the cited references with lookup URLs. It only inspects the response the " +
 					"host volunteers, plus the one Origin header the CORS probe adds.",
+				Agent: "One HTTPS request to `host`, graded: TLS version and cipher, certificate validity and expiry, " +
+					"the security headers it should send (HSTS, CSP, framing, cross-origin isolation), CORS " +
+					"reflection, cookie flags and leaked version details. Every finding cites an OWASP Top 10:2025 " +
+					"category and a MITRE CWE. `detail` adds a section per area and the references. Only the " +
+					"response the host volunteers is inspected.",
 				Inputs: []plugin.Field{
 					{Name: "host", Type: plugin.String, Positional: true, Required: true, Help: "host or URL to audit"},
 					{Name: "timeout", Type: plugin.Duration, Config: "web.timeout", Default: "15s", Min: "1s", Max: "5m", Help: "request timeout"},
@@ -134,6 +139,11 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"`detail`: one section per area plus the cited references with lookup URLs. A handful of " +
 					"lookups of names derived from the domain by rule, and nothing is enumerated, which is " +
 					"why DKIM needs its selector.",
+				Agent: "Answers \"can somebody send mail as this domain\" from the records it publishes: SPF (and how " +
+					"close it is to the ten-lookup limit), DMARC policy and reporting, DKIM for the `selector` " +
+					"you give (selectors are not enumerated), MTA-STS and TLS-RPT (the TXT record only) and MX, " +
+					"a null MX included. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. " +
+					"`detail` adds a section per area and the references.",
 				Inputs: []plugin.Field{
 					{Name: "domain", Type: plugin.String, Positional: true, Required: true, Help: "domain to audit"},
 					{Name: "selector", Type: plugin.String, Help: "DKIM selector to check (the s= tag of a DKIM-Signature)"},
@@ -163,6 +173,12 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"ecosystem OSV does not recognise are counted and named rather than dropped. `offline` " +
 					"inventories without asking anything; `recursive` walks a monorepo, skipping " +
 					"node_modules, vendor and build output.",
+				Agent: "Reads the lockfiles or SBOM under `path` (go.mod, JavaScript, Python, Rust, PHP and Ruby " +
+					"lockfiles, CycloneDX, SPDX) and asks osv.dev about every pinned dependency: which are named " +
+					"in an advisory, with its severity and the versions that fix it. It reads, it does not scan: " +
+					"whether your code reaches the vulnerable function is for osv-scanner, trivy or grype. " +
+					"Ecosystems OSV does not know are counted and named. `offline` inventories without asking " +
+					"osv.dev; `recursive` walks a monorepo.",
 				Inputs: []plugin.Field{
 					{Name: "path", Type: plugin.Path, Positional: true, Default: ".",
 						Help: pathHelp("directory holding the lockfile or SBOM, or the file itself")},
@@ -201,6 +217,11 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"carry the graph. Where the file does not say, this says so and hands over the package " +
 					"manager's own command (`go mod why`, `pnpm why`, `cargo tree --invert`) with the package " +
 					"already in it.",
+				Agent: "Draws `package` at the root with everything that requires it beneath, up to the dependencies " +
+					"the project names itself, so you can tell whether it was asked for or pulled in, and by what. " +
+					"Reads the manifests `audit.deps` reads and resolves or fetches nothing. Where the file carries " +
+					"no graph (go.mod only marks a require direct or indirect) it says so and hands over the " +
+					"package manager's own command with the package filled in.",
 				Inputs: []plugin.Field{
 					{Name: "package", Type: plugin.String, Positional: true, Required: true,
 						Help: "the package to trace, as the lockfile spells it"},
@@ -320,6 +341,12 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"belong to no namespace, so they are not examined at all — reported in the result " +
 					"rather than left implied, since a scoped run that silently skipped the cluster-admin " +
 					"check would read as a clean RBAC posture. RoleBindings are never read; the result says so.",
+				Agent: "Every ClusterRoleBinding to cluster-admin and every Role or ClusterRole rule with a wildcard " +
+					"verb, resource or apiGroup. cluster-admin bound to system:authenticated or " +
+					"system:unauthenticated fails, the default system:masters binding is info, anything else warns. " +
+					"Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3. A `namespace` checks that namespace's " +
+					"Roles only: ClusterRoleBindings and ClusterRoles are not examined, and the result says so. " +
+					"RoleBindings are never read.",
 				Scope:   "namespace",
 				Refresh: kubeAuditRefresh,
 				Inputs:  []plugin.Field{namespaceField(), contextField()},
@@ -343,6 +370,12 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"not flagged, while one relying only on an image's own non-root USER is. A namespace " +
 					"narrows which pods are read, and a clean result says so, never that no pod in the " +
 					"cluster is affected.",
+				Agent: "Every pod cluster-wide against three Pod Security Standards controls: a privileged container " +
+					"(fail), hostNetwork, hostPID or hostIPC (fail), and no assertion of non-root (warn), meaning " +
+					"neither the pod nor any container sets runAsNonRoot or a non-zero runAsUser. Init and " +
+					"ephemeral containers count. The non-root check approximates the securityContext merge: a pod " +
+					"asserting it at pod level is not flagged, one relying on the image's own USER is. A " +
+					"`namespace` narrows which pods are read.",
 				Scope:   "namespace",
 				Refresh: kubeAuditRefresh,
 				Inputs:  []plugin.Field{namespaceField(), contextField()},
@@ -363,6 +396,10 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"\"Resource policies\" section instead.\n\nNarrowed to a namespace it checks that one, " +
 					"including a system namespace if you name it explicitly — the system-namespace filter " +
 					"exists so a cluster-wide sweep stays quiet, not to refuse a direct question.",
+				Agent: "Every non-system namespace checked for at least one ResourceQuota. CIS Kubernetes " +
+					"Benchmark has no numbered control for this, so it cites the NSA/CISA Kubernetes Hardening " +
+					"Guidance's \"Resource policies\". A `namespace` checks that one, a system namespace included " +
+					"when named.",
 				Scope:   "namespace",
 				Refresh: kubeAuditRefresh,
 				Inputs:  []plugin.Field{namespaceField(), contextField()},
@@ -405,6 +442,11 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"could not run, and the detail page lists each with its reason. Narrowed to a " +
 					"namespace it grades that namespace's images and the control plane, and says the " +
 					"nodes were not examined.",
+				Agent: "Grades the control plane, every node's kubelet and each running image's release against " +
+					"endoflife.date as `eol.check` does: past end of life fails, within `warn-days` warns, else " +
+					"passes with the date. Images are matched by name through the catalogue's aliases, the tag read " +
+					"as a release. An untracked image, floating tag or tagless digest is a check that could not " +
+					"run, and `detail` lists each. A `namespace` grades only its images and the control plane.",
 				Scope:   "namespace",
 				Refresh: eolapi.TileRefresh,
 				Inputs:  []plugin.Field{namespaceField(), contextField(), warnDaysField(), imagesField()},

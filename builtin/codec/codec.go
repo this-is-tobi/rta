@@ -95,6 +95,12 @@ func Plugin() plugin.Plugin {
 					"decided by the key and never by the token, and a mismatch is an error naming why. An " +
 					"HMAC signature is checked only against a shared secret the operator keeps in a file, " +
 					"never one an agent passes.",
+				Agent: "Decodes a signed token (JWS), an encrypted one (JWE) or the JSON form of either, and names " +
+					"what a strict parser would refuse. A JWE's content is not read. Unverified, and labeled so, " +
+					"unless `key` is given: a public key, certificate or issuer's key set, which you fetch, since " +
+					"this never fetches a URL. Then the signature is checked by the algorithm the key decides, " +
+					"never the token, and a mismatch is an error. An HMAC signature is checked only against a " +
+					"shared secret the operator keeps in a file.",
 				Safety: plugin.Read, Idempotent: true,
 				// Positional but not Required, because a pipe can supply it —
 				// so without this the dashboard's automatic set (every Read
@@ -143,6 +149,11 @@ func Plugin() plugin.Plugin {
 					"holding private material, which a published set never should, and two keys sharing a " +
 					"kid. A certificate chain in x5c is read and checked against the key beside it. Private " +
 					"members are never printed.",
+				Agent: "Takes one JWK or a whole key set (an issuer's jwks_uri answer) and says what each key is: " +
+					"type and size, whether its point is on its curve, kid, use and alg, and the RFC 7638 thumbprint " +
+					"a DPoP cnf.jkt or a pinned key is compared against. Names a key holding private material, which " +
+					"a published set never should, and two keys sharing a kid. An x5c chain is read and checked " +
+					"against the key beside it. Private members are never printed.",
 				Safety: plugin.Read, Idempotent: true,
 				NoPreview: true,
 				// Secret for the reason codec.jwt's token is: a private JWK is

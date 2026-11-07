@@ -165,7 +165,7 @@ func TestTheInputsTableCarriesWhatTheCardSays(t *testing.T) {
 		"wait":   {"wait", "duration", "", "10s", "1s", "5m", "", "", "", "", "", ""},
 		"token":  {"token", "secret", "", "", "", "", "", "", "", "true", "true", ""},
 		"empty":  {"empty", "string", "", "", "", "", "", "", "", "", "", ""},
-		"detail": {"detail", "bool", "", "false", "", "", "", "", "", "", "", "return the full detailed view instead of the compact summary"},
+		"detail": {"detail", "bool", "", "false", "", "", "", "", "", "", "", "full detailed view"},
 	} {
 		if got := byName[name]; strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 			t.Errorf("input %s = %q, want %q", name, got, want)

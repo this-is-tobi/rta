@@ -46,6 +46,12 @@ func Plugin() plugin.Plugin {
 					"invisibly carry, as a prompt injection hides in a sentence. " +
 					"An escape written out as a log shows it — \\033, \\x1b, \\e, \\u001b or ^[ ahead of [ " +
 					"or ] — is read as the character, and said to be.",
+				Agent: "Walks `input` as a terminal would and names what each printable run or escape sequence " +
+					"does: modes left set (hidden cursor, alternate screen, mouse reporting), terminal requests " +
+					"and OSC sequences, decoded. Also names characters that hide themselves (bidi overrides, " +
+					"zero-width, C1 controls, tag characters), decoded to what they invisibly carry, as a prompt " +
+					"injection hides in a sentence. An escape written out as text (\\033, \\x1b, \\e, ^[) is read as " +
+					"the character, and said to be.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				// input is Positional but not Required — stdin can supply

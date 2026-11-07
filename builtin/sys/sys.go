@@ -60,6 +60,11 @@ func Plugin() plugin.Plugin {
 					"does the status. `numbers` carries the figures behind the lines for a program. " +
 					"With `detail` it expands into a full report: identity, per-core usage, " +
 					"memory and swap breakdown, every filesystem, sensors and top processes.",
+				Agent: "A verdict and one line per subsystem, worst first: `status` (ok, or the worst fact), the " +
+					"fullest filesystem, memory by the kernel's pressure level (used memory where it publishes " +
+					"none), load per core, cpu, swap, then the host's name and uptime. A line that cannot be read " +
+					"says so, and so does the status. `numbers` carries the figures. `detail` expands into " +
+					"identity, per-core usage, memory and swap, every filesystem, sensors and top processes.",
 				Run: runOverview,
 			},
 			{

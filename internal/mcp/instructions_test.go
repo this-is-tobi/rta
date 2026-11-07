@@ -12,15 +12,40 @@ import (
 func TestTheHandshakeCarriesWhatIsTrueOfEveryTool(t *testing.T) {
 	s := connect(t, Options{})
 	got := s.InitializeResult().Instructions
-	for _, want := range []string{`"type"`, `"hint"`, `"input"`, `"total"`, "operator", "grant", "roots"} {
+	for _, want := range []string{`"type"`, `"hint"`, `"input"`, `"total"`, "operator", "grant", "roots", "grant allow <id>"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the instructions never say %s:\n%s", want, got)
 		}
 	}
 	// They are paid for once per session by every client, so they are held to
-	// a size: growing past it means a per-tool fact has been put in the wrong place.
-	if len(got) > 1024 {
-		t.Errorf("the instructions are %d bytes, over the 1024 they are held to", len(got))
+	// a size: growing past it means a per-tool fact has been put in the wrong
+	// place. The figure moved from 1024 when the grant command left every tool
+	// that needs one and came here, once: about 100 bytes against some 6 KB.
+	if len(got) > 1200 {
+		t.Errorf("the instructions are %d bytes, over the 1200 they are held to", len(got))
+	}
+}
+
+// The command to get a grant is the handshake's, once, and a tool says only
+// that it needs one: the same sentence with one word changed stood at the end of
+// every tool that costs a grant.
+func TestNoDescriptionCarriesTheGrantCommand(t *testing.T) {
+	for name, c := range map[string]plugin.Capability{
+		"a write":       {ID: "demo.thing.set", Summary: "set a thing", Safety: plugin.Write, Scope: "key"},
+		"a read":        {ID: "demo.thing.get", Summary: "get a thing", Safety: plugin.Read, NeedsGrant: true},
+		"a destructive": {ID: "demo.thing.rm", Summary: "remove a thing", Safety: plugin.Destructive},
+	} {
+		desc := toolDef(c, Options{}).Description
+		if !strings.HasSuffix(desc, "\n\n"+grantSentence) {
+			t.Errorf("%s does not end on %q:\n%s", name, grantSentence, desc)
+		}
+		if strings.Contains(desc, "grant allow") || strings.Contains(desc, "--profile") {
+			t.Errorf("%s carries the grant command:\n%s", name, desc)
+		}
+	}
+	free := toolDef(plugin.Capability{ID: "demo.thing.get", Summary: "get a thing", Safety: plugin.Read}, Options{}).Description
+	if strings.Contains(free, "grant") {
+		t.Errorf("a free read mentions a grant:\n%s", free)
 	}
 }
 

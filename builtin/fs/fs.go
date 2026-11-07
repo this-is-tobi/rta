@@ -66,6 +66,12 @@ func Plugin() plugin.Plugin {
 					"what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop " +
 					"or wander onto a network mount. A name holding an escape, a newline or another character that " +
 					"does not draw as itself is shown quoted with it written out, never cleaned into another name.",
+				Agent: "Totals every entry under `path` and ranks them. Directories are summed recursively; the " +
+					"share column is of the scanned total, not of the disk. A size is the disk a file takes, as du " +
+					"counts it (a sparse file by what is written, a hard-linked file once); `apparent` counts " +
+					"lengths instead. `detail` adds the ranking, the largest files beneath it and what was " +
+					"skipped. Follows no symlinks and crosses no filesystem boundary. A name holding an escape or " +
+					"a newline is shown quoted, never cleaned into another name.",
 				Inputs: []plugin.Field{
 					pathField("directory to measure"),
 					{Name: "limit", Type: plugin.Int, Config: "usage.limit", Default: 20, Min: 1, Max: 1000, Help: "how many entries to rank"},
@@ -101,6 +107,12 @@ func Plugin() plugin.Plugin {
 					"through the branches they happened in. A name that holds an escape, a newline or another " +
 					"character that does not draw as itself is shown quoted with it written out, never " +
 					"cleaned into another name.",
+				Agent: "The shape of a directory, a few levels at a time, with each entry's size beside it, " +
+					"directories first and then by name. A truncated branch says how many entries it hides, so the " +
+					"tree never claims a directory is smaller than it is. `detail` adds what the walk covered and " +
+					"everything it left out (depth, per-directory limit, hidden entries, mount points, unreadable " +
+					"directories) in one place. A name holding an escape or a newline is shown quoted, never " +
+					"cleaned into another name.",
 				Inputs: []plugin.Field{
 					pathField("directory to show"),
 					{Name: "depth", Type: plugin.Int, Config: "tree.depth", Default: 2, Min: 1, Max: 12, Help: "how many levels to show"},
@@ -124,6 +136,11 @@ func Plugin() plugin.Plugin {
 					"the surrounding whitespace that come with a pasted checksum. It is not a " +
 					"signature check: it says a file is the one somebody described, not that the " +
 					"description came from anybody in particular.",
+				Agent: "Hashes the file at `path` and, given `expect`, says whether it matches. A file that is not " +
+					"the one described is an error, and a checksum that cannot be this algorithm's, by its length, " +
+					"is refused rather than reported as a mismatch. The comparison is case-insensitive and " +
+					"tolerates a \"sha256:\" prefix and surrounding whitespace. It is not a signature check: it " +
+					"says a file is the one somebody described, not who described it.",
 				Inputs: []plugin.Field{
 					{Name: "path", Type: plugin.Path, Positional: true, Required: true, Help: "file to hash"},
 					{Name: "algo", Type: plugin.String, Config: "algo", Default: "sha256", Options: []string{"sha256", "sha512", "sha1", "md5"},
