@@ -518,9 +518,66 @@ func NewRegistry() (*registry.Registry, error) { return all.RegistryWith(PluginC
 //
 // The returned host must be closed when the process exits, or plugin
 // subprocesses outlive the rta that started them.
-func LoadPlugins(ctx context.Context, reg *registry.Registry) (*pluginhost.Host, []error) {
+//
+// args is the command line after the program name, read for the two commands
+// that can do with less (pluginsReached): every other command loads every
+// plugin, as it always has.
+func LoadPlugins(ctx context.Context, reg *registry.Registry, args []string) (*pluginhost.Host, []error) {
 	h := pluginhost.New()
+	switch load, name := pluginsReached(reg, args); {
+	case !load:
+		return h, nil
+	case name != "":
+		return h, h.LoadNamed(ctx, reg, name)
+	}
 	return h, h.LoadInto(ctx, reg)
+}
+
+// pluginsReached is which plugins a command line can need: none, the ones
+// installed under one name, or all of them (load true, name "").
+//
+// Every installed plugin is hashed before every command, which is what binds
+// trust to its bytes, and that is the one cost a plugin adds to a command that
+// never uses it. Two commands are spared it, and nothing else is:
+//
+//   - `rta completion <shell>` writes cobra's script, which asks `rta
+//     __complete` for every word at run time and holds no name of its own.
+//   - `rta __complete <word> ...`, a shell asking how to finish a command line
+//     whose first word is already typed, loads only the plugins installed under
+//     that word. A plugin's namespace is the name it is installed under (LoadInto
+//     refuses any other), so nothing else can answer below it.
+//
+// **Decided from rta's own names, never from what is installed.** The word is
+// narrowed to only when no command or built-in namespace of rta's is called
+// that: a file named rta-plugin-doctor on $PATH must not turn `rta doctor`'s
+// sweep, which reports every plugin that is untrusted or failed, into one that
+// reads only itself. A word still being typed, a flag, or anything unclear
+// loads everything, which is never wrong, only slower. Completion prints no
+// notice either way (the root's PersistentPreRunE), and whatever a narrowed
+// load does run has been hashed in this process.
+func pluginsReached(reg *registry.Registry, args []string) (load bool, name string) {
+	if len(args) == 0 {
+		return true, ""
+	}
+	switch args[0] {
+	case "completion":
+		return false, ""
+	case cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
+		// `__complete pg ""`: pg typed, the next word being asked for. With one
+		// word, it is the one being typed and any namespace may be its end.
+		if len(args) < 3 {
+			return true, ""
+		}
+		word := args[1]
+		if word == "" || strings.HasPrefix(word, "-") || slices.Contains(plugin.ReservedNamespaces(), word) {
+			return true, ""
+		}
+		if _, builtIn := reg.Origin(word); builtIn {
+			return true, ""
+		}
+		return true, word
+	}
+	return true, ""
 }
 
 // ReportLoadProblems writes what LoadPlugins could not load: a coded refusal
