@@ -33,9 +33,9 @@ func TestTheOverviewLeadsWithAVerdictInAWordTheThemeDraws(t *testing.T) {
 		colour theme.StatusKind
 	}{
 		"a store this call opens":     {req(nil, false), "ok", theme.StatusGood},
-		"a store no key is at hand":   {plugin.NewRequest(nil, false, false), "warn — locked", theme.StatusWarn},
+		"a store no key is at hand":   {plugin.NewRequest(nil, false, false), "ok — locked", theme.StatusGood},
 		"a key the store refuses":     {req(map[string]any{"passphrase": "not the passphrase"}, false), "warn — locked", theme.StatusWarn},
-		"the same, as a tile":         {onTheTUI(plugin.NewRequest(nil, false, false)), "warn — locked", theme.StatusWarn},
+		"the same, as a tile":         {onTheTUI(plugin.NewRequest(nil, false, false)), "ok — locked", theme.StatusGood},
 		"a store opened, as a tile":   {onTheTUI(req(nil, false)), "ok", theme.StatusGood},
 		"a store opened, over an MCP": {req(nil, false).WithSurface(plugin.SurfaceMCP), "ok", theme.StatusGood},
 	} {
@@ -124,9 +124,10 @@ func TestOnATileTheLockIsOneWordAndTheSentenceStaysOnThePage(t *testing.T) {
 	if got := pairValue(tile, "unlocks here"); got != "no passphrase available" {
 		t.Errorf("tile: unlocks here = %q", got)
 	}
-	// The count's place says it could not be had, in the words every overview
-	// uses, and not in the sentence that tells the CLI how to supply the key.
-	if got := pairValue(tile, "inventory"); got != "could not be read — no key at hand" || theme.ClassifyStatus(got) != theme.StatusWarn {
+	// The count's place says the store is locked and what opens it here, not in
+	// the words of a failure — a passphrase store at rest is the store doing its
+	// job — and not in the sentence that tells the CLI how to supply the key.
+	if got := pairValue(tile, "inventory"); got != "locked — U unlocks it here" || theme.ClassifyStatus(got) == theme.StatusWarn {
 		t.Errorf("tile: inventory = %q", got)
 	}
 	cli := overviewPairs(t, plugin.NewRequest(nil, false, false).WithSurface(plugin.SurfaceCLI))

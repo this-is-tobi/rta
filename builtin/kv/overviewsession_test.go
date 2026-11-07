@@ -61,7 +61,7 @@ func TestTheTileOfALapsedSessionSaysWhatItNeeds(t *testing.T) {
 	*clock = clock.Add(sessionIdle + time.Second)
 
 	kv := overviewPairs(t, tileOf(t))
-	if got := pairValue(kv, "inventory"); got != "could not be read — no key at hand" {
+	if got := pairValue(kv, "inventory"); got != "locked — U unlocks it here" {
 		t.Errorf("inventory = %q", got)
 	}
 	if got := pairValue(kv, "unlocks here"); strings.HasPrefix(got, "yes") {
