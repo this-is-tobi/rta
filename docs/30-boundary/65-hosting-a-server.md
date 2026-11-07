@@ -67,6 +67,8 @@ rta: remote transport hides 33 capabilities that describe this machine: audit.de
 
 Everything else in `net` — `ping`, `dns`, `trace`, `probe`, `send`, `port` — stays reachable, since those describe a caller-named target rather than this host. A result still reflects the vantage point of wherever rta is actually running, which is worth knowing rather than assuming.
 
+`--area` leaves tools out of `tools/list` the same way, by the operator's choice rather than the transport's: a hosted server for one team can offer `--area kube` and nothing else, and every area it names that this transport hides is said at startup as offering nothing. It only narrows, so naming `sys` over HTTP lists no `sys` tool. [Offering fewer tools](./20-mcp.md#offering-fewer-tools) has the rest.
+
 ## What is still true, and what stops being true
 
 The credentials-move trade [the container recipe](./67-containers-and-images.md#in-a-container-for-a-hardened-server) rests on — "the caller's own kubeconfig, the caller's own [RBAC](../95-reference/10-glossary.md#acronyms)" — needs restating here rather than assumed. A container on your own machine still has *your* kubeconfig mounted into it; a real network call has no caller-side credential at all, only whatever the server's own ambient identity is. Provision that identity as deliberately as any other production credential.

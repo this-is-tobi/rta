@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -51,8 +52,63 @@ func newMCPCommand(reg *registry.Registry, version string, opts *globalOpts) *co
 		RunE:  groupRunE,
 	}
 	root.AddCommand(newMCPServeCommand(reg, version))
-	root.AddCommand(newMCPInstallCommand(opts))
+	root.AddCommand(newMCPInstallCommand(reg, opts))
 	return root
+}
+
+// normalizeAreas is the areas a command line named as a server and a
+// registration both hold them: trimmed, lowercase, each once and sorted. Sorted
+// so that the same areas typed in another order are one registration and not a
+// change (`rta mcp install` compares the line it would write with the one that
+// is there), and so that the start banner and the receipt read alike.
+//
+// A blank entry stays, as an area nothing owns: `--area "$AREAS"` with the
+// variable unset is a mistake a server says it noticed (Options.Problems) and
+// an install refuses, and dropping it would serve every area to an operator who
+// meant to limit them.
+func normalizeAreas(areas []string) []string {
+	if len(areas) == 0 {
+		return nil
+	}
+	out := make([]string, len(areas))
+	for i, a := range areas {
+		out[i] = strings.ToLower(strings.TrimSpace(a))
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// emptyAreaFlag refuses an --area that was given and named nothing. pflag reads
+// `--area ""` as a list of no values, which is no limit at all: the variable in
+// `--area "$AREAS"` that happens to be unset would register, or start, a server
+// that lists every area, the reverse of what the flag was typed to do. An
+// operator who wants every area leaves the flag out.
+func emptyAreaFlag(cmd *cobra.Command, areas []string) *view.Error {
+	if cmd.Flags().Changed("area") && len(areas) == 0 {
+		return serveUsage("--area names no area",
+			"an empty value would list every area, the reverse of limiting them; leave --area out to list them all")
+	}
+	return nil
+}
+
+// completeAreas offers the areas a server can list tools from, each with what
+// the plugin that owns it is for. A flag that is repeated is not offered what
+// it was already given.
+func completeAreas(reg *registry.Registry) cobra.CompletionFunc {
+	return func(cmd *cobra.Command, _ []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		summaries := map[string]string{}
+		for _, p := range reg.Plugins() {
+			summaries[p.Name] = p.Summary
+		}
+		given, _ := cmd.Flags().GetStringSlice("area")
+		var out []cobra.Completion
+		for _, area := range mcp.Areas(reg) {
+			if !slices.Contains(given, area) {
+				out = append(out, cobra.CompletionWithDesc(area, summaries[area]))
+			}
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
+	}
 }
 
 // serverReady is what readiness asks: that the config reads, and that the
@@ -253,6 +309,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		maxResultMiB  int
 		agentName     string
 		roots         []string
+		areas         []string
 		httpAddr      string
 		tokenFile     string
 		oidcIssuer    string
@@ -284,6 +341,11 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			" The gate governs path arguments only: a capability that opens a fixed" +
 			" file of its own — `net hosts list` and /etc/hosts — is unaffected," +
 			" because that path is never an argument for anyone to send.\n\n" +
+			"Areas: --area <name> lists only the tools of the named areas — the first word of a" +
+			" tool's name, kv for kv_get — and the handshake names only those. It is repeatable," +
+			" and it only narrows: a tool left out is not on this server, so a call naming it is" +
+			" an unknown tool, and the gate, the locks and consent are what they were." +
+			" `rta mcp install <client> --area <name>` registers it.\n\n" +
 			"Locality gate, --http only: capabilities that describe the machine" +
 			" this runs on (" + localityGated(reg) + ") are absent from tools/list — a remote caller is" +
 			" never this machine. --http also requires --token-file or --oidc-issuer" +
@@ -355,6 +417,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				return view.Errorf("core.mcp.root", "%v", err).
 					WithHint("a --root is resolved through every symlink in it, and this one could not be")
 			}
+			if verr := emptyAreaFlag(cmd, areas); verr != nil {
+				return verr
+			}
+			areas = normalizeAreas(areas)
 			// The operator's connections, for the tool schema. Loaded through
 			// config.Load — the same file every other surface reads — so a
 			// profile an agent may name is one the operator wrote. The schema
@@ -675,6 +741,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				Untrusted: untrustedNames(),
 				Paths:     guard,
 				Remote:    httpAddr != "",
+				Areas:     areas,
 				// A signal cancels the calls in flight, which the SDK leaves
 				// running (Options.Shutdown).
 				Shutdown: cmd.Context(),
@@ -721,6 +788,13 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				strings.Join(guard.Roots(), ", "))
 			for _, line := range unreadableRoots(guard.Roots()) {
 				fmt.Fprintln(cmd.ErrOrStderr(), "rta:", line)
+			}
+			// What --area left a client with, counted from the same list the
+			// server registered its tools from, so that the number said here is
+			// the number the client is sent.
+			if len(areas) > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "areas offered: %s (%s); every other area is absent from tools/list\n",
+					strings.Join(areas, ", "), format.Count(len(opts.Offered(reg)), "tool", "tools"))
 			}
 			// The record and the session, named at the start: a server
 			// writing to one data directory while the TUI reads another is
@@ -809,6 +883,8 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		"name this agent — required; grants are issued to it and `rta lock add` freezes it")
 	cmd.Flags().StringSliceVar(&roots, "root", nil,
 		"directory a caller may name in a path argument (repeatable; default: the working directory)")
+	cmd.Flags().StringSliceVar(&areas, "area", nil,
+		"list only the tools of this area, the first word of a tool's name (repeatable; default: every area)")
 	cmd.Flags().StringVar(&httpAddr, "http", "",
 		"serve over HTTP instead of stdio, listening on this address (e.g. 127.0.0.1:8443) — "+
 			"TLS and network exposure are the operator's job, not this flag's")
@@ -853,6 +929,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveFilterDirs
 		})
+	completeFlag(cmd, "area", completeAreas(reg))
 	return cmd
 }
 

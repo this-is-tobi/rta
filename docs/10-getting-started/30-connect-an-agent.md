@@ -78,14 +78,14 @@ The path registered is the one you ran rta by when it is on `PATH` and is the sa
 
 ### Server options belong in the registration
 
-The client launches `rta mcp serve`, so a server option is only set if it is in the line the client was given. `rta mcp install` takes the ones that belong there. [Live consent](../30-boundary/35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked) is on unless you pass `--no-consent`: a call that needs a grant waits for your answer instead of being refused, `--consent-notify` rings this desktop when one does, and `--consent-wait` bounds how long it waits. The rest are off unless you pass them: `--root` (repeatable) for [the path gate](../95-reference/20-the-path-gate.md), and `--max-result` for [the ceiling on an answer](../30-boundary/20-mcp.md#how-large-a-result-may-be).
+The client launches `rta mcp serve`, so a server option is only set if it is in the line the client was given. `rta mcp install` takes the ones that belong there. [Live consent](../30-boundary/35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked) is on unless you pass `--no-consent`: a call that needs a grant waits for your answer instead of being refused, `--consent-notify` rings this desktop when one does, and `--consent-wait` bounds how long it waits. The rest are off unless you pass them: `--root` (repeatable) for [the path gate](../95-reference/20-the-path-gate.md), `--area` (repeatable) to [show the agent fewer tools](../30-boundary/20-mcp.md#offering-fewer-tools), and `--max-result` for [the ceiling on an answer](../30-boundary/20-mcp.md#how-large-a-result-may-be).
 
 ```bash
-rta mcp install claude --consent-notify --root ~/projects
-# registers: rta mcp serve --as claude --consent --consent-notify --root /Users/you/projects
+rta mcp install claude --consent-notify --root ~/projects --area git --area note
+# registers: rta mcp serve --as claude --consent --consent-notify --root /Users/you/projects --area git --area note
 ```
 
-The options show under `ran`, `--dry-run` and `--show`. A `--root` is registered as the absolute path it names and has to exist, and naming any replaces the default root, the directory the client starts the server in. `--consent-notify` and `--consent-wait` beside `--no-consent` are refused, since they would configure nothing.
+The options show under `ran`, `--dry-run` and `--show`. A `--root` is registered as the absolute path it names and has to exist, and naming any replaces the default root, the directory the client starts the server in. An `--area` has to be one rta has a tool in, and is registered lowercase, sorted and once. `--consent-notify` and `--consent-wait` beside `--no-consent` are refused, since they would configure nothing.
 
 ### Running it again
 

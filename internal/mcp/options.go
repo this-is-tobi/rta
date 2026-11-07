@@ -5,11 +5,14 @@ import (
 	"time"
 
 	"fmt"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/lockdown"
+	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/profile"
@@ -235,6 +238,35 @@ type Options struct {
 	// never the machine). False for stdio, which is every server this field
 	// existed before and changes nothing for.
 	Remote bool
+	// Areas limits the tools this server lists to those of the named areas, an
+	// area being the namespace a tool is named for (kv for kv_get, kube for
+	// kube_pod_list). Empty lists every area, which is every server this field
+	// existed before and changes nothing for.
+	//
+	// **An allowlist, and it only narrows.** It sits in front of registration
+	// beside HumanOnly and the locality gate, as a third reason a capability is
+	// not a tool, and it adds nothing the other two withheld. Everything else
+	// follows from the tool not existing, not from a check made for it: the
+	// handshake names the areas that are offered and no others, so a model is
+	// not left to guess at a spelling for a tool that is absent; a call naming
+	// one is an unknown tool, written to the record and answered with a
+	// suggestion drawn from the tools offered and from nothing else; and the
+	// gate, the locks, the roles and consent run per call as before, never
+	// seeing a tool they were not asked about. A grant on an area left out is
+	// inert, not revoked: it lapses with its own clock and covers the area
+	// again if the filter is lifted.
+	//
+	// An allowlist and not a list of what to leave out, because a plugin
+	// installed tomorrow is offered by a denylist without anybody having
+	// decided it should be, and the point of the field is that the operator
+	// decided what a client is shown. It is the operator's, typed where the
+	// client is registered (rta mcp serve --area) like Paths is, and no agent
+	// argument widens it.
+	//
+	// Names as plugin.Namespace spells them, compared without regard to case.
+	// One that no tool of this registry belongs to is Problems' to say, not a
+	// reason to stop: the server serves the rest.
+	Areas []string
 	// MaxResult is the most a result may be, in bytes, before it is withheld
 	// as core.result.toolarge. Zero is plugin.DefaultResultLimit: a result is
 	// always bounded, since what an unbounded one costs is not the caller's to
@@ -431,8 +463,98 @@ func (o Options) Problems(reg *registry.Registry) []string {
 			"plugin %s is installed and was not run, so none of its capabilities are exposed"+
 				" — `rta plugin trust %s` approves it, and the next server start loads it", name, name))
 	}
+	out = append(out, o.areaProblems(reg)...)
 
 	return out
+}
+
+// areaProblems says, of each area the operator limited this server to, that it
+// offers no tool: the area is not one this registry has, or every tool of it
+// is for the person at the terminal, or the locality gate hides them all.
+//
+// Said and not refused, for the reason Problems is. A registration is typed
+// once and read by a server nobody is watching, and a plugin installed on
+// another machine is an ordinary state for a shared client config; a server
+// that stopped on an area it could not find would be one the client reports
+// as broken, where this one serves what it has and says on the one stream the
+// operator reads why the list is shorter than they asked for. The agent is no
+// better placed: a list that lacks the area it was told about reads as a
+// plugin that was never installed.
+//
+// An area an untrusted artifact would have supplied is left to the line that
+// already says so (Untrusted), which has the remedy.
+func (o Options) areaProblems(reg *registry.Registry) []string {
+	var out []string
+	known := Areas(reg)
+	for _, area := range o.Areas {
+		ns := strings.ToLower(area)
+		var owned, human, hidden int
+		for _, c := range reg.Capabilities() {
+			if plugin.Namespace(c.ID) != ns {
+				continue
+			}
+			owned++
+			switch {
+			case c.HumanOnly:
+				human++
+			case !o.remoteExposed(c):
+				hidden++
+			}
+		}
+		name := plugin.ListedName(area)
+		switch {
+		case owned == 0 && slices.Contains(o.Untrusted, ns):
+		case owned == 0:
+			line := fmt.Sprintf("--area %s names no area this server has, so it offers nothing for it", name)
+			if guess := near.Word(ns, known); guess != "" {
+				line += " — did you mean " + guess + "?"
+			} else if len(known) > 0 {
+				line += "; the areas are " + strings.Join(known, ", ")
+			}
+			out = append(out, line)
+		case human == owned:
+			out = append(out, fmt.Sprintf("--area %s is never a tool: every capability in it answers to the person at the terminal", name))
+		case human+hidden == owned:
+			out = append(out, fmt.Sprintf("--area %s offers nothing over HTTP: what it describes is the machine this server runs on, "+
+				"which a remote caller is never", name))
+		}
+	}
+	return out
+}
+
+// Areas are the areas a server over reg can offer a tool from, sorted: the
+// namespaces with a capability that is not for the person at the terminal
+// alone. What --area names, what its completion lists and what an install
+// refuses against, from the one definition of a tool that Options.exposed is.
+func Areas(reg *registry.Registry) []string {
+	if reg == nil {
+		return nil
+	}
+	var offered []plugin.Capability
+	for _, c := range reg.Capabilities() {
+		if !c.HumanOnly {
+			offered = append(offered, c)
+		}
+	}
+	return offeredAreas(offered)
+}
+
+// Offered is the capabilities this server lists as tools, in the registry's
+// order: the one place the three reasons a capability is not a tool meet
+// (exposed, remoteExposed, Areas), asked by the server that registers them and
+// by the banner that counts them, so that the number the operator is told is the
+// number the client is sent.
+func (o Options) Offered(reg *registry.Registry) []plugin.Capability {
+	if reg == nil {
+		return nil
+	}
+	offered := make([]plugin.Capability, 0, len(reg.Capabilities()))
+	for _, c := range reg.Capabilities() {
+		if o.exposed(c) && o.remoteExposed(c) {
+			offered = append(offered, c)
+		}
+	}
+	return offered
 }
 
 func (o Options) knows(ns string) bool {
@@ -442,13 +564,25 @@ func (o Options) knows(ns string) bool {
 
 // exposed reports whether a capability is a tool on this server at all.
 //
-// One question now, where there used to be two. A capability for the person
-// at the terminal is never a tool; everything else is, and what it costs to
-// *call* is a grant (internal/grant.Required) rather than a flag typed once
-// into a client's config file. The safety class still decides that price —
-// a read is free, a write is not — it just no longer decides visibility.
+// A capability for the person at the terminal is never a tool, and one in an
+// area the operator left out (Areas) is not on this server; everything else
+// is, and what it costs to *call* is a grant (internal/grant.Required) rather
+// than a flag typed once into a client's config file. The safety class still
+// decides that price — a read is free, a write is not — it just no longer
+// decides visibility, and neither does the area: leaving one out takes tools
+// off the list and gives no call a way past a gate.
 func (o Options) exposed(c plugin.Capability) bool {
-	return !c.HumanOnly
+	return !c.HumanOnly && o.inAreas(c)
+}
+
+// inAreas reports whether c belongs to an area this server was limited to, or
+// to any area when it was limited to none.
+func (o Options) inAreas(c plugin.Capability) bool {
+	if len(o.Areas) == 0 {
+		return true
+	}
+	ns := plugin.Namespace(c.ID)
+	return slices.ContainsFunc(o.Areas, func(area string) bool { return strings.EqualFold(area, ns) })
 }
 
 // artifact is the digest of the plugin behind a namespace, empty for a
@@ -472,7 +606,7 @@ func (o Options) artifact(ns string) string {
 // Registration-time, like exposed, and for the same reason: a capability
 // that fails this is absent from tools/list, not present-and-refusing, so an
 // agent behind a remote instance never sees sys_overview or git_status as
-// something to try. There is no allowlist to widen this with — an operator
+// something to try. Nothing widens this — Areas only narrows — and an operator
 // who wants a HostSpecific capability from the box rta runs on has SSH.
 func (o Options) remoteExposed(c plugin.Capability) bool {
 	return !o.Remote || !c.HostSpecific
@@ -486,7 +620,9 @@ func (o Options) remoteExposed(c plugin.Capability) bool {
 // Scoped to what would otherwise be visible — a HostSpecific capability the
 // safety gate was already refusing (an unallowed destructive one, say) is
 // not this gate's doing, and naming it here would double-count a different
-// refusal as if Remote had caused it.
+// refusal as if Remote had caused it. The same goes for an area the operator
+// left out: `--area kube` over HTTP names no `sys` capability as hidden by
+// locality, since the list never held it.
 func (o Options) RemoteBlocked(reg *registry.Registry) []string {
 	if !o.Remote || reg == nil {
 		return nil

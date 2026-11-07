@@ -29,13 +29,32 @@ rta grant allow note.rm --agent claude --ttl 5m # one destructive capability, fo
 
 That is stronger than a standing allowlist, and it is worth being plain about why. A flag typed into a client's config file months earlier would reach a write for a whole server's lifetime, with nothing per call and no expiry, and a standing allowlist is precisely what consent should not be. A write costs a grant a person issued, which [the guard](./35-roles-consent-and-the-guard.md#the-guard-a-passphrase-in-front-of-issuance) can price, a [team ceiling](./50-team-policy.md) can cap, [the record](./40-audit-trail.md) shows being spent, and the clock takes back.
 
-An agent can *see* every capability that is not [reserved for you](#never-a-tool), and call none that changes anything. That is deliberate: a tool it can see and is refused produces a refusal naming the exact command you would run, and a tool that is simply absent produces a model guessing at a different spelling.
+An agent can *see* every capability that is not [reserved for you](#never-a-tool) or [left out by area](#offering-fewer-tools), and call none that changes anything. That is deliberate: a tool it can see and is refused produces a refusal naming the exact command you would run, and a tool that is simply absent produces a model guessing at a different spelling.
 
 A grant on a plugin's capability binds to that plugin's **artifact**, not to its name: it records the digest of the binary it was issued against. Replace the binary behind a plugin and the grants standing on it stop covering anything. Built-ins have no separate artifact to pin — the rta binary you chose to run is the artifact — so their grants carry no digest. `rta grant list --detail` shows the build each grant is bound to, and marks a grant whose plugin has been replaced since it was issued, with the fix.
 
 ### Never a tool
 
 A few capabilities are not on offer at any price. `grant`, `agent`, `lock`, `operator` and `pkg` — every verb in each — plus `audit clients`, `audit doctor`, `kv copy`, `kv edit` and the `keys` verbs that move key material answer to the person at the terminal and to nobody else. They are absent from `tools/list` on every transport, whatever the flags: an agent that could issue itself a grant, lift its own lock, or read the [roster](../95-reference/10-glossary.md#terms) of what your other agents may do would make the rest of this chapter theatre. A call naming one anyway is answered as an unknown tool and written to [the record](./40-audit-trail.md) like any other probe. A name one slip from a tool on offer in the same area, a letter added, dropped, changed or swapped, the capability's own spelling with dots or hyphens (`kv.get`), or the start of the only tool it could be, is answered with that tool's name (`unknown tool "kv_gett" — did you mean kv_get?`); a name two edits from a tool is two tools and is not guessed at. The nearest is drawn from the names on offer and nothing else, so a name that is never a tool is answered exactly as one that does not exist at all is. `rta explain` lists them under *never a tool*.
+
+### Offering fewer tools
+
+Every session that lists the tools reads all of them, whether or not it ever calls one: the built-in catalogue is some 80 kilobytes of it, and each plugin adds its own. To have an agent work in one corner of it, git and notes, or only the cluster, name the areas, which are the first word of a tool's name (`kv` for `kv_get`, `kube` for `kube_pod_list`). The client is then shown those and no others:
+
+```bash
+rta mcp install claude --area git --area note --area fs
+rta mcp serve --as ci --area kube --area vault
+```
+
+`--area` is repeatable and takes a comma-separated list too. It is on `rta mcp install`, where it is written into the registration beside `--root` because the client is what launches the server, and on `rta mcp serve`. With none, nothing changes and every area is offered. The same areas typed in another order, or twice, are one registration.
+
+It is an allowlist and it only narrows. A plugin installed tomorrow is not offered until its area is named, which a list of what to leave out would have done without anybody deciding it, and an area never brings back a tool that [only you](#never-a-tool) may use or that the transport hides. Nothing about the gate changes. A tool outside the areas is not on the server, so a call naming it is an unknown tool, written to [the record](./40-audit-trail.md) like any other probe and answered with a suggestion drawn from the tools that are listed and from none that are not. The [handshake](#what-an-agent-is-told) names only the areas that are offered, so an agent is not left guessing at the spelling of a tool it was never sent. A grant on an area that is left out is inert, not revoked: it covers nothing while the area is out, expires on its own clock and covers the area again if the flag is lifted. Locks, roles and consent are what they were, and so is the [operator channel](./66-operators.md). It is not a role or a ceiling either, since it does not look at who is calling.
+
+`rta mcp install` refuses an area that has no tool to list, with the areas there are and the nearest to what was typed, and registers nothing: a registration is typed once and read months later by a server nobody is watching. `rta mcp serve` says it on standard error and serves the rest, as it does for a plugin that is installed and not trusted, since a registration shared between machines may name a plugin one of them lacks. Either refuses an empty `--area ""`, which is what an unset variable leaves behind and would otherwise read as no limit. A server given areas says what that came to as it starts:
+
+```
+areas offered: fs, git, note (22 tools); every other area is absent from tools/list
+```
 
 ## Paths and roots
 

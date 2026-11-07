@@ -21,8 +21,11 @@ import (
 	"github.com/this-is-tobi/rta/builtin/audit"
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/mcp"
+	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/notify"
 	"github.com/this-is-tobi/rta/internal/pathguard"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -114,7 +117,8 @@ type mcpClient struct {
 //
 // Consent is on for a registration unless --no-consent says otherwise, and the
 // rest are off. Nothing here widens what a registered agent can reach — consent
-// asks where a refusal was, and a root narrows or moves a gate that is on.
+// asks where a refusal was, a root narrows or moves a gate that is on, and an
+// area takes tools off the list the client is sent.
 //
 // Consent on, for a server `rta mcp install` registers and not for one
 // `rta mcp serve` starts: a registration is a stdio server on the machine of
@@ -132,6 +136,7 @@ type serveOptions struct {
 	maxResultMiB  int
 	maxResultSet  bool
 	roots         []string
+	areas         []string
 }
 
 // serveArgs is the argv every client ends up launching. `--as` is not
@@ -155,7 +160,22 @@ func serveArgs(as string, o serveOptions) []string {
 	for _, r := range o.roots {
 		args = append(args, "--root", r)
 	}
+	for _, a := range o.areas {
+		args = append(args, "--area", a)
+	}
 	return args
+}
+
+// smokeTest is the first call to suggest once a client has been restarted: the
+// host overview, which every default registration offers, and, for one limited
+// to areas that leave it out, no tool in particular, since naming one the server
+// does not list would send the person to a failure that is the registration
+// working.
+func (o serveOptions) smokeTest() string {
+	if len(o.areas) > 0 && !slices.Contains(o.areas, "sys") {
+		return "ask it which rta tools it has"
+	}
+	return "ask it to call sys_overview"
 }
 
 // durationFlag spells a wait the way a person types one, which pflag reads
@@ -229,6 +249,39 @@ func (o serveOptions) withRoots(roots []string) (serveOptions, *view.Error) {
 	return o, nil
 }
 
+// withAreas holds the areas a registration is limited to, each lowercase, once
+// and sorted, and refuses one this rta has no tool in.
+//
+// Strict here and lenient at `rta mcp serve`, on purpose. A typo typed now has a
+// terminal to say so and a name to suggest, and the same typo in a registration
+// leaves an agent a short list and a stderr line that only the client's log
+// shows. Against this machine's registry, so an area a plugin supplies is one
+// the plugin has to be installed for: the server serving the line on another
+// machine may lack it, and says so at its start (mcp.Options.Problems).
+func (o serveOptions) withAreas(reg *registry.Registry, areas []string) (serveOptions, *view.Error) {
+	o.areas = normalizeAreas(areas)
+	known := mcp.Areas(reg)
+	var unknown, listed []string
+	for _, a := range o.areas {
+		if !slices.Contains(known, a) {
+			unknown = append(unknown, a)
+			listed = append(listed, plugin.ListedName(a))
+		}
+	}
+	if len(unknown) == 0 {
+		return o, nil
+	}
+	verr := view.Errorf("core.mcp.area", "--area %s %s", strings.Join(listed, ", "),
+		format.Plural(len(unknown), "is not an area rta has a tool in", "are not areas rta has a tool in"))
+	if len(unknown) == 1 {
+		if guess := near.Word(unknown[0], known); guess != "" {
+			return o, verr.WithHint("did you mean " + guess + "? the areas are " + strings.Join(known, ", "))
+		}
+	}
+	return o, verr.WithHint("the areas are " + strings.Join(known, ", ") +
+		"; an area is the first word of a tool's name, kv for kv_get")
+}
+
 // pairs describes the options that are set, for a receipt: what each one
 // does, in the words the operator used to turn it on.
 func (o serveOptions) pairs() []view.Pair {
@@ -251,6 +304,10 @@ func (o serveOptions) pairs() []view.Pair {
 	if len(o.roots) > 0 {
 		out = append(out, view.Pair{Key: "roots", Value: strings.Join(o.roots, ", ") +
 			" — a path argument outside these is refused, and the directory the client starts in is not one unless it is listed"})
+	}
+	if len(o.areas) > 0 {
+		out = append(out, view.Pair{Key: "areas", Value: strings.Join(o.areas, ", ") +
+			" — only the tools of these are listed; a tool of any other area is absent, and a call naming one is an unknown tool"})
 	}
 	if o.maxResultSet {
 		out = append(out, view.Pair{Key: "max result", Value: strconv.Itoa(o.maxResultMiB) + " MiB — a larger answer is withheld"})
@@ -484,13 +541,14 @@ func clientChoices(seen []clientSeen) string {
 	return strings.Join(append(here, elsewhere...), ", ")
 }
 
-func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
+func newMCPInstallCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	var (
 		as            string
 		show, global  bool
 		consentWait   time.Duration
 		maxResultMiB  int
 		roots         []string
+		areas         []string
 		consentOn     bool
 		noConsent     bool
 		consentNotify bool
@@ -524,7 +582,9 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 			"is what launches the server: it asks you instead of refusing a call that " +
 			"needs a grant unless --no-consent is given, and --consent-notify rings this " +
 			"desktop when it does; --root widens the path gate, --max-result bounds an " +
-			"answer.",
+			"answer, and --area (repeatable) lists only the tools of the areas it names " +
+			"— the first word of a tool's name, kv for kv_get — which only narrows what " +
+			"the agent is shown.",
 		// ExactArgs alone. OnlyValidArgs refused a client it did not know in
 		// cobra's words — `invalid argument "nope" for "rta mcp install"` — one
 		// step ahead of the check in RunE that names every client rta does
@@ -574,6 +634,12 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 			if verr != nil {
 				return verr
 			}
+			if verr = emptyAreaFlag(cmd, areas); verr != nil {
+				return verr
+			}
+			if serve, verr = serve.withAreas(reg, areas); verr != nil {
+				return verr
+			}
 
 			name := strings.TrimSpace(as)
 			if name == "" {
@@ -617,10 +683,13 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 	cmd.Flags().StringSliceVar(&roots, "root", nil,
 		"directory a caller may name in a path argument (repeatable); naming any replaces the default, "+
 			"the directory the client starts the server in")
+	cmd.Flags().StringSliceVar(&areas, "area", nil,
+		"list only the tools of this area, the first word of a tool's name (repeatable; default: every area)")
 	completeFlag(cmd, "root",
 		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveFilterDirs
 		})
+	completeFlag(cmd, "area", completeAreas(reg))
 	return cmd
 }
 
@@ -1105,7 +1174,7 @@ func (r installReceipt) nextAndReach() (next, reach string) {
 		if c.name == "claude" && !r.req.global {
 			where = " in this directory"
 		}
-		next = "restart " + c.label + where + ", ask it to call sys_overview, and `rta agent overview` shows it connected"
+		next = "restart " + c.label + where + ", " + r.req.serve.smokeTest() + ", and `rta agent overview` shows it connected"
 	}
 	reach = "only the reads that aim nowhere it chooses until you say otherwise — " +
 		"`rta grant allow <capability> --agent " + as + "` lets one more thing through, and it expires on its own"
@@ -1195,5 +1264,5 @@ func describeClient(c mcpClient, self string, serve []string, as string, global 
 				"` in it names this agent: grants are issued to that name, so one issued for another " +
 				"client does not reach it, and `rta lock add " + as + "` freezes it"},
 		view.Pair{Key: "then",
-			Value: "restart " + c.label + ", ask it to call sys_overview, and `rta agent overview` shows it connected"})}
+			Value: "restart " + c.label + ", " + o.smokeTest() + ", and `rta agent overview` shows it connected"})}
 }
