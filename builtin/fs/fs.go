@@ -41,8 +41,11 @@ func Plugin() plugin.Plugin {
 		Summary: "Filesystem answers: what is using space, what is here, what is this file",
 		Capabilities: []plugin.Capability{
 			{
-				ID:           "fs.usage",
-				Summary:      "Show what is using space under a path, biggest first",
+				ID:      "fs.usage",
+				Summary: "Show what is using space under a path, biggest first",
+				// The word a person uses for the path: "what is taking up space
+				// in this folder" found the kv tools, whose folders are keys'.
+				Keywords:     []string{"folder", "directory"},
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,

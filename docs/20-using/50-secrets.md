@@ -83,6 +83,7 @@ rta kv list
 rta kv list db/             # only the keys in one folder
 rta kv show db-password     # everything about it except the value
 rta kv tree                 # the store by the folders its names share
+rta kv tree db/             # one folder of it
 rta kv recipients           # which public keys can decrypt this store
 ```
 
