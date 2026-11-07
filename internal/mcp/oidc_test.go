@@ -8,7 +8,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,23 +30,71 @@ const (
 // signature verification, exactly the path a production --oidc-issuer takes.
 func fakeOIDCProvider(t *testing.T) (issuer string, key *rsa.PrivateKey, sign func(jwt.Claims) string) {
 	t.Helper()
+	idp := newFakeIdP(t)
+	return idp.issuer, idp.key, idp.sign
+}
+
+// fakeCode is the one authorization code fakeIdP's token endpoint redeems.
+const fakeCode = "fake-authorization-code"
+
+// fakeIdP is fakeOIDCProvider with the rest of what an OAuth client asks of
+// an authorization server: PKCE advertised, which the SDK's client refuses to
+// proceed without, and a token endpoint. That endpoint redeems fakeCode for
+// a signed access token naming testSubject, with the resource the client
+// asked for (RFC 8707) as its audience, and records that resource. The
+// authorization endpoint is never served: the test's code fetcher stands in
+// for the browser, and for the person at it.
+type fakeIdP struct {
+	issuer string
+	key    *rsa.PrivateKey
+	sign   func(jwt.Claims) string
+
+	mu        sync.Mutex
+	resources []string
+}
+
+// requestedResources is the resource parameter of every token request so far.
+func (p *fakeIdP) requestedResources() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.resources)
+}
+
+func newFakeIdP(t *testing.T) *fakeIdP {
+	t.Helper()
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: priv},
+		(&jose.SignerOptions{}).WithHeader("kid", "test-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	idp := &fakeIdP{key: priv}
+	// Not t.Fatal: the token endpoint signs on the server's goroutine.
+	mint := func(claims jwt.Claims) (string, error) { return jwt.Signed(signer).Claims(claims).Serialize() }
+	idp.sign = func(claims jwt.Claims) string {
+		t.Helper()
+		tok, err := mint(claims)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
 
-	var tsURL string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"issuer":                                tsURL,
-			"jwks_uri":                              tsURL + "/jwks",
-			"authorization_endpoint":                tsURL + "/authorize",
-			"token_endpoint":                        tsURL + "/token",
+			"issuer":                                idp.issuer,
+			"jwks_uri":                              idp.issuer + "/jwks",
+			"authorization_endpoint":                idp.issuer + "/authorize",
+			"token_endpoint":                        idp.issuer + "/token",
 			"id_token_signing_alg_values_supported": []string{"RS256"},
 			"response_types_supported":              []string{"code"},
 			"subject_types_supported":               []string{"public"},
+			"code_challenge_methods_supported":      []string{"S256"},
 		})
 	})
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, _ *http.Request) {
@@ -52,24 +102,37 @@ func fakeOIDCProvider(t *testing.T) (issuer string, key *rsa.PrivateKey, sign fu
 		jwk := jose.JSONWebKey{Key: &priv.PublicKey, KeyID: "test-key", Algorithm: "RS256", Use: "sig"}
 		_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{jwk}})
 	})
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil || r.PostForm.Get("grant_type") != "authorization_code" ||
+			r.PostForm.Get("code") != fakeCode || r.PostForm.Get("code_verifier") == "" {
+			http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
+			return
+		}
+		resource := r.PostForm.Get("resource")
+		idp.mu.Lock()
+		idp.resources = append(idp.resources, resource)
+		idp.mu.Unlock()
+		now := time.Now()
+		tok, err := mint(jwt.Claims{
+			Issuer:   idp.issuer,
+			Subject:  testSubject,
+			Audience: jwt.Audience{resource},
+			IssuedAt: jwt.NewNumericDate(now),
+			Expiry:   jwt.NewNumericDate(now.Add(time.Hour)),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": tok, "token_type": "Bearer", "expires_in": 3600,
+		})
+	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
-	tsURL = ts.URL
-
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: priv},
-		(&jose.SignerOptions{}).WithHeader("kid", "test-key"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sign = func(claims jwt.Claims) string {
-		t.Helper()
-		tok, err := jwt.Signed(signer).Claims(claims).Serialize()
-		if err != nil {
-			t.Fatal(err)
-		}
-		return tok
-	}
-	return tsURL, priv, sign
+	idp.issuer = ts.URL
+	return idp
 }
 
 func validClaims(issuer string) jwt.Claims {

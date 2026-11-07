@@ -17,10 +17,12 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The HTTP transport: a caller proves who it is over the wire, instead of
@@ -51,21 +53,46 @@ type RemoteOptions struct {
 	// the MCP handler and its bearer refusal, indistinguishable from a server
 	// that never heard of operators.
 	Operator http.Handler
+	// Resource, when non-nil, makes this listener an OAuth protected resource
+	// a client can discover: its metadata (NewProtectedResource) is served at
+	// the one well-known path RFC 9728 gives it, outside the bearer wall,
+	// since a client reads it before it holds a token, and every 401 the wall
+	// answers names that path. nil, as on a server with static tokens alone,
+	// means no document and a 401 with no challenge, exactly as before there
+	// was one. Cross-origin protection wraps it like everything else here.
+	Resource *ProtectedResource
 	// ObserveListener and ObserveHandler, when both are set, run the probes
 	// and the counters (NewObserveHandler) on a second address for the
 	// lifetime of this Serve call.
 	//
-	// A second listener rather than more paths here, because the sentence
-	// above — bearer authentication wraps the whole protocol handler, and
-	// neither check is optional — has to keep being true. Open probe paths on
-	// this listener would make its security a property of route matching
-	// instead of a property of the wrapper, and every handler added here
-	// afterwards a chance to match wrongly. Apart, the invariant is structural
-	// and an operator can bind the observation address somewhere the
-	// agent-facing one is not.
+	// A second listener rather than more paths here, because of what this
+	// listener holds to: anything that runs a capability or reads state sits
+	// behind the bearer wall, and beside it there is only what cannot be
+	// anywhere else — the operator channel, whose envelope signature is its
+	// own authentication, and the one constant document RFC 9728 pins to
+	// this origin (Resource), which a client finds by the URL it was given
+	// and nowhere else, so it cannot move to a second address. A probe can
+	// be anywhere, and /readyz reads the data directory's state; every open
+	// path here makes this listener's security a little more a property of
+	// route matching rather than of the wrapper, and the most a routing
+	// mistake is allowed to cost is reaching a constant document, or a
+	// channel that checks its own signatures, instead of the wall — never
+	// what is past it. Apart, an operator can also bind the observation
+	// address somewhere the agent-facing one is not.
 	ObserveListener net.Listener
 	ObserveHandler  http.Handler
 }
+
+// defaultShutdownGrace is RemoteOptions.ShutdownGrace's value when unset.
+const defaultShutdownGrace = 10 * time.Second
+
+// maxRequestBody bounds one request on the MCP listener. It is the SDK's own
+// default, stated here rather than inherited: a tool call's arguments are a
+// JSON object a schema already bounds in shape, and 4 MiB is past anything a
+// legitimate call carries — a default a future SDK release could widen for
+// its own reasons should not widen this listener's exposure without a line
+// in this file changing.
+const maxRequestBody = 4 << 20
 
 // Serve runs server over the Streamable HTTP transport on ln, blocking
 // until ctx is cancelled or the listener stops on its own.
@@ -80,21 +107,16 @@ type RemoteOptions struct {
 // Bearer authentication wraps the whole protocol handler, and cross-origin
 // protection wraps that: a browser page cannot drive this endpoint against
 // its holder's wishes just because it can reach the address, and neither
-// check is optional or bypassable by a flag.
-// defaultShutdownGrace is RemoteOptions.ShutdownGrace's value when unset.
-const defaultShutdownGrace = 10 * time.Second
-
-// maxRequestBody bounds one request on the MCP listener. It is the SDK's own
-// default, stated here rather than inherited: a tool call's arguments are a
-// JSON object a schema already bounds in shape, and 4 MiB is past anything a
-// legitimate call carries — a default a future SDK release could widen for
-// its own reasons should not widen this listener's exposure without a line
-// in this file changing.
-const maxRequestBody = 4 << 20
-
+// check is optional or bypassable by a flag. Beside the wall there is only
+// what RemoteOptions asks for by name, the operator channel and the resource
+// metadata — see ObserveListener there for why nothing else is.
 func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts RemoteOptions) error {
 	if opts.Verifier == nil {
 		return errors.New("mcp: Serve requires a Verifier — refusing to open an unauthenticated listener")
+	}
+	if opts.Resource != nil && opts.Resource.path == "" {
+		return errors.New("mcp: Serve was handed a ProtectedResource NewProtectedResource did not build — " +
+			"refusing to mount a path nobody validated")
 	}
 	grace := opts.ShutdownGrace
 	if grace <= 0 {
@@ -103,18 +125,29 @@ func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts Remote
 	handler := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server },
 		&sdk.StreamableHTTPOptions{MaxRequestBodyBytes: maxRequestBody})
 	verifier := slowFailures(opts.Verifier, newBackoff(bearerFree, bearerWindow, bearerStep, bearerMax))
-	authed := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
+	wall := &auth.RequireBearerTokenOptions{
 		// Static tokens have no per-token expiry of their own — they are
 		// valid until the operator rewrites the file — so nothing here
 		// synthesizes one. A real exp claim (OIDC) is still enforced: this
 		// only excuses TokenInfo.Expiration being zero, never overrides it
 		// when set.
 		AllowMissingExpiration: true,
-	})(limitSessions(server, handler))
+	}
+	if opts.Resource != nil {
+		wall.ResourceMetadataURL = opts.Resource.metadataURL
+	}
+	authed := auth.RequireBearerToken(verifier, wall)(limitSessions(server, handler))
 	root := authed
-	if opts.Operator != nil {
+	if opts.Operator != nil || opts.Resource != nil {
 		mux := http.NewServeMux()
-		mux.Handle("/operator/v1/", opts.Operator)
+		if opts.Operator != nil {
+			mux.Handle("/operator/v1/", opts.Operator)
+		}
+		if opts.Resource != nil {
+			// An exact pattern, not a subtree: the path with a slash after it,
+			// or anything beneath it, meets the wall like any other.
+			mux.Handle(opts.Resource.path, auth.ProtectedResourceMetadataHandler(opts.Resource.document))
+		}
 		mux.Handle("/", authed)
 		root = mux
 	}
@@ -377,8 +410,17 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 	return tokens, groupReadable, nil
 }
 
-// OIDCVerifier builds a verifier for ID tokens issued by issuer, accepted
+// OIDCVerifier builds a verifier for the bearer tokens issuer signs, accepted
 // only for audience and only for one of subjects.
+//
+// What it verifies is a signed JWT, offline, against the keys the issuer
+// publishes: go-oidc's ID-token verifier, which checks the signature, iss,
+// aud, exp and nbf and nothing else, so a JWT access token passes exactly
+// when an ID token with the same claims would. typ, azp and scope are never
+// read. An opaque access token, or an encrypted one, does not parse and is
+// refused, because nothing here does RFC 7662 introspection: that would put a
+// client secret on this server and a round trip to the issuer in front of
+// every call, for the identity providers that issue JWT access tokens anyway.
 //
 // subjects is not optional. issuer and audience alone name an application
 // an identity provider will vouch for, not the specific person the operator
@@ -481,4 +523,147 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// ProtectedResource is this server described to an OAuth client: RFC 9728
+// protected resource metadata, naming the URL clients are configured with and
+// the one issuer whose tokens it accepts. A client that meets the wall reads
+// the challenge, fetches this, and learns where to log in.
+//
+// Only NewProtectedResource builds one, and that is why nothing in it is
+// exported: Serve mounts path as a ServeMux pattern, where a { is read as a
+// wildcard and a malformed one panics at startup, so a path nobody validated
+// must have no way to reach it.
+type ProtectedResource struct {
+	url         string
+	metadataURL string
+	path        string
+	document    *oauthex.ProtectedResourceMetadata
+}
+
+// URL is the canonical resource URL: what an MCP client must be configured
+// with, exactly, since it compares the document's resource to the URL it was
+// given byte for byte (RFC 9728 §3.3).
+func (p *ProtectedResource) URL() string { return p.url }
+
+// MetadataURL is where the document is served, and what every 401 names.
+func (p *ProtectedResource) MetadataURL() string { return p.metadataURL }
+
+// protectedResourceWellKnown is RFC 9728 §3's well-known path. A resource with
+// a path has its metadata at this followed by that path. §3.3 makes the
+// resource this path alone describes the bare origin, so it is not served for
+// a resource that has one: a client would refuse it as naming another.
+const protectedResourceWellKnown = "/.well-known/oauth-protected-resource"
+
+// NewProtectedResource validates resource, the URL MCP clients are configured
+// with for this server, and describes it as a resource whose tokens issuer
+// signs.
+//
+// The URL is an identity more than an address: a client compares the
+// document's resource to the URL it was given, verbatim, and an RFC 8707
+// authorization server mints it into a token's aud. So it is put in one
+// canonical form here, the one the MCP specification recommends — the host
+// lowercased, trailing slashes trimmed — and refused, never quietly repaired,
+// wherever it could not be the string the operator typed and clients were
+// told:
+//
+//   - https, or http for a loopback host only: the exception the issuer and
+//     the operator URL make, for the same local testing, and the one the
+//     SDK's own client makes. Anywhere else a client's token would cross the
+//     wire in clear.
+//   - no user name, and no query or fragment, not even a bare ? or #: RFC
+//     9728 §1.2 forbids the last two in a resource identifier, and a URL that
+//     dropped them would no longer be the one clients were given.
+//     operator.CanonicalServerURL drops them, which is why it is not reused.
+//   - a host, unless it is an IP address, and path segments of RFC 3986
+//     unreserved characters only, no segment empty, . or .., and nothing
+//     percent-escaped. The path becomes a ServeMux pattern, and both reach
+//     every 401 inside a quoted string: url.Parse lets a quote or a letter
+//     beyond ASCII through in a host, which a client cannot parse back out of
+//     that header, and an escape decodes to a path the pattern no longer
+//     spells.
+//
+// The issuer is published as it was given. Discovery, which startup runs
+// next, refuses a provider whose own document names any other, so this is the
+// string the tokens carry in iss.
+func NewProtectedResource(resource, issuer string) (*ProtectedResource, *view.Error) {
+	refuse := func(problem, hint string) *view.Error {
+		return view.Errorf("core.mcp.resource", "--oidc-resource %q %s", resource, problem).WithHint(hint)
+	}
+	if issuer == "" {
+		return nil, view.Errorf("core.mcp.resource", "--oidc-resource has no issuer to publish").
+			WithHint("the document names --oidc-issuer as the authorization server a client logs in at")
+	}
+	if strings.ContainsAny(resource, "?#") {
+		return nil, refuse("has a query or a fragment",
+			"RFC 9728 forbids both in a resource identifier, even an empty one: drop everything from the ? or #")
+	}
+	u, err := url.Parse(resource)
+	if err != nil {
+		return nil, refuse("is not a URL: "+err.Error(),
+			"the URL MCP clients are configured with, such as https://rta.example.com")
+	}
+	if u.Scheme == "" || u.Opaque != "" || u.Host == "" {
+		return nil, refuse("is not an absolute URL",
+			"a scheme and a host, as MCP clients are configured with it: https://rta.example.com, "+
+				"or https://rta.example.com/mcp when the proxy serves rta under a path")
+	}
+	if u.User != nil {
+		return nil, refuse("names a user",
+			"a resource URL names a server, not an account: drop the part before the @")
+	}
+	host := strings.ToLower(u.Hostname())
+	if u.Scheme != "https" && (u.Scheme != "http" || !isLoopbackHost(host)) {
+		return nil, refuse("must be https",
+			"plain http is accepted for a loopback address only, since a client sends its token to this URL: "+
+				"give the https URL of the proxy that terminates TLS in front of rta")
+	}
+	if strings.HasSuffix(u.Host, ":") || (net.ParseIP(host) == nil && !unreserved(host)) {
+		return nil, refuse("does not name its host as a DNS name or an IP address",
+			"letters, digits and - . _ ~, then a port after a colon if there is one; a name beyond ASCII "+
+				"is written in its xn-- form")
+	}
+	path := strings.TrimRight(u.Path, "/")
+	if u.RawPath != "" || !servablePath(path) {
+		return nil, refuse("has a path its metadata cannot be published under",
+			"segments of letters, digits and - . _ ~, none empty, . or .., and nothing percent-escaped: "+
+				"the path is part of the URL the metadata is served at")
+	}
+	origin := u.Scheme + "://" + strings.ToLower(u.Host)
+	return &ProtectedResource{
+		url:         origin + path,
+		metadataURL: origin + protectedResourceWellKnown + path,
+		path:        protectedResourceWellKnown + path,
+		document: &oauthex.ProtectedResourceMetadata{
+			Resource:               origin + path,
+			AuthorizationServers:   []string{issuer},
+			BearerMethodsSupported: []string{"header"},
+		},
+	}, nil
+}
+
+func servablePath(path string) bool {
+	if path == "" {
+		return true
+	}
+	for _, segment := range strings.Split(path, "/")[1:] {
+		if segment == "" || segment == "." || segment == ".." || !unreserved(segment) {
+			return false
+		}
+	}
+	return true
+}
+
+// unreserved reports whether s is non-empty and every byte of it one of RFC
+// 3986's unreserved characters.
+func unreserved(s string) bool {
+	for i := range len(s) {
+		switch c := s[i]; {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9',
+			c == '-', c == '.', c == '_', c == '~':
+		default:
+			return false
+		}
+	}
+	return s != ""
 }

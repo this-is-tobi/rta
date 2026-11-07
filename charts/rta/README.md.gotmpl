@@ -27,13 +27,13 @@ A minimal `my-values.yaml` for one person authenticating through an IdP:
 ```yaml
 servers:
   tobi:
-    host: rta-tobi.example.com     # the Ingress host AND the operator identity
+    host: rta-tobi.example.com     # the Ingress host, the operator identity AND the OIDC resource URL
     roots: ["/work"]               # required: the path root otherwise defaults to "/"
     auth:
       oidc:
         enabled: true
         issuer: https://id.example.com
-        audience: rta
+        audience: https://rta-tobi.example.com  # the resource URL, through the IdP's audience mapper
         subjects: ["tobi@example.com"]
     operators:
       enabled: true
@@ -48,9 +48,9 @@ servers:
       tlsSecretName: rta-tobi-tls
 ```
 
-Values combinations that rta would refuse at startup are refused at render time instead, naming the key to fix — an OIDC issuer with no audience, `consent` without `operators`, an empty `roots`, a token under 16 characters, an operator URL that is not `https://`.
+Values combinations that rta would refuse at startup are refused at render time instead, naming the key to fix — an OIDC issuer with no audience, an OIDC instance with neither `host` nor `auth.oidc.resource`, `consent` without `operators`, an empty `roots`, a token under 16 characters, an operator URL that is not `https://`.
 
-Setting up the identity provider is its own subject, including the Keycloak audience mapper without which every token is rejected: see [OIDC](https://github.com/this-is-tobi/rta/blob/main/docs/30-boundary/70-oidc.md).
+An OIDC instance publishes `auth.oidc.resource`, `https://<host>` unless set, beside its issuer at `/.well-known/oauth-protected-resource`: that is how an OAuth client finds where to log in, so clients are configured with exactly that URL, and the Ingress has to route that path to rta, as its default path `/` does. Setting up the identity provider is its own subject, including the Keycloak audience mapper without which every token is rejected: see [OIDC](https://github.com/this-is-tobi/rta/blob/main/docs/30-boundary/70-oidc.md).
 
 ## Upgrading from `rta-chart`
 
@@ -86,7 +86,7 @@ The Ingress is turned into a Route by the ingress operator, so no separate templ
 
 ## Observability
 
-`--observe` binds a **second listener** carrying `/livez`, `/readyz`, `/healthz` and `/metrics`. It is separate from the MCP listener on purpose: bearer authentication wraps the whole protocol handler there, and open paths beside it would turn a structural property into a matter of route matching. On the MCP port every path answers `401`, including `/livez`.
+`--observe` binds a **second listener** carrying `/livez`, `/readyz`, `/healthz` and `/metrics`. It is separate from the MCP listener on purpose: there, anything that runs a capability or reads state sits behind the bearer wall, and beside it there is only the signed operator channel and, on an OIDC instance, the one constant document OAuth clients discover the issuer through, which has to live on that URL. On the MCP port every other path answers `401`, including `/livez`.
 
 The probes are open and target that second port. `/livez` consults nothing — a liveness probe wired to the store would ask for a restart that comes back to the same detached volume. `/readyz` writes to the data directory and reports whether the record can be written at all, which is what notices a volume that went read-only under a running server.
 

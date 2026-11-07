@@ -13,7 +13,7 @@ A caller now has to prove who it is over the wire, since there is no parent proc
 | Flag | Proves |
 | --- | --- |
 | `--token-file <path>` | A static, operator-issued token — one `label token` pair per line in a file only the operator can read; world-readable files are refused, and so is a token shorter than 16 characters (`rta gen token` makes one) and a label of 32 hex digits or more, which is a token written first |
-| `--oidc-issuer`, `--oidc-audience`, `--oidc-subject` | A real identity provider's token, for one of the named subjects. An issuer and audience alone identify an application, not a person, so at least one `--oidc-subject` is required — [OIDC](./70-oidc.md) is the full setup, including the Keycloak audience mapper without which every token is rejected |
+| `--oidc-issuer`, `--oidc-audience`, `--oidc-subject`, `--oidc-resource` | A real identity provider's token, for one of the named subjects. An issuer and audience alone identify an application, not a person, so at least one `--oidc-subject` is required, and `--oidc-resource` is the URL clients are configured with, published beside the issuer so an OAuth client finds where to log in — [OIDC](./70-oidc.md) is the full setup, including the Keycloak audience mapper without which every token is rejected |
 
 The file is the label and the token, so `rta gen token`, which prints the token among a few facts about it, is taken from its JSON answer:
 
@@ -42,7 +42,7 @@ A hosted server needs to tell an orchestrator whether it is alive and whether it
 rta mcp serve --as work --http :8443 --token-file tokens.txt --observe :9090
 ```
 
-It is deliberately not more paths on the `--http` listener. Bearer authentication wraps that one whole, and adding open paths beside the protocol handler would turn a property of the wrapper into a property of route matching — where every handler added later is a chance to match wrongly. Kept apart, an operator can also bind this where the agent-facing port is not: loopback, or a pod port the Service never publishes.
+It is deliberately not more paths on the `--http` listener. Anything there that runs a capability or reads state sits behind the bearer wall, and beside the wall there is only what cannot be anywhere else: [the operator channel](./66-operators.md), which authenticates by its own signatures, and, on a server with an OIDC issuer, one constant document that [RFC](../95-reference/10-glossary.md#acronyms) 9728 places at a well-known path on the very URL clients were given — [how a client finds the issuer](./70-oidc.md#how-an-mcp-client-finds-the-issuer). A probe can answer from anywhere, and `/readyz` reads the data directory's state, so each open path added to the agent-facing listener would make its safety more a matter of route matching than of the wrapper, where every handler added later is a chance to match wrongly. As it is, a routing mistake there reaches a public document, a signed channel or the wall, and never what is behind the wall. Kept apart, an operator can also bind this where the agent-facing port is not: loopback, or a pod port the Service never publishes.
 
 | Path | Credential | Says |
 | --- | --- | --- |

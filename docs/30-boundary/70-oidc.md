@@ -2,25 +2,54 @@
 
 `rta mcp serve --http` refuses to start without a way to verify who is calling. There are two, and they answer different questions. A static token from `--token-file` names whoever holds the string. An [OIDC](../95-reference/10-glossary.md#acronyms) issuer names a person your identity provider already knows, which is what makes "one instance per person, authenticating as that person" mean anything — the record then carries a subject your IdP can resolve back to a human, not a label somebody chose.
 
-This page is what rta actually verifies, a Keycloak walkthrough because it is the provider with the sharpest edge, and the failure messages, which go somewhere you might not look.
+This page is what rta actually verifies, how an [MCP](../95-reference/10-glossary.md#acronyms) client finds where to log in, a Keycloak walkthrough because it is the provider with the sharpest edge, and the failure messages, which go somewhere you might not look.
 
-## The three flags
+## The four flags
 
 ```bash
 rta mcp serve --http 0.0.0.0:8080 \
   --oidc-issuer https://id.example.com/realms/main \
-  --oidc-audience rta \
-  --oidc-subject 8f14e45f-ceea-467a-9c1a-2d7c4f0b1a33
+  --oidc-audience https://rta.example.com \
+  --oidc-subject 8f14e45f-ceea-467a-9c1a-2d7c4f0b1a33 \
+  --oidc-resource https://rta.example.com
 ```
 
-All three are required together, and the two refusals say why:
+All four are required together, and the three refusals say why:
 
 - `an --oidc-issuer needs --oidc-audience` — without it, a token minted for any other service by the same issuer authenticates here.
 - `an --oidc-issuer needs at least one --oidc-subject — an issuer and audience alone identify an application, not a person` — without it, every identity that issuer will ever mint is accepted, which is the whole namespace of your IdP rather than one person.
+- `an --oidc-issuer needs --oidc-resource` — without it, an OAuth client meets a refusal that never says where to log in, and the server is one nobody can use with no sign of why.
 
-`--oidc-subject` is repeatable and comma-splitting.
+`--oidc-subject` is repeatable and comma-splitting. `--oidc-resource` is the URL MCP clients are configured with, the one the proxy in front serves, never the address rta binds: rta cannot learn it from anything it sees, since a `Host` header is whatever a relay wrote. It has to be `https://`, or `http://` on a loopback address, with no query, fragment or user name, and a path, if it has one, of letters, digits and `- . _ ~`. The audience is the same URL here, which is the [recommendation below](#make-the-audience-the-resource-url) rather than a default.
+
+## How an MCP client finds the issuer
+
+An OAuth client — Claude Code, VS Code, anything built on an MCP SDK — is configured with one URL and has to find the identity provider from there. Its first request carries no token, and rta answers it with the refusal every such request gets, plus a header saying where to look:
+
+```
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer resource_metadata="https://rta.example.com/.well-known/oauth-protected-resource"
+```
+
+That URL answers without a token, with the [RFC](../95-reference/10-glossary.md#acronyms) 9728 protected resource metadata — three fields, and nothing else:
+
+```json
+{"resource":"https://rta.example.com","authorization_servers":["https://id.example.com/realms/main"],"bearer_methods_supported":["header"]}
+```
+
+The client reads the issuer there, discovers its endpoints, logs in at it in a browser asking for a token for `resource`, and comes back with one. rta takes no part in the login: it says where the login happens, and verifies what arrives afterwards the way [the next section](#what-rta-checks-exactly) describes.
+
+- **Configure the client with exactly the URL rta prints.** The startup banner says `rta: configure MCP clients with exactly https://rta.example.com — …`. A client compares `resource` with the URL it was given byte for byte, so `https://rta.example.com/`, with the slash, or another path, is refused by the client before it logs in at all. rta writes the URL it is given with the host lowercased and trailing slashes removed.
+- **A URL with a path is described at a path of its own.** With `--oidc-resource https://rta.example.com/mcp` the document is at `/.well-known/oauth-protected-resource/mcp`, as RFC 9728 places it, and the root form is not served, because it would describe the bare host, which is another resource.
+- **The proxy has to pass `/.well-known/oauth-protected-resource` to rta unchanged.** An ingress that routes only a path prefix to rta never forwards it, and the client concludes there is nothing to find. The chart's default ingress path, `/`, forwards everything.
+
+The document is public on purpose — a client reads it before it holds anything — so it tells anyone who asks which issuer this server trusts. It never names a subject or the audience, and it lists no scope, because rta authorizes with grants rather than OAuth scopes. A server with static tokens alone publishes nothing and its 401 carries no header: there is no issuer to name, and a document without one would start a login that cannot finish.
+
+The client also needs a client of its own at the identity provider: registered there by hand, as a public client allowing the loopback redirect addresses it listens on, or through whatever dynamic registration the provider allows. That is between the client and the provider.
 
 ## What rta checks, exactly
+
+**The bearer is a signed JWT, verified offline.** rta checks the token itself against the keys the issuer publishes, and never asks the issuer about it: there is no RFC 7662 introspection, which would put a client secret on this server and a round trip to the identity provider in front of every call. An opaque access token, or an encrypted one, is therefore refused. Keycloak's access tokens are signed JWTs unless the realm is told otherwise; with any other provider, decode one before relying on it. `printf %s "$TOKEN" | rta codec jwt` shows which kind you hold: a signed token decodes to its header and claims, an encrypted one to a header naming the key it is sealed for. Beyond the claims in the table below nothing is read — not the header's `typ`, not `azp`, not `scope`.
 
 **Discovery happens once, at startup.** rta fetches `<issuer>/.well-known/openid-configuration` before accepting anything, with a 15-second timeout, and **refuses to start if the issuer is unreachable**. That is deliberate: a server that starts and then rejects every call looks healthy to an orchestrator and is not. The listener is bound before discovery, so a port clash reports first.
 
@@ -48,21 +77,29 @@ The discovered document's own `issuer` field must equal what you passed. A trail
 
 **Only `sub` is matched.** Not `email`, not `preferred_username`, not `groups`. If your IdP's `sub` is an opaque UUID — Keycloak's is — then that UUID is what goes in `--oidc-subject`.
 
+### Make the audience the resource URL
+
+`--oidc-audience` is whatever string the issuer puts in `aud`, and a client id such as `rta` works. The resource URL works better: pass the `--oidc-resource` value as `--oidc-audience` too, and have the identity provider put that URL in `aud`. A token is then good for this one instance, not for every rta the same realm issues tokens to. rta does not default one to the other, because the provider has to be told as well, and a default it was never told about would reject every token.
+
+Keycloak ignores the `resource` parameter a client sends unless its experimental resource indicators feature is on, so there an audience mapper is what puts the URL in `aud` (step 2 below). A provider that does mint `aud` from `resource` takes it as the client sent it, and a client built on browser URL parsing sends a bare host as `https://rta.example.com/`, with a slash an exact match refuses: give the server a URL with a path, or set `--oidc-audience` to what the tokens actually carry.
+
 ## Keycloak
 
 Keycloak is the worked example because two of its defaults are wrong for this, both quietly.
 
 **1. The issuer is realm-scoped.** It is `https://keycloak.example.com/realms/<realm>`, not the host. Getting this wrong produces `oidc: id token issued by a different provider`.
 
-**2. The audience needs a mapper.** Create a client — call it `rta` — then add a mapper that puts its own id into `aud`:
+**2. The audience needs a mapper.** Create a client — call it `rta` — then add a mapper that puts this server's URL into `aud`:
 
 *Clients → rta → Client scopes → rta-dedicated → Add mapper → By configuration → Audience*
 
 - Name: `rta-audience`
-- Included Client Audience: `rta`
+- Included Custom Audience: `https://rta.example.com`, the `--oidc-resource` value exactly
 - Add to access token: **On**
 
-Without it the token carries `"azp": "rta"` and an `aud` of `account`, and rta rejects it with `oidc: expected audience "rta" got ["account"]`. Nothing in the Keycloak UI suggests this is missing.
+and pass the same URL as `--oidc-audience`. Without it the token carries `"azp": "rta"` and an `aud` of `account`, and rta rejects it with `oidc: expected audience "https://rta.example.com" got ["account"]`. Nothing in the Keycloak UI suggests this is missing. Naming the client instead — Included Client Audience `rta`, with `--oidc-audience rta` — works too, and accepts a token minted for any rta the realm serves.
+
+A mapper on `rta-dedicated` reaches the tokens issued to the `rta` client and no others. An MCP client that registers a client of its own rather than logging in as `rta` gets its tokens under that client, so for it the mapper goes on a client scope that client is given.
 
 **3. Find the subject.** Keycloak's `sub` is the user's internal UUID, visible in *Users → the user → Details → ID*, or by decoding a token you hold in `$TOKEN` (step 4 fetches one and decodes it in the same line):
 
@@ -100,7 +137,7 @@ Read three fields off that output: `iss` must equal `--oidc-issuer` exactly, `au
 Nothing above is Keycloak-specific except the mapper. For a generic provider:
 
 - **Issuer**: whatever `.well-known/openid-configuration` lives under. Auth0 uses `https://<tenant>.auth0.com/`, and the trailing slash is part of it. Okta uses `https://<org>.okta.com/oauth2/<server>`. Google uses `https://accounts.google.com`.
-- **Audience**: the API identifier or client id your provider puts in `aud`. Providers that distinguish an "API" from a "client" (Auth0, Okta) want the API identifier, and the token request usually has to ask for it explicitly.
+- **Audience**: the API identifier or client id your provider puts in `aud`. Providers that distinguish an "API" from a "client" (Auth0, Okta) want the API identifier, and the token request usually has to ask for it explicitly. Both take a URL as an API identifier, so it can be the `--oidc-resource` value.
 - **Subject**: whatever that provider puts in `sub`. Google's is a numeric string; Auth0's looks like `auth0|65f…`.
 
 Decode a real token before writing the flags. Every field rta checks is visible in it.
@@ -116,7 +153,7 @@ It is worth being clear about what it costs. Two verifiers on one endpoint means
 **The client is told nothing.** Every verification failure returns the same generic invalid-token response — a caller cannot learn whether the audience was wrong or the subject was unknown, because that difference is a probing oracle. The reason goes to the server's **stderr**:
 
 ```
-rta: mcp http: oidc token rejected: oidc: expected audience "rta" got ["account"]
+rta: mcp http: oidc token rejected: oidc: expected audience "https://rta.example.com" got ["account"]
 rta: mcp http: oidc token subject "9c1a…" is not in the allowed list
 rta: mcp http: bearer token rejected by every configured verifier: …
 ```
@@ -131,6 +168,9 @@ In Kubernetes that is `kubectl logs`. If you are looking at a 401 and the logs s
 | `failed to verify signature` | Token signed by a key the issuer does not advertise. |
 | `subject "…" is not in the allowed list` | `sub` is not one of the `--oidc-subject` values. Decode the token. |
 | `reaching the --oidc-issuer` at startup | Discovery failed. The server did not start. |
+| `an --oidc-issuer needs --oidc-resource` at startup | The URL clients are configured with was not given. |
+| `--oidc-resource "…" must be https`, or `has a query or a fragment`, at startup | The URL is not one a client can be given: plain http off loopback, or a `?` or `#` anywhere in it. |
+| The client says the resource does not match, or tries to log in at rta itself | The URL the client was given differs from `--oidc-resource` (a trailing slash, another path), or the proxy does not pass `/.well-known/oauth-protected-resource` to rta. Nothing reaches the server's stderr: the client stops before it sends a token. |
 
 **Repeated failures are slowed down.** After five refusals in a minute from one address, responses are delayed 250ms, doubling to two seconds. A misconfigured client retrying in a loop will look slow before it looks broken.
 
@@ -144,21 +184,22 @@ So the record answers both "which agent was this" and "which human's token authe
 
 ## In Kubernetes
 
-[`charts/rta`](https://github.com/this-is-tobi/rta/tree/main/charts/rta) takes the same three values per instance:
+[`charts/rta`](https://github.com/this-is-tobi/rta/tree/main/charts/rta) takes the same values per instance, and derives the fourth:
 
 ```yaml
 servers:
   tobi:
+    host: rta-tobi.example.com  # auth.oidc.resource defaults to https://<host>
     auth:
       oidc:
         enabled: true
         issuer: https://keycloak.example.com/realms/main
-        audience: rta
+        audience: https://rta-tobi.example.com
         subjects:
           - 8f14e45f-ceea-467a-9c1a-2d7c4f0b1a33  # Keycloak user ID for tobi
 ```
 
-The chart refuses to render an issuer with no audience or no subject, so those two startup refusals arrive at `helm install` time instead of as a CrashLoopBackOff.
+`auth.oidc.resource` defaults to `https://<host>`, the host the ingress serves, the way the operator URL does; set it when clients reach the instance under a path. The chart refuses to render an issuer with no audience or no subject, or one with neither `host` nor `resource`, so those startup refusals arrive at `helm install` time instead of as a CrashLoopBackOff.
 
 One deployment note that follows from discovery happening at startup: if your IdP and rta start together, rta can lose the race and refuse to start. It restarts, and a `startupProbe` with room to retry covers it — but a NetworkPolicy that never lets the pod reach the IdP produces the same symptom permanently, so check egress before blaming the ordering.
 

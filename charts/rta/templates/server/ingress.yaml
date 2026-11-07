@@ -9,7 +9,10 @@ the operator's job, not the flag's - so the certificate in front of it is this r
 
 The host is the same string as `--operators-url`, which is not a coincidence to tidy up later: that
 URL is signed into every operator request as this server's identity, so if the two ever disagree,
-operators are verifying against a server that is not the one answering.
+operators are verifying against a server that is not the one answering. On an OIDC instance it is
+also, by default, `--oidc-resource`, the URL OAuth clients compare the published metadata against;
+and that metadata lives at `/.well-known/oauth-protected-resource` on this host, so a `path` that
+routes only a prefix to rta leaves clients nothing to find.
 
 On OpenShift this Ingress is turned into a Route by the ingress operator, so no separate template
 is needed there. */}}
