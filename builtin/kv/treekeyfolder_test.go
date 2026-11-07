@@ -39,3 +39,27 @@ func TestKVTreeDrawsAKeyThatIsAlsoAFolder(t *testing.T) {
 		t.Errorf("the folder counts %q, want the two keys under it", folder.Detail)
 	}
 }
+
+// A tree is narrowed by folder as the listing is, so a store too big for one
+// answer is read a folder at a time; a folder holding nothing says so.
+func TestKVTreeDrawsOneFolder(t *testing.T) {
+	setup(t)
+	setKeys(t, "staging/db/password", "staging/token", "prod/token")
+
+	out, err := runTree(context.Background(), req(map[string]any{"folder": "staging/"}, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := out.(view.Tree).Roots
+	if len(roots) != 1 || roots[0].Label != "staging/" || roots[0].Detail != "2 keys" {
+		t.Fatalf("the tree of staging/ is %+v, want staging/ alone with its two keys", roots)
+	}
+
+	out, err = runTree(context.Background(), req(map[string]any{"folder": "dev"}, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree := out.(view.Tree); len(tree.Roots) != 0 || tree.Empty == "" {
+		t.Errorf("an empty folder drew %+v, want no roots and a sentence", tree)
+	}
+}

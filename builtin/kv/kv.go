@@ -100,6 +100,10 @@ var (
 	}
 )
 
+// folderField narrows kv.list and kv.tree to the keys of one folder.
+var folderField = plugin.Field{Name: "folder", Type: plugin.String, Positional: true, Suggest: suggestFolders,
+	Help: "only the keys in this folder, e.g. db/"}
+
 // unlockFields are the inputs every store operation accepts.
 func unlockFields(extra ...plugin.Field) []plugin.Field {
 	return append(extra, passphraseField, identityField)
@@ -140,8 +144,7 @@ func Plugin() plugin.Plugin {
 					"the description, case-insensitive, so a `match` of aws finds " +
 					"`prod-deploy-key` when the description is the only place the word AWS appears.",
 				Inputs: unlockFields([]plugin.Field{
-					{Name: "folder", Type: plugin.String, Positional: true, Suggest: suggestFolders,
-						Help: "only the keys in this folder, e.g. db/"},
+					folderField,
 					{Name: "kind", Type: plugin.String, Options: kinds,
 						Help: "only entries of this kind"},
 					{Name: "match", Type: plugin.String,

@@ -21,7 +21,10 @@ import (
 // leaves, and says so by looking like one.
 //
 // Not bounded, unlike the other trees, because this store is on the local
-// disk and its whole listing is what `kv list` already prints.
+// disk and its whole listing is what `kv list` already prints. Narrowed by
+// folder as `kv list` is: a store of a few thousand keys drew a tree past what
+// an MCP answer holds, and the refusal told the agent to narrow a call that
+// took no input to narrow it with.
 func treeCapability() plugin.Capability {
 	return plugin.Capability{
 		ID: "kv.tree", Summary: "The store as a tree of the folders its keys share",
@@ -31,7 +34,7 @@ func treeCapability() plugin.Capability {
 			"never values, the same line `kv.list` draws. A grant for `kv.get` scoped to staging/ is " +
 			"how one of those folders becomes a grant's scope, so this is also the map of what " +
 			"such a grant covers.",
-		Inputs: unlockFields(),
+		Inputs: unlockFields(folderField),
 		Run:    runTree,
 	}
 }
@@ -41,16 +44,20 @@ func runTree(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
+	// As kv.list reads it: "db" and "db/" both name the folder.
+	folder := strings.TrimSuffix(strings.TrimSpace(req.String("folder")), "/")
+	names := make([]string, 0, len(s.Entries))
+	for k := range s.Entries {
+		if folder == "" || strings.HasPrefix(k, folder+"/") {
+			names = append(names, k)
+		}
+	}
 	// An empty store is a tree with no roots — an empty array, not a
 	// missing one, so `jq '.roots[]'` yields nothing and exits 0 — with the
 	// sentence beside it for a person: see view.Tree.Empty. It answered with
 	// that sentence as a Text view, which a parser met in place of the tree.
-	if len(s.Entries) == 0 {
-		return view.Tree{Roots: []view.Node{}, Empty: emptyList(req.Surface(), 0, "", "", "")}, nil
-	}
-	names := make([]string, 0, len(s.Entries))
-	for k := range s.Entries {
-		names = append(names, k)
+	if len(names) == 0 {
+		return view.Tree{Roots: []view.Node{}, Empty: emptyList(req.Surface(), len(s.Entries), folder, "", "")}, nil
 	}
 	sort.Strings(names)
 

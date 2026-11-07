@@ -1222,7 +1222,12 @@
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "folder": {
+          "description": "only the keys in this folder, e.g. db/",
+          "type": "string"
+        }
+      },
       "type": "object"
     }
   },

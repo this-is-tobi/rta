@@ -677,7 +677,7 @@
   },
   {
     "name": "fs_usage",
-    "description": "Show what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them. Directories are summed recursively; the share column is of the scanned total, not of the disk. A size is the disk a file takes, as du counts it: a sparse file by what is written, a file with several hard links once; `apparent` counts lengths instead. Hidden entries are included, they are usually the answer. With `detail`: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount. A name holding an escape, a newline or another character that does not draw as itself is shown quoted with it written out, never cleaned into another name.\n\nSafety: read.",
+    "description": "Show what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them. Directories are summed recursively; the share column is of the scanned total, not of the disk. A size is the disk a file takes, as du counts it: a sparse file by what is written, a file with several hard links once; `apparent` counts lengths instead. Hidden entries are included, they are usually the answer. With `detail`: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount. A name holding an escape, a newline or another character that does not draw as itself is shown quoted with it written out, never cleaned into another name.\n\nAlso called: folder, directory.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1633,7 +1633,12 @@
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "folder": {
+          "description": "only the keys in this folder, e.g. db/",
+          "type": "string"
+        }
+      },
       "type": "object"
     }
   },
