@@ -115,6 +115,29 @@ func TestIsolateLetsAFixtureRepositoryBeItsOwnWhereGitNamesAnother(t *testing.T)
 	}
 }
 
+// An editor's shell sets TERM=dumb, and LC_ALL=C is a locale that is not UTF-8: rta
+// draws in ASCII under either, while the samples the docs quote are drawn in box
+// characters. After Isolate neither is set, as on CI.
+func TestIsolateForgetsTheTerminalItIsRunFrom(t *testing.T) {
+	for _, name := range []string{
+		"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME", "RTA_CONFIG", "RTA_DATA_DIR",
+	} {
+		t.Setenv(name, os.Getenv(name))
+	}
+	t.Setenv("TERM", "dumb")
+	for _, name := range []string{"LC_ALL", "LC_CTYPE", "LANG"} {
+		t.Setenv(name, "C")
+	}
+	if err := Isolate(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"TERM", "LC_ALL", "LC_CTYPE", "LANG"} {
+		if got, set := os.LookupEnv(name); set {
+			t.Errorf("%s = %q survived Isolate", name, got)
+		}
+	}
+}
+
 // A toolchain variable the person already set is theirs, and is not replaced by the
 // value `go env` would have answered.
 func TestIsolateKeepsAToolchainVariableThatWasSet(t *testing.T) {
