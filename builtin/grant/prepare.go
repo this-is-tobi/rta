@@ -322,6 +322,38 @@ func reachNotes(catalog func() []plugin.Capability, g core.Grant) []string {
 	return notes
 }
 
+// wideReach is what a grant on a whole plugin would let an agent destroy or read,
+// in the lines reachNotes words it in, when it lets it do either; nothing for a
+// grant on one capability, whose reach is the name typed, or for a plugin whose
+// gated capabilities neither destroy nor reveal.
+//
+// These are the grants asked about before they are issued (runApprove): `grant
+// allow kv` reads like one grant and is every capability in kv an agent needs a
+// grant for, kv.rm and kv.get among them, and the lines that said so came in the
+// receipt, after the clock had started.
+func wideReach(catalog func() []plugin.Capability, g core.Grant) []string {
+	if strings.Contains(g.Target, ".") {
+		return nil
+	}
+	if _, destructive, _ := core.ReachOf(catalog(), g); len(destructive) == 0 && revealNote(catalog, g) == "" {
+		return nil
+	}
+	return reachNotes(catalog, g)
+}
+
+// notConfirmed ends a grant the person did not say yes to. It carries the code
+// the destructive prompt ends with, so a "no" exits 3 as that one does and stops
+// a `&&` chain: the command line maps the code to the exit (internal/app's
+// CodeConfirmRequired, which this package cannot import; the app's test of the
+// question holds the two spellings together).
+func notConfirmed(g core.Grant) *view.Error {
+	return &view.Error{
+		Code:    "core.confirm.required",
+		Message: "not confirmed — no grant was issued",
+		Hint:    "name one capability of " + g.Target + " to allow only it, or pass --yes",
+	}
+}
+
 // revealNote says what a grant with no record named lets an agent read. A
 // capability that reveals a stored value is gated by the grant alone, so the
 // grant is the whole consent: named to one record it hands over that record's

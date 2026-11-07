@@ -1884,16 +1884,11 @@ func alsoGrant(prepared []grant.Grant, capped string, signer *guard.Signer) (str
 		window := prepared[0].Expires.Sub(prepared[0].Issued)
 		return fmt.Sprintf("this call, and %s for the next %s", andList(issued), format.Duration(window))
 	}
-	// The window starts now, as each grant is written. The builder stamped
-	// it when it ran, before the passphrase was asked for and the call
-	// decided, which takes as long as the person takes to type; and the
-	// answer promises "for the next 15m", the whole window, so the clock
-	// starts when the grants stand and not before. The width the builder
-	// settled on, a ceiling's cap included, is kept as it is.
+	// The window starts now, as each grant is written, and not when the builder
+	// ran before the passphrase was asked for (Grant.StartingAt).
 	now := time.Now()
 	for i := range prepared {
-		window := prepared[i].Expires.Sub(prepared[i].Issued)
-		prepared[i].Issued, prepared[i].Expires = now, now.Add(window)
+		prepared[i] = prepared[i].StartingAt(now)
 	}
 	for _, g := range prepared {
 		// Signed after the Grant is fully built, so the signature covers the

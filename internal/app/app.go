@@ -468,7 +468,9 @@ func noColorOnCommandLine(args []string) bool {
 // (confirmprompt.go); a script is not, by design: it says it means it with the
 // flag and exits 3 otherwise, which is a question and not a failure
 // (docs/20-using/10-cli.md). The TUI confirms on the capability's own dry run
-// instead (internal/render/tui/confirm.go).
+// instead (internal/render/tui/confirm.go). `grant allow` on a whole plugin ends
+// with it too when the person asked said no (builtin/grant, notConfirmed), which
+// spells the code out because it cannot import this package.
 const CodeConfirmRequired = "core.confirm.required"
 
 // RenderedError marks a *view.Error that has already been printed, so the
@@ -2253,6 +2255,18 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	piping := !opts.dryRun && cli.PrimaryAlone(c.Primary, renderOpts)
 	if piping {
 		req = req.WithPipedPrimary()
+	}
+	// A handler that has to show the person what they are about to do and wait
+	// for a yes is given a way to ask, where one can: a terminal, and an answer
+	// drawn for it. -o json and the other formats are a program's output however
+	// they were started, so nothing is asked there, as nothing is where nobody is
+	// typing (Request.WithConfirmer).
+	if renderOpts.Format == cli.Pretty && confirmTerminal() {
+		req = req.WithConfirmer(func(card string) bool {
+			w := cmd.ErrOrStderr()
+			_ = cli.Render(w, view.Text{Body: card}, renderOptions(cmd, cli.Pretty, opts.noColor))
+			return askToProceed(ctx, w)
+		})
 	}
 	show := func(v view.View) error {
 		if piping && cli.PrintPrimary(cmd.OutOrStdout(), v, c.Primary, renderOpts) {
