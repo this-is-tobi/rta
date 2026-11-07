@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.59.0](https://github.com/this-is-tobi/rta/compare/v0.58.0...v0.59.0) (2026-11-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp:** an --oidc-issuer command line now needs --oidc-resource, the exact URL MCP clients are configured with; without it the server refuses to start. The chart supplies it from host or auth.oidc.resource.
+* **plugin:** plugin.Field.TLSAdjacent and rta.v1.Field.tls_adjacent (16) are removed, so source that names the field no longer compiles. A plugin built on an older SDK that still sets it keeps loading, since the host ignores the unknown tag, and loses only the host's refusal of a CA beside a forward, which that build then leaves unread. `rta plugin upgrade` to a current build cures it.
+
+### Features
+
+* **codec:** b64, hex and url read their value from a pipe, as jwt does ([568439e](https://github.com/this-is-tobi/rta/commit/568439efb38682a6a295dd4dc70c8109f5e9d64a))
+* **grant:** a grant on a whole plugin that destroys or reveals asks first ([2507802](https://github.com/this-is-tobi/rta/commit/25078028670752ff8d300066001a6048bff3cca1))
+* **kv:** a tree is narrowed to one folder, as the listing is ([0da4e1e](https://github.com/this-is-tobi/rta/commit/0da4e1ec2d73825af071d6cb97b55961a6515ef3))
+* **mcp:** --area lists only the tools of the areas an operator names ([3a15e3b](https://github.com/this-is-tobi/rta/commit/3a15e3bd462fa3395d2fb00a1aed205fac77029e))
+* **mcp:** publish protected resource metadata for an oidc issuer ([f516cb5](https://github.com/this-is-tobi/rta/commit/f516cb5e99c16ef2fa5afaae7a64d6753838fcec))
+* **plugin:** every upgrade receipt names what it left on the build it replaced ([510423e](https://github.com/this-is-tobi/rta/commit/510423e803605e01602c45cf79c991e3e8c8f603))
+* **plugin:** index manifests carry an apiVersion and inert annotations ([224d2c4](https://github.com/this-is-tobi/rta/commit/224d2c4d46282bd2ab247da7ef934679fc03aa22))
+* **tui:** a call typed into the search bar fills its form ([500f7f8](https://github.com/this-is-tobi/rta/commit/500f7f8f8138c3e5acbae47c09816466f4619ae9))
+* **tui:** the M key shows more rows of a table cut at its limit ([525dcc6](https://github.com/this-is-tobi/rta/commit/525dcc635cba6befbfa2d68474753596bc4769d7))
+* **view:** json and yaml tables carry a records array, one object per row ([77e3819](https://github.com/this-is-tobi/rta/commit/77e3819edbb0d3308f55872f4ffabdc5f941a1c3))
+
+
+### Bug Fixes
+
+* **audit:** the deny block names plugin upgrade and plugin index ([57ad9ad](https://github.com/this-is-tobi/rta/commit/57ad9adf144237cc9a78b73f430c5765a2f571e1))
+* **kv:** a passphrase store at rest is ok — locked, not a warning ([3cd2dfa](https://github.com/this-is-tobi/rta/commit/3cd2dfa57c34d010770f441d6a5e363480ebb394))
+* **kv:** nothing to unlock says which of its causes holds ([814e9b7](https://github.com/this-is-tobi/rta/commit/814e9b7a968f03bddbf2a5299157dae71693893a))
+* **kv:** passphrase derivations take turns, so calls side by side cannot exhaust memory ([d9debf4](https://github.com/this-is-tobi/rta/commit/d9debf4a19452baa36c87e11bd6323543567ff3d))
+* **mcp:** a credential holds at most 16 sessions on the HTTP listener ([9540bf1](https://github.com/this-is-tobi/rta/commit/9540bf1bdbec8b1420be57e73e99bbd53bf0bd99))
+* **paths:** a relative XDG_DATA_HOME is ignored, as the specification says ([6339676](https://github.com/this-is-tobi/rta/commit/633967609c73ef4e54e979708f3402a819ac7ed1))
+* **plugin:** a named path is held to its rules at every launch, not once ([3fac371](https://github.com/this-is-tobi/rta/commit/3fac3713c1413e3cf84329f9bd497a8340cb3885))
+* **profile:** a forward frees a TLS-adjacent key from the command line too ([2a83926](https://github.com/this-is-tobi/rta/commit/2a83926911ff8e7592d740c43aa407c0f19ae650))
+* **tui:** a new store asks for its passphrase twice, and esc on its question goes back ([cd15bd8](https://github.com/this-is-tobi/rta/commit/cd15bd888dc8b610751be8605e2fc1aab90115cd))
+* **tui:** a tab asks a plugin's service nothing that its run would not ([2555e36](https://github.com/this-is-tobi/rta/commit/2555e36f636725e92b27fb1b15f09d0a5534f203))
+* **tui:** a tile whose answer turns old keeps its height ([16a60ff](https://github.com/this-is-tobi/rta/commit/16a60ffffc4925765e70ee2954191ea981535760))
+* **tui:** a toggle's yes and no sit at the left, under its question ([0e339bd](https://github.com/this-is-tobi/rta/commit/0e339bd639bb2703b32457957733351c904231a5))
+* **tui:** the last box of a first stage names its step once ([a703441](https://github.com/this-is-tobi/rta/commit/a7034412e56137d76a487a8f61f11e0d8db6fb13))
+
+
+### Performance Improvements
+
+* **mcp:** cut the built-in tools/list from 97,441 to 80,216 bytes ([acb4aeb](https://github.com/this-is-tobi/rta/commit/acb4aeb89046aef9a9610ed69cd1a6517a93f51a))
+* **plugin:** completion hashes only the plugins under the word it completes ([bdaf4b2](https://github.com/this-is-tobi/rta/commit/bdaf4b2f3c167c443931d67616bb3e3cfa581b66))
+* **tui:** a click works the dashboard's layout out once ([6367c45](https://github.com/this-is-tobi/rta/commit/6367c4531b958f92bbf860341d04ccd9dcd3abad))
+
+
+### Code Refactoring
+
+* **kv:** kv edit opens the editor through internal/editor ([ad2f234](https://github.com/this-is-tobi/rta/commit/ad2f234f53988d25ccc3c2f2c5bb3994edc78de0))
+* **mcp:** the bridge bounds an entry's fields with agentlog.Clip ([9283383](https://github.com/this-is-tobi/rta/commit/9283383e5205b09eb41af32631917c0f039352f1))
+* one process-group rule for every program rta starts ([31c64e3](https://github.com/this-is-tobi/rta/commit/31c64e3511a0c1a514a6b256ec5d1d3424f3c4ca))
+* **plugin:** remove Field.TLSAdjacent and reserve wire number 16 ([8cb63ed](https://github.com/this-is-tobi/rta/commit/8cb63ed2a2d0f3f9f5385061f8e6225d2c05daa1))
+* sorted keys are slices.Sorted(maps.Keys(m)), not nine helpers ([f62c4c3](https://github.com/this-is-tobi/rta/commit/f62c4c3e10d18a5fdbd91f785f37978bc53d2ab0))
+
 ## [0.58.0](https://github.com/this-is-tobi/rta/compare/v0.57.1...v0.58.0) (2026-11-03)
 
 
