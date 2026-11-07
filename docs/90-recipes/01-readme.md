@@ -16,6 +16,7 @@ Worked examples. Each one is a real shape rather than a demonstration of a flag.
 | [Fill a shell with credentials, without them touching disk](#fill-a-shell-with-credentials-without-them-touching-disk) | everyday | a `kv` store | 2 |
 | [Answer "what changed here" without parsing porcelain](#answer-what-changed-here-without-parsing-porcelain) | everyday | a git repository | 2 |
 | [Run an agent against a scratch directory only](#run-an-agent-against-a-scratch-directory-only) | everyday | an MCP client | 3 |
+| [Give an agent a short list of tools](#give-an-agent-a-short-list-of-tools) | everyday | an MCP client | 2 |
 | [Be asked instead of refused, while you are at the machine](#be-asked-instead-of-refused-while-you-are-at-the-machine) | everyday | an MCP client | 5 |
 | [Ship the record somewhere durable](#ship-the-record-somewhere-durable) | operator | `jq` and a scheduler | 10 |
 | [Put it on a dashboard](#put-it-on-a-dashboard) | operator | Prometheus, and Loki or Grafana | 20 |
@@ -225,6 +226,14 @@ Widen deliberately, never by default:
 ```bash
 rta mcp install claude --as sandbox --root ~/projects --root /tmp/scratch
 ```
+
+## Give an agent a short list of tools
+
+```bash
+rta mcp install claude --as reviewer --area git --area fs --area note
+```
+
+Every session pays for the whole tool list before the first call, and an agent reading code has no use for the cluster or the databases. `--area` takes the first word of a tool's name, so this registration lists the `git`, `fs` and `note` tools and nothing else, and the handshake names only those three. A call to any other tool is an unknown tool, in [the record](../30-boundary/40-audit-trail.md) like any other probe. It only narrows: what an agent may do in those three areas is still decided by grants, exactly as before. `rta mcp install` refuses an area rta has no tool in, with the nearest to what was typed, and [Offering fewer tools](../30-boundary/20-mcp.md#offering-fewer-tools) has the rest.
 
 ## Be asked instead of refused, while you are at the machine
 

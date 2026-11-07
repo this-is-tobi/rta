@@ -69,13 +69,10 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 		opts.pace = newPacer(openBurst, openRate, openQueue)
 	}
 	opts.ended = &endedGrants{}
-	offered := make([]plugin.Capability, 0, len(reg.Capabilities()))
+	offered := opts.Offered(reg)
 	opts.tools = map[string]bool{}
-	for _, c := range reg.Capabilities() {
-		if opts.exposed(c) && opts.remoteExposed(c) {
-			offered = append(offered, c)
-			opts.tools[c.ID] = true
-		}
+	for _, c := range offered {
+		opts.tools[c.ID] = true
 	}
 	server := sdk.NewServer(&sdk.Implementation{
 		Name:    "rta",
