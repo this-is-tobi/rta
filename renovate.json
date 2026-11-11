@@ -53,10 +53,17 @@
       "groupName": "golangci-lint"
     },
     {
-      "description": "The Go toolchain is the go directive in go.mod, which CI reads through go-version-file, the golang image both Dockerfiles build in, and the pin in mise.toml. One pull request moves all three, as 'build' whichever of them it moves: Go's runtime and standard library are compiled into the binary, so a Go security release reaches nobody until a release carries it.",
+      "description": "The Go toolchain is the go directive in go.mod, which CI reads through go-version-file, the golang image both Dockerfiles build in, and the pin in mise.toml. One pull request moves all three, as 'build' whichever of them it moves: Go's runtime and standard library are compiled into the binary, so a Go security release reaches nobody until a release carries it. It is listed after the Go modules rule on purpose: the last rule to name a group wins, and the go directive is a gomod dependency that rule would otherwise take into the weekly bump.",
       "matchDepNames": ["go", "golang"],
       "groupName": "Go toolchain",
       "semanticCommitType": "build"
+    },
+    {
+      "description": "The go directive is a minimum, 'compatible with this version or later', and Renovate's default is never to propose a new one (docs.renovatebot.com/modules/manager/gomod), so without this the group above moves mise.toml and both Dockerfiles and leaves go.mod where it is. go.mod is the pin CI reads through go-version-file and the release workflow builds the archives with: a Go security release would reach the image and reach neither the pipeline's own checks nor the release archives. This is Renovate's documented opt-in for always moving it.",
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "matchDepTypes": ["golang"],
+      "rangeStrategy": "bump"
     },
     {
       "description": "A new digest under the same golang tag is the same Go release, and both Dockerfiles build with CGO off, so the binary does not change: the bump waits for a release rather than making one.",
