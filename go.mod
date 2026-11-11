@@ -1,6 +1,6 @@
 module github.com/this-is-tobi/rta
 
-go 1.27.3
+go 1.27.4
 
 // macOS keeps its own certificate verifier. From Go 1.27 a set SSL_CERT_FILE
 // or SSL_CERT_DIR makes crypto/x509 on macOS load its roots from those files
