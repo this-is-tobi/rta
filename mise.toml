@@ -13,7 +13,9 @@
 # Go's version of record is the `go` directive in go.mod, which CI reads
 # through go-version-file. mise does not read that directive (it is a
 # minimum, not a request), so the same version is stated here, and Renovate
-# moves both in its "Go toolchain" group (renovate.json) so they cannot
-# disagree for long.
+# moves both in its "Go toolchain" group (renovate.json), with the golang image
+# both Dockerfiles build in. It moves go.mod's directive only because
+# renovate.json tells it to; TestEveryGoPinNamesTheSameRelease fails a pull
+# request in which any of the four disagrees, whoever moved them.
 [tools]
 go = "1.27.4"
