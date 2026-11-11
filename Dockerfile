@@ -2,7 +2,7 @@
 
 # Pinned by digest, not by tag - the same reason `rta plugin trust` binds to a
 # digest rather than a name: a tag can move under you, a digest cannot.
-FROM golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9 AS build
+FROM golang:1.27.4-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea AS build
 WORKDIR /src
 
 # go.mod/go.sum copied first so this layer only invalidates on a dependency
