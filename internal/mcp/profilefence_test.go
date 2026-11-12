@@ -87,7 +87,7 @@ func newScopedFenceFixture(t *testing.T, yaml, dir, scope string) *fenceFixture 
 	}
 	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
 	server := NewServer(reg, "test", Options{
-		Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: config.Load,
+		Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: (&config.Loader{}).Load,
 	})
 	st, ct := sdk.NewInMemoryTransports()
 	if _, err := server.Connect(context.Background(), st, nil); err != nil {

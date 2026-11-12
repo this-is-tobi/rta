@@ -119,7 +119,7 @@ func newProfileFixtureIn(t *testing.T, yaml, dir string, tweaks ...func(*Options
 		Origin: reg.Origin, Config: resolver.For, Profiles: cfg,
 		// Wired the way internal/app wires it, so these tests exercise what a
 		// real server does rather than the zero value's fallback.
-		Reload: config.Load,
+		Reload: (&config.Loader{}).Load,
 	}
 	for _, tweak := range tweaks {
 		tweak(&opts)

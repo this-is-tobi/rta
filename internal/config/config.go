@@ -605,7 +605,9 @@ func Load() (Config, error) {
 // files in one process that had read them already. A Reading is not a cache:
 // it is the files as they were when it was made, held by whoever made it, and
 // a process that lives long enough for them to change (the TUI, `rta mcp
-// serve`) reads them again rather than keep one.
+// serve`) reads them again rather than keep one. Loader is the one reader
+// that keeps anything, and what it keeps is a parse of bytes it reads again
+// every time.
 type Reading struct{ s *stack }
 
 // Read reads the configuration's files once. A set that does not read is an
