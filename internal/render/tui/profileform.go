@@ -690,7 +690,7 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		tlsOn, _ := values[profileTLSField].(bool)
 		conn.TunnelTLS = tlsOn && tunnelled
 		if tlsOn && !tunnelled {
-			unread = append(unread, "tunnelTLS")
+			unread = append(unread, "tunnel-tls")
 		}
 		// Remembered before the rebuild, so the endpoint-key repair below can
 		// name what the file loses even when no box carried it: under a

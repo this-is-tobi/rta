@@ -167,7 +167,7 @@ const (
 	// request. If that socket itself speaks TLS — a service's own listener,
 	// as opposed to transport the forward provides — plain http is a
 	// downgrade this default cannot see, because nothing about the forward
-	// says so. config.Connection's `tunnelTLS: true` is how the operator says
+	// says so. config.Connection's `tunnel-tls: true` is how the operator says
 	// it — named apart from any plugin's own tls/sslmode field, which is a
 	// different fact at a different layer; see config.Connection.TunnelTLS's
 	// doc comment. internal/profile's endpointValues makes the resulting

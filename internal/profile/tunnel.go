@@ -54,7 +54,7 @@ func endpointValues(c plugin.Capability, ep tunnel.Endpoint, tunnelTLS bool) map
 		case plugin.EndpointURL:
 			// http by default: the forward is loopback and the hop that
 			// leaves the machine is already inside the API server's TLS.
-			// https only when the connection's own `tunnelTLS: true` says
+			// https only when the connection's own `tunnel-tls: true` says
 			// the far end terminates TLS itself — config.Connection.
 			// TunnelTLS's doc comment has the reasoning; a port-forward
 			// carries whatever the destination socket speaks unchanged, so

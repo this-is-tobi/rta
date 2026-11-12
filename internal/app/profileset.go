@@ -717,7 +717,7 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	}
 
 	if direct, _ := cmd.Flags().GetBool("direct"); direct {
-		// tunnelTLS: true states something about the forward direct just
+		// tunnel-tls: true states something about the forward direct just
 		// removed — left behind, it is not a stale value sitting quietly, it
 		// is a connection CheckConnection now refuses to resolve at all,
 		// over a flag that never mentioned it.

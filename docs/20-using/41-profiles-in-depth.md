@@ -111,7 +111,7 @@ One plugin per invocation. A profile spanning three plugins is three lines, and 
 | `--theme status=off` | how status is drawn is only set in your own config file, for every environment, so a profile cannot state it; the hint names `rta config set theme.status` — `core.profile.theme.status` |
 | `--theme …` together with `--untheme`, or a slot given twice | one states the block and the other removes it, and two colours for a slot have no order to rank them by |
 | `--kube …` and `--ssh …` together | a call opens one forward |
-| `--tunnel-tls` with neither `--kube` nor `--ssh` in effect (this run or already stored) | it states something about the far side of a forward that does not exist — `--direct` clears a stored `tunnelTLS: true` for the same reason |
+| `--tunnel-tls` with neither `--kube` nor `--ssh` in effect (this run or already stored) | it states something about the far side of a forward that does not exist — `--direct` clears a stored `tunnel-tls: true` for the same reason |
 | a profile named after an installed plugin | a profile name and a namespace share a command line |
 | writing where the file is not honoured | with no config directory the config path falls back to `./.rta.yaml` — ordinary in a container or in CI — and nothing in a working-directory file is honoured: `profiles:`, `plugins:` and `dashboard:` are all ignored, because that file could have come from a repository you cloned. Set `$RTA_CONFIG` |
 
@@ -194,7 +194,7 @@ Then put one modeline at the top of that file:
 # yaml-language-server: $schema=config.schema.json
 ```
 
-VS Code's YAML extension (`redhat.vscode-yaml`) and every other editor speaking yaml-language-server now complete each key, flag unknown ones, and show the explanation on hover — `tunnelTLS` tells you it is about the destination and not the hop without leaving the file.
+VS Code's YAML extension (`redhat.vscode-yaml`) and every other editor speaking yaml-language-server now complete each key, flag unknown ones, and show the explanation on hover — `tunnel-tls` tells you it is about the destination and not the hop without leaving the file.
 
 The schema states the envelope, deliberately. What a `plugins:` section or a `set:` overlay may hold *inside* is each plugin's own declaration, which the schema cannot know without knowing every plugin — `rta explain` on one of its capabilities lists those keys (`rta explain pg.status`; `rta explain pg` lists the capabilities), and `rta doctor` stays the deep validator for everything the envelope cannot see.
 

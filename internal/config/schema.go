@@ -341,7 +341,7 @@ func Schema() map[string]any {
 						"type":    "string",
 						"pattern": `^[^/]+/[^/]+$`,
 					},
-					"tunnelTLS": map[string]any{
+					"tunnel-tls": map[string]any{
 						"description": "The far side of this connection's forward terminates TLS " +
 							"itself, so URL-role inputs are filled with https. A " +
 							"statement about the destination, never the hop; the " +

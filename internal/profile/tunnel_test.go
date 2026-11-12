@@ -411,32 +411,67 @@ func TestAForwardThatCannotBeOpenedRefusesRatherThanFallingBack(t *testing.T) {
 	}
 }
 
-// `tunnelTLS: true` states something about the far side of a forward that
+// `tunnel-tls: true` states something about the far side of a forward that
 // does not exist, caught before the call that needs it and by both the
 // report and the resolver — the same twin-hunt
 // TestBothTunnelsAtOnceAreRefusedEverywhere runs for the kube/ssh rule.
+//
+// `tunnel-tls: true` fills a URL and nothing else. Stated for a plugin that
+// takes an address it changed nothing and was ignored, while the operator
+// believed the call went over TLS; it is refused by both, in the same words,
+// naming the settings that do turn TLS on through a forward. The key's old
+// spelling is told the new one.
+func TestTunnelTLSForAPluginThatTakesNoURLIsRefusedAndTheOldSpellingNamed(t *testing.T) {
+	reg := registry.New()
+	c := plugin.Capability{ID: "redis.info", Summary: "info", Safety: plugin.Read, Run: run,
+		Inputs: []plugin.Field{{Name: "address", Type: plugin.String, Config: "address", Local: true,
+			Endpoint: plugin.EndpointAddress}}}
+	if err := reg.Register(plugin.Plugin{Name: "redis", Summary: "redis", Capabilities: []plugin.Capability{c}}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := load(t, "profiles:\n  lab:\n    plugins:\n      redis:\n        kube: homelab/databases/svc/redis:6379\n        tunnel-tls: true\n")
+	_, verr := Lookup(cfg, c, "lab", reg)
+	if verr == nil || verr.Code != "core.profile.tunnel.tls.unused" || !strings.Contains(verr.Message, "redis takes no URL") ||
+		!strings.Contains(verr.Hint, "tls-server-name") {
+		t.Fatalf("Lookup = %v", verr)
+	}
+	reported := false
+	for _, p := range Check(cfg, reg) {
+		reported = reported || strings.Contains(p.Reason, "redis takes no URL")
+	}
+	if !reported {
+		t.Error("Check does not report what Lookup refuses")
+	}
+
+	cfg = load(t, "profiles:\n  lab:\n    plugins:\n      redis:\n        kube: homelab/databases/svc/redis:6379\n        tunnelTLS: true\n")
+	if _, verr := Lookup(cfg, c, "lab", reg); verr == nil || verr.Code != "core.profile.unknownkey" ||
+		verr.Hint != "`tunnelTLS` is spelled `tunnel-tls` now, like every other key" {
+		t.Fatalf("the old spelling: %v", verr)
+	}
+}
+
 func TestTLSWithoutATunnelIsRefusedByBothCheckAndLookup(t *testing.T) {
 	cfg := load(t, `
 profiles:
   homelab:
     plugins:
       pg:
-        tunnelTLS: true
+        tunnel-tls: true
 `)
 	reg := tunnelledRegistry(t)
 	_, verr := Lookup(cfg, tunnelCap(), "homelab", reg)
 	if verr == nil {
-		t.Fatal("tunnelTLS: true with no kube: or ssh: resolved — TLS to what forward?")
+		t.Fatal("tunnel-tls: true with no kube: or ssh: resolved — TLS to what forward?")
 	}
 	if verr.Code != "core.profile.tunnel" {
 		t.Errorf("code = %s, want core.profile.tunnel", verr.Code)
 	}
-	if !strings.Contains(verr.Message, "states `tunnelTLS: true`") {
+	if !strings.Contains(verr.Message, "states `tunnel-tls: true`") {
 		t.Errorf("message = %q, want it to name the statement", verr.Message)
 	}
 	found := false
 	for _, p := range Check(cfg, reg) {
-		if strings.Contains(p.Reason, "states `tunnelTLS: true`") {
+		if strings.Contains(p.Reason, "states `tunnel-tls: true`") {
 			found = true
 		}
 	}
