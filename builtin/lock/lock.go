@@ -76,7 +76,7 @@ func Plugin() plugin.Plugin {
 						Help: "freeze every agent, the ones that have not connected yet included"},
 					{Name: "note", Type: plugin.String,
 						Help: "shown to the locked party on every refusal — write it for them"},
-					{Name: "ttl", Type: plugin.String,
+					{Name: "ttl", Type: plugin.Duration, Min: "1s",
 						Help: "lift itself after this window (30m, 2h, 1d); omit for a lock that stands until removed"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "place the lock on this remote server (a name from remotes.yaml)"},

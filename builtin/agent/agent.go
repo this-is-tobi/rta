@@ -263,8 +263,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.String, Positional: true, Suggest: suggestPending,
 						Help: "the request id from `agent.pending`; left out when exactly one call is waiting"},
-					{Name: "ttl", Type: plugin.String,
-						Help: "also issue a standing grant for this long, e.g. 15m (max 24h)"},
+					{Name: "ttl", Type: plugin.Duration, Min: "1s", Max: plugin.FormatDuration(grant.MaxTTL),
+						Help: "also issue a standing grant for this long, such as 15m"},
 					{Name: "role", Type: plugin.String, Suggest: rtagrant.SuggestRoles,
 						Help: "also issue this whole role to the asking agent — the day's grants under one passphrase, then this call"},
 					// One passphrase field serves both gates that can ask: the
