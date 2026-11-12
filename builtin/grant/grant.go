@@ -689,7 +689,7 @@ func runApprove(ctx context.Context, req plugin.Request, catalog func() []plugin
 	artifact func(string) (string, bool),
 ) (view.View, error) {
 	if server := req.String("server"); server != "" {
-		return remoteAllow(ctx, req, server)
+		return remoteAllow(ctx, req, server, catalog)
 	}
 	// Validation and construction live in buildGrant, shared with the
 	// operator channel's prepare verb — the machine whose config, policy and
