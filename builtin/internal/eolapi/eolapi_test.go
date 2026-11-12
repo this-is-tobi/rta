@@ -14,13 +14,13 @@ func date(s string) *string { return &s }
 
 func TestGradeTrustsIsEolOverAFarFutureDate(t *testing.T) {
 	r := Release{IsEol: true, EolFrom: date("2099-01-01")}
-	if got := Grade(r, 90, time.Now()); got != Ended {
+	if got := Grade(r, 90*24*time.Hour, time.Now()); got != Ended {
 		t.Errorf("Grade = %v, want Ended: the API's own verdict wins over the date", got)
 	}
 }
 
 func TestGradeCallsANotAnnouncedDateSupported(t *testing.T) {
-	if got := Grade(Release{}, 90, time.Now()); got != Supported {
+	if got := Grade(Release{}, 90*24*time.Hour, time.Now()); got != Supported {
 		t.Errorf("Grade = %v, want Supported for a cycle with no date announced", got)
 	}
 }
@@ -29,13 +29,13 @@ func TestGradeWarnsInsideTheWindowAndNotOutsideIt(t *testing.T) {
 	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 	inside := Release{EolFrom: date("2026-10-01")}
 	outside := Release{EolFrom: date("2027-10-01")}
-	if got := Grade(inside, 90, now); got != Ending {
+	if got := Grade(inside, 90*24*time.Hour, now); got != Ending {
 		t.Errorf("11 days out with a 90-day window: %v, want Ending", got)
 	}
-	if got := Grade(outside, 90, now); got != Supported {
+	if got := Grade(outside, 90*24*time.Hour, now); got != Supported {
 		t.Errorf("a year out with a 90-day window: %v, want Supported", got)
 	}
-	if got := Grade(inside, 5, now); got != Supported {
+	if got := Grade(inside, 5*24*time.Hour, now); got != Supported {
 		t.Errorf("11 days out with a 5-day window: %v, want Supported", got)
 	}
 }

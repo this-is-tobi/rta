@@ -846,7 +846,7 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"net.hosts.add":    {"ip": "10.0.0.2", "hostname": []string{"conformance.local"}, "file": hosts},
 		"net.hosts.rm":     {"hostname": []string{"db.local"}, "file": hosts},
 		"net.hosts.toggle": {"hostname": "db.local", "file": hosts},
-		"net.resolver.set": {"server": []string{"9.9.9.9"}, "file": resolv},
+		"net.resolver.set": {"nameserver": []string{"9.9.9.9"}, "file": resolv},
 
 		// A URL that resolves to nothing anyone is listening on. If a dry run
 		// ever stops being dry, the failure is a refused connection here and

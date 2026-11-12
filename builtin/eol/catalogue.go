@@ -30,7 +30,7 @@ func productsCapability() plugin.Capability {
 			// Bounded because the catalogue is some five hundred products, 35 KB
 			// of rows, and a model that leaves the term out to see what there
 			// is pays for all of it, in tokens, to read the first screen of it.
-			{Name: "limit", Type: plugin.Int, Config: "catalogue.limit", Default: 50, Min: 1, Max: 1000,
+			{Name: "limit", Type: plugin.Int, Config: "products.limit", Default: 50, Min: 1, Max: 1000,
 				Help: "how many products to list"},
 		},
 		Run: runProducts,

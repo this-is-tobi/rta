@@ -329,7 +329,7 @@ func auditDetailCases(t *testing.T) []auditDetailCase {
 func detailPage(t *testing.T, c auditDetailCase) view.Sections {
 	t.Helper()
 	fakeKubectl(t, c.bodies)
-	req := plugin.NewRequest(map[string]any{"detail": true, "warn-days": 90}, false, false)
+	req := plugin.NewRequest(map[string]any{"detail": true, "warn-within": "90d"}, false, false)
 	out, err := c.run(t.Context(), req)
 	if err != nil {
 		t.Fatalf("%s: %v", c.name, err)

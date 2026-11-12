@@ -13,7 +13,7 @@ import (
 func expiryTable(t *testing.T, targets []string) view.Table {
 	t.Helper()
 	v, err := runExpiry(context.Background(), req(map[string]any{
-		"targets": targets, "warn-days": 30, "timeout": "1s",
+		"targets": targets, "warn-within": "30d", "timeout": "1s",
 	}))
 	if err != nil {
 		t.Fatal(err)

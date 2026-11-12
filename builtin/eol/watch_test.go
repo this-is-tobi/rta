@@ -125,10 +125,11 @@ func TestWatchReportsACycleTheProductDoesNotHave(t *testing.T) {
 	}
 }
 
-// The list the help text and the docs point at — `plugins: eol: products:` —
-// reaches the capability through the same Config path as every other
-// config-backed input. It did not, once: the input never declared a key, so
-// a configured list was silently ignored and the call refused as empty.
+// The list the help text and the docs point at — `watch.products` under
+// `plugins: eol:` — reaches the capability through the same Config path as
+// every other config-backed input. It did not, once: the input never declared
+// a key, so a configured list was silently ignored and the call refused as
+// empty.
 func TestWatchReadsTheListFromTheConfigWhenNobodyPassedOne(t *testing.T) {
 	srv := newCatalogueServer(t)
 	var c plugin.Capability
@@ -138,7 +139,7 @@ func TestWatchReadsTheListFromTheConfigWhenNobodyPassedOne(t *testing.T) {
 		}
 	}
 	req := plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
-		Config: map[string]any{"products": []any{"postgresql@18"}},
+		Config: map[string]any{"watch.products": []any{"postgresql@18"}},
 	}), false, false)
 	v, err := runWatchAt(context.Background(), req, srv.URL)
 	tbl := asTable(t, v, err)
@@ -155,7 +156,7 @@ func TestWatchRefusesAnEmptyListWithTheConfigHint(t *testing.T) {
 	if !ok || verr.Code != "eol.watch.empty" {
 		t.Fatalf("err = %v, want eol.watch.empty", err)
 	}
-	if !strings.Contains(verr.Hint, "plugins: eol: products:") {
+	if !strings.Contains(verr.Hint, "plugins: eol: watch.products:") {
 		t.Errorf("hint = %q, want it to show the config key", verr.Hint)
 	}
 }

@@ -246,7 +246,7 @@ func TestGradeSaysWhenTheAnnouncedDateHasAlreadyPassed(t *testing.T) {
 	// A fixed clock in UTC, the zone the API's dates are parsed in: against
 	// time.Now() the count depends on the hour and the machine's zone.
 	passed := "2026-09-18"
-	g := &grader{warnDays: 90, now: time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)}
+	g := &grader{within: 90 * 24 * time.Hour, now: time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)}
 	p := &eolapi.Product{Name: "demo", Releases: []eolapi.Release{{Name: "1", EolFrom: &passed}}}
 
 	status, detail := g.grade(p, "1.4")

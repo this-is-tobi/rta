@@ -69,21 +69,21 @@ func TestExpiringCoversTheLastWarnDaysOfValidity(t *testing.T) {
 	tests := []struct {
 		name     string
 		notAfter time.Time
-		warnDays int
+		within   time.Duration
 		want     bool
 	}{
-		{"well inside validity", time.Now().Add(90 * 24 * time.Hour), 30, false},
-		{"just outside the window", time.Now().Add(31 * 24 * time.Hour), 30, false},
-		{"just inside the window", time.Now().Add(29 * 24 * time.Hour), 30, true},
-		{"already expired", time.Now().Add(-24 * time.Hour), 30, true},
-		{"twenty days out, the case the two callers disagreed on", time.Now().Add(20 * 24 * time.Hour), DefaultWarnDays, true},
+		{"well inside validity", time.Now().Add(90 * 24 * time.Hour), 30 * 24 * time.Hour, false},
+		{"just outside the window", time.Now().Add(31 * 24 * time.Hour), 30 * 24 * time.Hour, false},
+		{"just inside the window", time.Now().Add(29 * 24 * time.Hour), 30 * 24 * time.Hour, true},
+		{"already expired", time.Now().Add(-24 * time.Hour), 30 * 24 * time.Hour, true},
+		{"twenty days out, the case the two callers disagreed on", time.Now().Add(20 * 24 * time.Hour), DefaultWarnWithin, true},
 		{"warnings switched off", time.Now().Add(time.Hour), 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := Expiring(tt.notAfter, tt.warnDays); got != tt.want {
-				t.Errorf("Expiring(%s away, %d) = %v, want %v",
-					time.Until(tt.notAfter).Round(time.Hour), tt.warnDays, got, tt.want)
+			if got := Expiring(tt.notAfter, tt.within); got != tt.want {
+				t.Errorf("Expiring(%s away, %v) = %v, want %v",
+					time.Until(tt.notAfter).Round(time.Hour), tt.within, got, tt.want)
 			}
 		})
 	}

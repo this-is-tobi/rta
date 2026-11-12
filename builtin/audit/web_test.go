@@ -725,8 +725,8 @@ func TestCertExpiryWarnsOnTheSharedWindow(t *testing.T) {
 	if r[1] != findings.Warn {
 		t.Errorf("a certificate 20 days from expiry graded %q (%s), want %s", r[1], r[2], findings.Warn)
 	}
-	if !strings.Contains(r[2], fmt.Sprintf("<%dd", x509check.DefaultWarnDays)) {
-		t.Errorf("detail %q does not name the shared %d-day window", r[2], x509check.DefaultWarnDays)
+	if !strings.Contains(r[2], fmt.Sprintf("<%dd", int(x509check.DefaultWarnWithin.Hours()/24))) {
+		t.Errorf("detail %q does not name the shared %v window", r[2], x509check.DefaultWarnWithin)
 	}
 }
 

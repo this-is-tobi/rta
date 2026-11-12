@@ -58,14 +58,15 @@ var (
 // instead of a call that runs for a minute.
 const maxEOLProducts = 30
 
-// defaultEOLWarnDays is the eol built-in's own window, for the same reason
+// defaultEOLWarnWithin is the eol built-in's own window, for the same reason
 // it is wider than cert.expiry's: a major-version upgrade is not something
 // anybody does in an afternoon.
-const defaultEOLWarnDays = 90
+const defaultEOLWarnWithin = "90d"
 
-func warnDaysField() plugin.Field {
-	return plugin.Field{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultEOLWarnDays,
-		Help: "warn about a release within this many days of its end-of-life date"}
+func warnWithinField() plugin.Field {
+	return plugin.Field{Name: "warn-within", Type: plugin.Duration, Config: "warn-within",
+		Default: defaultEOLWarnWithin, Min: "1d", Max: "730d",
+		Help: "warn about a release whose end of life is within this long, such as 90d"}
 }
 
 // imagesField is the operator's mapping of images to products, Local so no
@@ -160,7 +161,7 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 	if verr != nil {
 		return nil, verr.WithInput("images")
 	}
-	g := &grader{ctx: ctx, base: base, warnDays: req.Int("warn-days"), now: time.Now(),
+	g := &grader{ctx: ctx, base: base, within: req.Duration("warn-within"), now: time.Now(),
 		index: index, images: images, fetched: map[string]*eolapi.Product{}, skipped: map[string]bool{},
 		unanswered: map[string]*view.Error{}}
 
@@ -184,10 +185,10 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 
 // grader looks each product up once and grades versions against it.
 type grader struct {
-	ctx      context.Context
-	base     string
-	warnDays int
-	now      time.Time
+	ctx    context.Context
+	base   string
+	within time.Duration
+	now    time.Time
 	// index is every catalogue name and alias, lowercased, to the product
 	// it names — what turns an image called postgres into postgresql.
 	index map[string]string
@@ -240,7 +241,7 @@ func (g *grader) grade(p *eolapi.Product, version string) (status, detail string
 			plugin.ListedName(version), p.Name, cycleNames(p.Releases))
 	}
 	label := p.Name + " " + rel.Name
-	switch eolapi.Grade(rel, g.warnDays, g.now) {
+	switch eolapi.Grade(rel, g.within, g.now) {
 	case eolapi.Ended:
 		if d, ok := eolapi.EolDate(rel); ok {
 			return findings.Fail, fmt.Sprintf("%s reached end of life on %s, %s ago",

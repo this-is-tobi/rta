@@ -129,7 +129,7 @@ func TestARefusalOfOneInputNamesIt(t *testing.T) {
 // its own.
 func TestExpiryNamesNoInputForAHostItCouldNotCheck(t *testing.T) {
 	_, err := runExpiry(context.Background(), req(map[string]any{
-		"targets": []string{"ftp://example.invalid"}, "warn-days": 30, "timeout": "2s",
+		"targets": []string{"ftp://example.invalid"}, "warn-within": "30d", "timeout": "2s",
 	}).WithSurface(plugin.SurfaceCLI))
 	if code, input := refusedInput(t, "cert.expiry", err); code != "cert.expiry.failed" || input != "" {
 		t.Errorf("an unreachable host at a terminal: %s naming %q, want cert.expiry.failed naming none", code, input)

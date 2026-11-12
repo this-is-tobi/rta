@@ -21,7 +21,7 @@ const maxWatch = 20
 // What an operator actually checks is not "postgresql 15" on its own but
 // the dozen things their platform runs, and they check it weekly. Typing
 // twelve `eol check` calls is the reason nobody does. The list is
-// configuration — `plugins: eol: products:` in the config file or a
+// configuration — `plugins: eol: watch.products:` in the config file or a
 // profile — so it is written once and carried by whatever the profile
 // carries; `--products` on the command line is the same input typed by
 // hand.
@@ -50,17 +50,16 @@ func watchCapability() plugin.Capability {
 		Description: "Runs `eol.check` over a list of products, each optionally pinned to one " +
 			"release cycle or a range of them as product@cycle — postgresql@15, " +
 			"postgresql@13..16, nodejs, debian@bookworm. Write the list once as " +
-			"`plugins: eol: products:` in your config or a profile and it is what this " +
+			"`plugins: eol: watch.products:` in your config or a profile and it is what this " +
 			"grades from then on. A product the API does not know, or a cycle the " +
 			"product does not have, is one row saying so; the rest of the list is still " +
 			"graded.",
 		NoPreview: true,
 		Refresh:   eolapi.TileRefresh,
 		Inputs: []plugin.Field{
-			{Name: "products", Type: plugin.StringSlice, Config: "products",
-				Help: "product or product@cycle, repeatable — usually from `plugins: eol: products:` in your config"},
-			{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultWarnDays,
-				Help: "flag a cycle within this many days of its end-of-life date"},
+			{Name: "products", Type: plugin.StringSlice, Config: "watch.products",
+				Help: "product or product@cycle, repeatable — usually from `plugins: eol: watch.products:` in your config"},
+			warnWithinField(),
 		},
 		Run: runWatch,
 	}
@@ -74,7 +73,7 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 	entries := req.StringSlice("products")
 	if len(entries) == 0 {
 		return nil, view.Errorf("eol.watch.empty", "nothing to watch").
-			WithHint("write the list once — `plugins: eol: products: [postgresql@15, nodejs]` in your " +
+			WithHint("write the list once — `plugins: eol: watch.products: [postgresql@15, nodejs]` in your " +
 				"config or a profile — or give them in " + req.Surface().InputName("products")).
 			WithInput("products")
 	}
@@ -121,7 +120,7 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 		parsed = append(parsed, watchEntry{product: product, cycle: cycle, sel: sel})
 	}
 
-	warnDays := req.Int("warn-days")
+	within := req.Duration("warn-within")
 	now := time.Now()
 	t := view.Table{Columns: []view.Column{
 		{Name: "Product"},
@@ -163,7 +162,7 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 			continue
 		}
 		for _, r := range releases {
-			t.Add(append([]view.Cell{view.Plain(result.Name)}, gradeRow(r, warnDays, now)...)...)
+			t.Add(append([]view.Cell{view.Plain(result.Name)}, gradeRow(r, within, now)...)...)
 		}
 	}
 	t.Total = len(t.Rows)
