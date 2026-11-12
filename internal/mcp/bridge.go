@@ -87,6 +87,7 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 		opts.pace = newPacer(openBurst, openRate, openQueue)
 	}
 	opts.ended = &endedGrants{}
+	opts.read = &lastRead{}
 	offered := opts.Offered(reg)
 	opts.tools = map[string]bool{}
 	for _, c := range offered {

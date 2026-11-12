@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"fmt"
@@ -47,6 +49,9 @@ type Options struct {
 	// ended remembers the grants this server has run calls on, to word a
 	// refusal for one that has run out — see endedGrants. Set by NewServer.
 	ended *endedGrants
+	// read is the operator's connections as the config file last read, which
+	// is what a read that fails answers — see lastRead. Set by NewServer.
+	read *lastRead
 	// tools is the capability IDs this server offers, so that a description
 	// naming one can say what a model calls it (nameTools). Set by NewServer;
 	// nil in a unit test that builds one tool, where nothing is renamed.
@@ -182,9 +187,10 @@ type Options struct {
 	// in the config, a mode changed under the server, lifted the rule that
 	// keeps an unprofiled call off the base connection and the ambient kubectl
 	// context for as long as the file stayed broken, on reads that need no
-	// grant. The error is Reload's to return, and profiles answers the
-	// snapshot the server started with: what it knew of the operator's
-	// connections is what holds until the file reads again.
+	// grant. The error is Reload's to return, and profileSet answers the last
+	// read that succeeded — the startup snapshot only until a later one has
+	// (lastRead): what the server last knew of the operator's connections is
+	// what holds until the file reads again.
 	Reload func() (config.Config, error)
 	// Active answers which environment the operator has switched on, read per
 	// call so that switching takes effect in a server that has been running for
@@ -341,14 +347,79 @@ func (o Options) connectionsFor(ctx context.Context) (config.Config, bool) {
 // profileSet is the operator's connections as the file has them now, with
 // whether they are known at all: false only when the file has not read since
 // the server started and did not read at startup either, which is the one
-// state with no snapshot to answer from.
+// state with no read to answer from.
 func (o Options) profileSet() (config.Config, bool) {
 	if o.Reload != nil {
+		seq := o.read.begin()
 		if live, err := o.Reload(); err == nil {
+			o.read.keep(seq, live)
 			return live, true
+		}
+		if last, ok := o.read.last(); ok {
+			return last, true
 		}
 	}
 	return o.Profiles, o.ProfilesErr == nil
+}
+
+// lastRead is the operator's connections as the config file last read, for
+// the calls that arrive while it does not.
+//
+// **Because the snapshot a server started with is not what it knows.** A read
+// that failed was answered from the startup read, and a server started before
+// the operator wrote any profile started with none: once profiles were adopted
+// under the running server, an editor's half-saved file put back the empty set
+// takeProfile reads as "no profile configured", and an unprofiled call ran on
+// the base connection — on reads that need no grant — until the file read
+// again. The last read that succeeded is what the server knew of the
+// connections a moment ago, so that is what holds; the lock list keeps its last
+// verified set for the same reason (lockdown.Pin). It also keeps a grant issued
+// after startup matching while the file is broken, since the grant's pin was
+// taken from that read and not from the startup one.
+//
+// **Ordered by when a read began, not when it ended.** Calls read
+// concurrently, so a slow read of the file as it was before profiles existed
+// can finish after a quick read of the file with them; kept in the order they
+// finished, the older read would be the one a broken file answers, which is
+// the hole this closes. A read that began later saw the file at least as late.
+//
+// Nil-safe, so an Options built without NewServer keeps answering the startup
+// read as before.
+type lastRead struct {
+	next atomic.Uint64
+	mu   sync.Mutex
+	seq  uint64
+	cfg  *config.Config
+}
+
+func (l *lastRead) begin() uint64 {
+	if l == nil {
+		return 0
+	}
+	return l.next.Add(1)
+}
+
+func (l *lastRead) keep(seq uint64, cfg config.Config) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if seq > l.seq {
+		l.seq, l.cfg = seq, &cfg
+	}
+}
+
+func (l *lastRead) last() (config.Config, bool) {
+	if l == nil {
+		return config.Config{}, false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.cfg == nil {
+		return config.Config{}, false
+	}
+	return *l.cfg, true
 }
 
 // pluginAuthored reports whether the words a capability declares were written

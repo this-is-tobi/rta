@@ -589,6 +589,73 @@ func TestAConfigThatWillNotReadDoesNotLiftTheRuleThatKeepsAnUnprofiledCallOffThe
 	}
 }
 
+// The same rule when the profiles came after the server. A broken file was
+// answered from the read the server started with, and a server started before
+// the operator wrote any profile started with none: the operator adopted
+// profiles under it, an editor left the file half saved, and an unprofiled
+// call ran on the base connection again. What holds is the last read that
+// succeeded, which is also what keeps a grant issued against it working while
+// the file is broken.
+func TestAConfigThatBreaksAfterProfilesWereWrittenKeepsTheirRule(t *testing.T) {
+	f := newProfileFixture(t, "plugins:\n  pg:\n    host: base.internal\n")
+	if res := f.call(t, map[string]any{"sql": "select 1"}); res.IsError {
+		t.Fatalf("an unprofiled call was refused before any profile existed: %s", contentText(t, res))
+	}
+
+	if err := writeFile(f.dir+"/config.yaml", twoProfiles); err != nil {
+		t.Fatal(err)
+	}
+	adopted, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{{
+		Target: "pg", Profile: "staging", ProfilePin: profile.ConnStampFor(adopted, "staging", "pg"),
+		Issued: now, Expires: now.Add(time.Hour),
+	}}); verr != nil {
+		t.Fatal(verr)
+	}
+	assertCode(t, f.call(t, map[string]any{"sql": "select 1"}), "core.profile.required")
+
+	if err := writeFile(f.dir+"/config.yaml", "profiles: [not: valid\n  - {{"); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		*f.sawHost = ""
+		res := f.call(t, map[string]any{"sql": "select 1"})
+		if !res.IsError {
+			t.Fatalf("an unprofiled call ran against the base connection %q while the config would not read", *f.sawHost)
+		}
+		assertCode(t, res, "core.profile.required")
+	}
+	*f.sawHost = ""
+	if res := f.call(t, map[string]any{"profile": "staging", "sql": "select 1"}); res.IsError {
+		t.Fatalf("a grant issued against the file as it last read was refused while it would not read: %s", contentText(t, res))
+	}
+	if *f.sawHost != "staging.internal" {
+		t.Errorf("host = %q, want staging's as the file last read", *f.sawHost)
+	}
+}
+
+// A read that began earlier and finished later is not the last read: calls
+// read concurrently, and kept in the order they finished, a slow read of the
+// file from before the profiles existed would be what a broken file answers.
+func TestTheLastReadIsTheOneThatBeganLast(t *testing.T) {
+	var l lastRead
+	early, late := l.begin(), l.begin()
+	l.keep(late, config.Config{Output: "late"})
+	l.keep(early, config.Config{Output: "early"})
+	if got, ok := l.last(); !ok || got.Output != "late" {
+		t.Fatalf("last = %q, %v; want the read that began last", got.Output, ok)
+	}
+	var none *lastRead
+	if _, ok := none.last(); ok {
+		t.Fatal("an Options built without NewServer has a last read")
+	}
+	none.keep(none.begin(), config.Config{})
+}
+
 // A profile switches the namespace-wide credential variable off entirely.
 //
 // RTA_PG_PASSWORD is bound to the plugin, so it follows the connection
