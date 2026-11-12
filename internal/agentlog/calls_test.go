@@ -8,6 +8,42 @@ import (
 	"testing"
 )
 
+// Count is the number Calls returns, read without decoding a line: over every
+// segment, past blank lines, and through an entry longer than its buffer. A
+// line that does not parse is the one difference, counted as the line it is.
+func TestCountIsWhatCallsCountsWithoutDecoding(t *testing.T) {
+	isolate(t)
+	small(t, 2<<10, 20)
+	for i := 0; i < 24; i++ {
+		write(t, Entry{Cap: "sys.cpu", Outcome: Ran, Auth: Open, Args: map[string]any{"pad": strings.Repeat("x", 100)}})
+	}
+	write(t, Entry{Cap: "sys.cpu", Outcome: Ran, Auth: Open, Args: map[string]any{"pad": strings.Repeat("y", 200<<10)}})
+	files, err := Segments()
+	if err != nil || len(files) < 2 {
+		t.Fatalf("want a record over several segments, got %v, %v", files, err)
+	}
+	f, err := os.OpenFile(files[0], os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, werr := f.WriteString("\n  \nnot json at all\n")
+	if cerr := f.Close(); werr != nil || cerr != nil {
+		t.Fatal(werr, cerr)
+	}
+
+	calls, err := Calls(func(Call) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 25 || n != calls+1 {
+		t.Errorf("Count = %d and Calls = %d, want 26 lines holding 25 calls", n, calls)
+	}
+}
+
 // Calls is what Read(0) was used for by a counter: the same labels, in the
 // same order, over every segment, with a line that does not parse skipped
 // rather than ending the walk.

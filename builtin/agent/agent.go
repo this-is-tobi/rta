@@ -987,13 +987,13 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	//
 	// The newest-first read is bounded by what it was asked for, so when it
 	// came back full there may be more behind it: the record is counted then,
-	// a line at a time and without keeping any, and only then.
+	// a line at a time and decoding none (agentlog.Count), and only then.
 	total, reachedBack := len(matched), true
 	behind := f.after == 0 && since.IsZero() && len(entries) >= want
 	if behind {
 		reachedBack = false
 		if !f.picks() {
-			if n, err := agentlog.Calls(func(agentlog.Call) {}); err == nil {
+			if n, err := agentlog.Count(); err == nil {
 				total, reachedBack = n, true
 			}
 		}

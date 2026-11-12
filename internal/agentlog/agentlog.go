@@ -1388,6 +1388,66 @@ func Calls(each func(Call)) (int, error) {
 	return n, nil
 }
 
+// Count is how many entries the retained record holds, counted a line at a
+// time and decoding none: the total `rta agent log` puts under rows that are
+// fewer than the record.
+//
+// Calls answers the same number for a record whose lines all parse, and it
+// unmarshals every line to do it: about 200 ms on a record at its retention
+// ceiling (162,887 entries, 61 MB), against 6 ms here. The sequence numbers
+// at both ends of the record would answer in two small reads, and they are
+// the one thing not to count by: a record with a gap in it, the case an
+// operator most needs the true total for, would be counted as whole. A
+// corrupt line is counted as the line it is; Verify is what reports it.
+func Count() (int, error) {
+	files, err := Segments()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, p := range files {
+		c, err := countLines(p)
+		n += c
+		if err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
+// countLines counts the lines of the file at path that hold anything, the
+// lines eachLine hands on, without making a string of any.
+func countLines(path string) (int, error) {
+	file, err := atomicfile.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = file.Close() }()
+	r := bufio.NewReaderSize(file, 64<<10)
+	n, held := 0, false
+	for {
+		chunk, err := r.ReadSlice('\n')
+		held = held || len(bytes.TrimSpace(chunk)) > 0
+		switch {
+		case errors.Is(err, bufio.ErrBufferFull):
+			// A line longer than the buffer: the rest of it comes next.
+		case err == nil || errors.Is(err, io.EOF):
+			if held {
+				n++
+			}
+			if err != nil {
+				return n, nil
+			}
+			held = false
+		default:
+			return n, err
+		}
+	}
+}
+
 // Report is what Verify found.
 type Report struct {
 	Entries int
