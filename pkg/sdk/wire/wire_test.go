@@ -395,6 +395,7 @@ func fullDeclaration() plugin.Plugin {
 		Summary: "a demo plugin",
 		Version: "1.2.3",
 		Needs:   []plugin.Need{plugin.NeedKubeconfig},
+		Renamed: map[string]string{"thing.size": "thing.limit"},
 		Capabilities: []plugin.Capability{{
 			ID:           "demo.thing.get",
 			Summary:      "get a thing",

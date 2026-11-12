@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -63,6 +64,11 @@ const (
 	maxKeywords = 12
 	maxKeyword  = 24
 )
+
+// maxRenamed bounds a plugin's table of renamed keys: one entry per key it
+// has ever stopped reading, which no plugin comes near, against a declaration
+// built to be large.
+const maxRenamed = 256
 
 // FieldTypes returns every type an input may declare, in the order the
 // rejection message lists them.
@@ -167,6 +173,27 @@ func (p Plugin) Validate() error {
 			return fmt.Errorf("plugin %q: duplicate need %q", p.Name, n)
 		}
 		askedFor[n] = true
+	}
+	// Renamed only words a refusal, so an entry that names a key in no
+	// grammar would only ever mislead; it is refused as a declaration the host
+	// cannot read as written. Whether the old key is unread and the new one
+	// read is the author's to check (sdktest), not registration's: an entry
+	// wrong that way is skipped where it is used, and refusing the plugin for
+	// it would take it off the air over a sentence.
+	if len(p.Renamed) > maxRenamed {
+		return fmt.Errorf("plugin %q: %d renamed keys, want at most %d", p.Name, len(p.Renamed), maxRenamed)
+	}
+	for _, from := range slices.Sorted(maps.Keys(p.Renamed)) {
+		to := p.Renamed[from]
+		for _, key := range []string{from, to} {
+			if !configKeyRe.MatchString(key) || len(key) > maxIdentifier {
+				return fmt.Errorf("plugin %q: renamed key %q; want dot-separated lowercase segments, "+
+					"at most %d characters", p.Name, key, maxIdentifier)
+			}
+		}
+		if from == to {
+			return fmt.Errorf("plugin %q: renamed key %q names itself", p.Name, from)
+		}
 	}
 	seen := map[string]bool{}
 	for _, c := range p.Capabilities {

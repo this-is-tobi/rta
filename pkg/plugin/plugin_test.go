@@ -969,6 +969,36 @@ func TestADuplicateNeedIsRefused(t *testing.T) {
 	}
 }
 
+// A renamed key is a config key on both sides, and not the same one twice:
+// an entry the host could not read as a key would only ever mislead. A well
+// formed one registers, whether or not its keys are declared, since that is
+// wording the host checks where it uses it.
+func TestARenamedKeyIsHeldToTheKeyGrammar(t *testing.T) {
+	declare := func(renamed map[string]string) error {
+		return Plugin{
+			Name: "demo", Summary: "s", Renamed: renamed,
+			Capabilities: []Capability{{ID: "demo.get", Summary: "g", Safety: Read, Run: noop}},
+		}.Validate()
+	}
+	for _, bad := range []map[string]string{
+		{"Old Key": "limit"}, {"size": "Limit"}, {"size": "size"}, {strings.Repeat("a", maxIdentifier+1): "limit"},
+	} {
+		if err := declare(bad); err == nil || !strings.Contains(err.Error(), "renamed key") {
+			t.Errorf("%v: err = %v", bad, err)
+		}
+	}
+	many := map[string]string{}
+	for i := range maxRenamed + 1 {
+		many[fmt.Sprintf("key%d", i)] = "limit"
+	}
+	if err := declare(many); err == nil || !strings.Contains(err.Error(), "renamed keys") {
+		t.Errorf("%d entries: err = %v", len(many), err)
+	}
+	if err := declare(map[string]string{"sslmode": "tls", "query.size": "query.limit"}); err != nil {
+		t.Errorf("a well-formed table was refused: %v", err)
+	}
+}
+
 // And a known one passes, so the check is a filter rather than a wall.
 func TestADeclaredNeedIsAccepted(t *testing.T) {
 	p := Plugin{
