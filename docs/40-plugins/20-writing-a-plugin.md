@@ -44,7 +44,7 @@ func Plugin() plugin.Plugin {
 }
 ```
 
-`sdk.Serve` is imported from `pkg/sdk`, the declaration types from `pkg/plugin`, and the answers from `pkg/view`. `Name` is the namespace and the first word of every capability ID (`weather.greet`), `Summary` is the line `rta plugin list` shows, and `Version` is what the build claims to be — shown by `rta plugin dev` and recorded by an index entry. Stamp it from your release, `go build -ldflags "-X main.version=$(git describe --tags)" .`, rather than editing a constant: an unstamped build says `dev` instead of a version nobody cut. `Needs` is the one other `plugin.Plugin` field, and [If your plugin needs a credential location](./23-safety-and-credentials.md#if-your-plugin-needs-a-credential-location) says when to set it.
+`sdk.Serve` is imported from `pkg/sdk`, the declaration types from `pkg/plugin`, and the answers from `pkg/view`. `Name` is the namespace and the first word of every capability ID (`weather.greet`), `Summary` is the line `rta plugin list` shows, and `Version` is what the build claims to be — shown by `rta plugin dev` and recorded by an index entry. Stamp it from your release, `go build -ldflags "-X main.version=$(git describe --tags)" .`, rather than editing a constant: an unstamped build says `dev` instead of a version nobody cut. `Needs` and `Renamed` are the two other `plugin.Plugin` fields: [If your plugin needs a credential location](./23-safety-and-credentials.md#if-your-plugin-needs-a-credential-location) says when to set the first, and [Declaring inputs](./21-declaring-inputs.md) the second, for a config key you renamed.
 
 ## The one thing to understand
 

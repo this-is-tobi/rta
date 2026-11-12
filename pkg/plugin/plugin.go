@@ -968,6 +968,19 @@ type Plugin struct {
 	// file, which is the honest outcome and the one that tells the operator
 	// what to grant.
 	Needs []Need
+	// Renamed maps a config key this plugin no longer reads to the key that
+	// replaced it, for what an operator is told about a file still stating
+	// the old one: "pg reads `tls` in its place", rather than "nothing in pg
+	// reads sslmode" beside a guess.
+	//
+	// Wording, never behaviour: the old key does nothing, and a section
+	// stating it is withheld like any section stating a key nothing reads.
+	// A rename an older file still carries is the one key nothing reads that
+	// the operator did not mistype, and the plugin is the only one that knows
+	// what it became. An entry is used only while the old key is read by no
+	// input and the new one by some, so a stale entry can mislead nobody; it
+	// is deleted once nobody holds the old name.
+	Renamed map[string]string
 }
 
 // Capability is the capability p declares as id, for a Page that embeds a

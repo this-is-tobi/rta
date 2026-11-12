@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"maps"
 	"time"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -461,6 +462,7 @@ func PluginToProto(p plugin.Plugin) *rtav1.Plugin {
 		Version:      p.Version,
 		Capabilities: mapSlice(p.Capabilities, CapabilityToProto),
 		Needs:        mapSlice(p.Needs, func(n plugin.Need) string { return string(n) }),
+		Renamed:      maps.Clone(p.Renamed),
 	}
 }
 
@@ -488,6 +490,7 @@ func PluginFromProto(p *rtav1.Plugin) (plugin.Plugin, map[string][]string) {
 		// than find it already silently dropped here — a plugin asking for
 		// something this build has never heard of is a fact the operator
 		// should be told, not one the codec should tidy away.
-		Needs: mapSlice(p.GetNeeds(), func(n string) plugin.Need { return plugin.Need(n) }),
+		Needs:   mapSlice(p.GetNeeds(), func(n string) plugin.Need { return plugin.Need(n) }),
+		Renamed: maps.Clone(p.GetRenamed()),
 	}, unknown
 }

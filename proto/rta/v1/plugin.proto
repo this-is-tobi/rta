@@ -414,6 +414,12 @@ message Plugin {
   // field existed sends nothing here and keeps working, which is what the
   // freeze promises.
   repeated string needs = 5;
+  // Config keys this plugin no longer reads, each mapped to the key that
+  // replaced it, so a file still stating the old one is told what it became.
+  // Wording only: the old key does nothing, and a section stating it is
+  // withheld like one stating any key nothing reads. Added, so a plugin
+  // compiled before it sends nothing and is answered as before.
+  map<string, string> renamed = 6;
 }
 
 message DescribeRequest {}
