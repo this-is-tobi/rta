@@ -594,6 +594,7 @@ func leftBehind(up plugindist.Upgraded, dryRun bool) []view.Pair {
 		move = "downgrade"
 	}
 	pairs := stalePinPairs(up.Name, up.FromDigest, up.Digest, dryRun, move)
+	pairs = append(pairs, unreadKeyPairs(up, dryRun)...)
 	pairs = append(pairs, lostAccessPairs(up, dryRun, move)...)
 	return append(pairs, replacedGrantPairs(up.Name, up.FromDigest, up.Digest, dryRun, move)...)
 }

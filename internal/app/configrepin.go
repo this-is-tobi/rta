@@ -7,6 +7,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
+	"github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -119,12 +122,47 @@ func runConfigRepin(ns string, dryRun bool) (view.View, *view.Error) {
 		return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
 			Value: ns + " has no plugins: section — nothing written"}}}, nil
 	case from == heading:
-		return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
-			Value: "plugins." + heading + " names the installed build — nothing written to " + file}}}, nil
+		return view.KeyValue{Pairs: append([]view.Pair{{Key: "unchanged",
+			Value: "plugins." + heading + " names the installed build — nothing written to " + file}},
+			repinUnreadPairs(ns, heading, heading)...)}, nil
 	case dryRun:
-		return view.KeyValue{Pairs: []view.Pair{{Key: "would write",
-			Value: "plugins." + from + " repinned to " + heading + " in " + config.Where("plugins", from)}}}, nil
+		return view.KeyValue{Pairs: append([]view.Pair{{Key: "would write",
+			Value: "plugins." + from + " repinned to " + heading + " in " + config.Where("plugins", from)}},
+			repinUnreadPairs(ns, from, heading)...)}, nil
 	}
-	return view.KeyValue{Pairs: []view.Pair{{Key: "wrote",
-		Value: "plugins." + from + " repinned to " + heading + " in " + file}}}, nil
+	return view.KeyValue{Pairs: append([]view.Pair{{Key: "wrote",
+		Value: "plugins." + from + " repinned to " + heading + " in " + file}},
+		repinUnreadPairs(ns, heading, heading)...)}, nil
+}
+
+// repinUnreadPairs is what a repin says of the keys the section stated under
+// stated, now or about to be under heading, that the installed build does not
+// read: each stops the plugin's calls until it is fixed, which a repin, the
+// first thing run after an upgrade, is where to learn. The repin is written
+// all the same, since the section pinned to the old build stopped them too.
+func repinUnreadPairs(ns, stated, heading string) []view.Pair {
+	declared, ok := installed.(profile.Declared)
+	if !ok {
+		return nil
+	}
+	var build plugin.Plugin
+	for _, p := range declared.Plugins() {
+		if p.Name == ns {
+			build = p
+		}
+	}
+	cfg, err := config.Load()
+	if err != nil || cfg.Plugins[stated] == nil {
+		return nil
+	}
+	only := config.Config{Plugins: map[string]map[string]any{heading: cfg.Plugins[stated]}}
+	var pairs []view.Pair
+	for _, u := range unreadKeysFor(only, ns, pluginconf.ReadersOf(build), build.Renamed) {
+		pairs = append(pairs, view.Pair{Key: "not read", Value: u.sentence("the installed "+ns, "does not read")})
+	}
+	if len(pairs) > 0 {
+		pairs = append(pairs, view.Pair{Key: "until fixed",
+			Value: ns + "'s calls are refused while the section states a key it does not read"})
+	}
+	return pairs
 }
