@@ -50,13 +50,14 @@ func TestDistanceCountsASwapOfNeighboursAsOneEdit(t *testing.T) {
 	}
 }
 
-// A key a plugin spells once per capability is found by its last part.
+// A key a plugin spells once per capability is found by its last part, every
+// spelling of it.
 func TestQualifiedFindsTheDottedKeysAWordEnds(t *testing.T) {
 	keys := []string{"algo", "tree.depth", "tree.limit", "usage.depth", "usage.limit", "limit.max", "a.b.limit", "x.limit"}
 	got := Qualified("limit", keys)
-	want := []string{"tree.limit", "usage.limit", "a.b.limit"}
+	want := []string{"tree.limit", "usage.limit", "a.b.limit", "x.limit"}
 	if len(got) != len(want) {
-		t.Fatalf("Qualified = %v, want %v (at most three, a word that only begins a key is not one)", got, want)
+		t.Fatalf("Qualified = %v, want %v (every one, and a word that only begins a key is not one)", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {

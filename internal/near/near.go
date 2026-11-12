@@ -38,18 +38,21 @@ func Distance(a, b string) int {
 }
 
 // Qualified are the candidates that are word with a prefix before a dot, in the
-// order given and at most three: `limit` is the last part of `usage.limit` and
-// `tree.limit`, which is where a key that "nothing reads" went when a plugin
-// states the same setting once for each capability that takes it. Word cannot
-// find them, since the prefix is most of what separates them from the word.
+// order given: `limit` is the last part of `usage.limit` and `tree.limit`,
+// which is where a key that "nothing reads" went when a plugin states the same
+// setting once for each capability that takes it. Word cannot find them, since
+// the prefix is most of what separates them from the word.
+//
+// Every one of them. It stopped at three, which a guess can afford and a list
+// of where a key went cannot: a plugin that states a limit apiece for five
+// listings, as mysql does, was answered with three of the five as if they were
+// all, and the two left out were as likely to be the one meant. The list is no
+// longer than the plugin's capabilities that read the setting.
 func Qualified(word string, candidates []string) []string {
 	var out []string
 	for _, c := range candidates {
 		if i := strings.LastIndex(c, "."); i > 0 && strings.EqualFold(c[i+1:], word) {
 			out = append(out, c)
-			if len(out) == 3 {
-				break
-			}
 		}
 	}
 	return out

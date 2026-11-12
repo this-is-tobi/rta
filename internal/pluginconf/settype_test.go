@@ -246,3 +246,26 @@ func TestAKeyThatIsTheEndOfADottedOneIsToldTheSpelling(t *testing.T) {
 		t.Fatalf("problems = %v, want one that names tree.limit and usage.limit", problems)
 	}
 }
+
+// Every spelling, and not the first three: a plugin that states a limit apiece
+// for five listings, as mysql does, was told three of them as if they were
+// all, and the two left out were as likely to be the one meant.
+func TestAKeyReadUnderManyCapabilitiesIsToldEverySpelling(t *testing.T) {
+	reg := registry.New()
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	var caps []plugin.Capability
+	for _, id := range []string{"activity", "database.list", "query", "schema", "table.list"} {
+		caps = append(caps, plugin.Capability{ID: "sys." + id, Summary: id, Safety: plugin.Read, Run: run,
+			Inputs: []plugin.Field{{Name: "limit", Type: plugin.Int, Config: id + ".limit"}}})
+	}
+	if err := reg.Register(plugin.Plugin{Name: "sys", Summary: "sys", Capabilities: caps}); err != nil {
+		t.Fatal(err)
+	}
+	_, problems := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": {"limit": 5}}}),
+		installed.declaring(reg))
+	want := `it is spelled with the capability that reads it: "activity.limit" or "database.list.limit" or ` +
+		`"query.limit" or "schema.limit" or "table.list.limit"`
+	if len(problems) != 1 || problems[0].Hint != want {
+		t.Fatalf("problems = %v, want one whose hint is %q", problems, want)
+	}
+}
