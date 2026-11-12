@@ -77,6 +77,23 @@ func renderOptions(cmd *cobra.Command, format cli.Format, noColor bool) cli.Opti
 	return o
 }
 
+// HonourNoColor makes NO_COLOR mean what no-color.org says it means: set to
+// anything that is not empty, colour is off. The colour library every surface
+// draws through reads it as a Go boolean (colorprofile's envNoColor,
+// strconv.ParseBool), so NO_COLOR=yes, =0 or =false kept the colour on in a
+// result, the help and the TUI. Run once in main before anything reads it,
+// the value spelled "1" reaches every reader in this process.
+//
+// colorOptions keeps --no-color out of the environment so that plugins do not
+// inherit a choice the flag made for rta alone; this adds nothing a child did
+// not already inherit, since only a value the person set is respelled, and a
+// child that reads the variable either way reads "1" as they meant it.
+func HonourNoColor() {
+	if os.Getenv("NO_COLOR") != "" {
+		_ = os.Setenv("NO_COLOR", "1")
+	}
+}
+
 // invalidOutputDefault names where the default came from, in the words
 // somebody would search for it by: the variable, or the key and the file it is
 // in — a drop-in may state it, and naming config.yaml then sent the reader to
