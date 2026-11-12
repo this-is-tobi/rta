@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The doctor's rows about AI clients: is any agent attached right now, and
@@ -370,11 +371,11 @@ func otherClientRows(home, wd string) [][3]string {
 			}
 			registered = true
 			if r.As() == "" {
-				rows = append(rows, [3]string{c.name, "warn", "starts rta with no --as in " + shortHome(r.File, home) +
+				rows = append(rows, [3]string{c.name, "warn", "starts rta with no --as in " + plugin.ShortHome(r.File, home) +
 					", and the server refuses to start without one; `rta mcp install " + c.name + "` registers it again"})
 				continue
 			}
-			rows = append(rows, [3]string{c.name, "ok", "starts rta as " + r.As() + " — " + shortHome(r.File, home)})
+			rows = append(rows, [3]string{c.name, "ok", "starts rta as " + r.As() + " — " + plugin.ShortHome(r.File, home)})
 		}
 		if registered {
 			continue
@@ -382,7 +383,7 @@ func otherClientRows(home, wd string) [][3]string {
 		var cannot []string
 		for _, u := range unread {
 			if strings.HasPrefix(u.Label, c.auditLabel) {
-				cannot = append(cannot, shortHome(u.File, home))
+				cannot = append(cannot, plugin.ShortHome(u.File, home))
 			}
 		}
 		if len(cannot) > 0 {
@@ -393,12 +394,4 @@ func otherClientRows(home, wd string) [][3]string {
 		rows = append(rows, [3]string{c.name, "info", c.label + " is here and rta is not registered with it — `rta mcp install " + c.name + "`"})
 	}
 	return rows
-}
-
-// shortHome spells a path under the home directory with a tilde.
-func shortHome(path, home string) string {
-	if home != "" && strings.HasPrefix(path, home+string(filepath.Separator)) {
-		return "~" + path[len(home):]
-	}
-	return path
 }

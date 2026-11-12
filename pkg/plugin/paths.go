@@ -38,6 +38,28 @@ func ExpandHome(p string) string {
 	return filepath.Join(home, rest[1:])
 }
 
+// ShortHome is ExpandHome's inverse, for showing a path: the home directory,
+// and a path under it, spelled with ~, so a row names a path its reader
+// recognises and does not print their username into whatever it is pasted
+// into. Only the home itself and what is under home + "/": a sibling that
+// shares its letters, /home/tobi-work beside /home/tobi, is not under it,
+// and a home of "/" — what Docker gives a --user with no passwd entry — has
+// nothing to shorten. home is passed in, since a caller that shows many
+// paths has already looked it up once.
+func ShortHome(p, home string) string {
+	home = strings.TrimSuffix(home, "/")
+	switch {
+	case home == "":
+		return p
+	case p == home:
+		return "~"
+	}
+	if rest, under := strings.CutPrefix(p, home+"/"); under {
+		return "~/" + rest
+	}
+	return p
+}
+
 // AbsPath is a path a person named as the absolute path it is: ~ expanded,
 // then resolved against the working directory. For a file a call writes or
 // reads and then names back (a dump's receipt, the CA a connection used),

@@ -1093,10 +1093,8 @@ func denyBlock(catalog func() []plugin.Capability) string {
 }
 
 // shortPath puts ~ back, so a finding names a path the reader recognises and
-// does not print their username into an issue.
+// does not print their username into an issue (plugin.ShortHome).
 func shortPath(p string) string {
-	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home) {
-		return "~" + p[len(home):]
-	}
-	return p
+	home, _ := os.UserHomeDir()
+	return plugin.ShortHome(p, home)
 }
