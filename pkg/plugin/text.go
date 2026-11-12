@@ -59,28 +59,16 @@ const (
 // registers it is not, and by then `proto/v1` is frozen and adding a
 // rejection is a breaking change.
 
-// bidiControl reports whether r reorders the text around it.
-//
-// These are the Trojan Source class (CVE-2021-42574): LRO/RLO/PDF and the
-// isolate forms let a string display in an order that is not the order it is
-// stored in, so what a reader sees and what is actually there differ — with
-// no invalid character anywhere for a control-character check to catch. That
-// matters most in exactly the two places a declaration lands: a summary a
+// A declaration refuses the characters that reorder the text around them
+// (glyph.Reorders, the Trojan Source class) and the ones that carry meaning
+// nobody sees (glyph.Hidden), and it is where they matter most: a summary a
 // person reads while deciding whether to trust a plugin, and a tool
-// description a model reads as instructions.
-//
-// Right-to-left script does not need them. Unicode's bidi algorithm handles
-// Arabic and Hebrew from the characters themselves; the explicit overrides
-// exist for cases a short label does not have, so refusing them in a
-// declaration costs nothing anybody wants to write.
-func bidiControl(r rune) bool {
-	switch r {
-	case 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, // LRE RLE PDF LRO RLO
-		0x2066, 0x2067, 0x2068, 0x2069: // LRI RLI FSI PDI
-		return true
-	}
-	return false
-}
+// description a model reads as instructions. Right-to-left script does not
+// need the overrides — Unicode's bidi algorithm handles Arabic and Hebrew from
+// the characters themselves — and the tag block's one real use, subdivision
+// flag emoji, has no place in a capability's label, so refusing either costs
+// nothing anybody wants to write. The set is textclean's too, which takes the
+// same characters out of a result.
 
 // AuthoredOpen and AuthoredClose bracket the part of a published tool
 // description that a plugin wrote.
@@ -226,45 +214,6 @@ func frameSpans(s string) [][2]int {
 	return out
 }
 
-// invisible reports whether r occupies no space and carries meaning anyway.
-//
-// The sharp one is the tag block. U+E0000-U+E007F are tag characters: a full
-// invisible ASCII alphabet that renders as nothing, survives copy and paste,
-// and arrives at a model as tokens. It is the standard way instructions are
-// smuggled past a human reviewing text they were shown, and there is no
-// legitimate use of it in a capability summary — the one real use anywhere is
-// subdivision flag emoji, which nobody needs in this position.
-//
-// The set is deliberately narrower than "all the invisible ranges", because
-// the obvious wide version rejects text people actually write:
-//
-//   - U+200C ZWNJ and U+200D ZWJ are load-bearing. ZWJ builds emoji families
-//     and profession sequences, and both are required by Persian, Hindi and
-//     other scripts to select the correct letter form. Refusing them refuses
-//     a language, which is the kind of check that gets deleted rather than
-//     fixed.
-//   - Variation selectors U+FE00-U+FE0F are how an emoji gets its emoji
-//     presentation: refusing U+FE0F rejects a plain heart written as an emoji
-//     heart. They can carry smuggled data too, in long runs, but a rule that
-//     breaks the common case to bound the rare one is the wrong trade at this
-//     size — the caps above bound the run length anyway.
-//
-// What is left has no case for it in a one-line label: zero-width space, the
-// directional marks that pair with the overrides already refused, the
-// invisible maths operators, the byte order mark used mid-string, and the tag
-// block.
-func invisible(r rune) bool {
-	switch {
-	case r == 0x200b, // ZERO WIDTH SPACE
-		r == 0x200e, r == 0x200f, // LRM, RLM — the marks beside the overrides
-		r == 0xfeff,                  // ZWNBSP / BOM, meaningless anywhere but the first byte
-		r >= 0x2060 && r <= 0x2064,   // word joiner, invisible times/separator/plus
-		r >= 0xe0000 && r <= 0xe007f: // the tag block
-		return true
-	}
-	return false
-}
-
 // checkText rejects what a declaration must not carry into a display.
 //
 // Newline and tab are allowed: a Description is long-form prose and a Help
@@ -283,10 +232,10 @@ func checkText(what, s string, max int) error {
 			// here and not only the familiar C0 one.
 			return fmt.Errorf("%s contains a control character (%#U at byte %d); "+
 				"declared text is printed to terminals and published as MCP tool descriptions", what, r, i)
-		case bidiControl(r):
+		case glyph.Reorders(r):
 			return fmt.Errorf("%s contains a bidirectional override (%#U at byte %d), "+
 				"which makes the text display in an order it is not written in", what, r, i)
-		case invisible(r):
+		case glyph.Hidden(r):
 			return fmt.Errorf("%s contains an invisible character (%#U at byte %d), "+
 				"which is not visible to whoever reviews this text and is to whoever reads it", what, r, i)
 		}
