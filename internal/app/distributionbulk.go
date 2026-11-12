@@ -119,17 +119,25 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, left []view.Pair, dryR
 	// Rendered first, then refused: the page is the answer, and the error
 	// exists so a sweep that did not finish does not exit 0 into a pipeline
 	// that takes silence for success.
+	// In the tense of the run: a dry run held nothing back and upgraded
+	// nothing, and said both as done. A failure is one either way — the
+	// preview failed too.
+	heldWord := "held back"
+	hint := "every other plugin was upgraded; the warnings above say what stopped these"
+	if dryRun {
+		heldWord = "would be held back"
+		hint = "every other plugin would be upgraded; the warnings above say what would stop these"
+	}
 	var parts []string
 	if len(heldNames) > 0 {
-		parts = append(parts, fmt.Sprintf("%s held back (%s)",
-			format.Count(len(heldNames), "plugin", "plugins"), strings.Join(heldNames, ", ")))
+		parts = append(parts, fmt.Sprintf("%s %s (%s)",
+			format.Count(len(heldNames), "plugin", "plugins"), heldWord, strings.Join(heldNames, ", ")))
 	}
 	if len(failedNames) > 0 {
 		parts = append(parts, fmt.Sprintf("%s failed (%s)",
 			format.Count(len(failedNames), "plugin", "plugins"), strings.Join(failedNames, ", ")))
 	}
-	return v, view.Errorf("plugin.upgrade.incomplete", "%s", strings.Join(parts, ", ")).
-		WithHint("every other plugin was upgraded; the warnings above say what stopped these")
+	return v, view.Errorf("plugin.upgrade.incomplete", "%s", strings.Join(parts, ", ")).WithHint(hint)
 }
 
 // sweepLeftBehind is leftBehind for every plugin the sweep moved, each line
