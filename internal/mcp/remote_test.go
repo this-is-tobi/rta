@@ -1,12 +1,14 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"testing"
 	"time"
@@ -337,10 +339,16 @@ func TestACredentialHoldsAtMostItsCapOfSessions(t *testing.T) {
 	// CI runner the oldest still answered the first ping after the newest had
 	// connected, a race no run outside CI reproduced. Nothing but the cap closes
 	// a session, so a cap that did not close it still fails, at the bound.
+	//
+	// It failed so once more, a coverage run on a loaded runner, and runs by the
+	// hundred under that run's seed, flags and load did not. The failure carries
+	// every goroutine's stack, for the one thing its message cannot say: whether
+	// the cap's close is stuck somewhere, or never ran.
 	start := time.Now()
 	for alice[0].Ping(ctx, nil) == nil {
 		if time.Since(start) > 10*time.Second {
-			t.Fatalf("alice's oldest session still answers %s after she opened %d more", time.Since(start).Round(time.Millisecond), maxSessions)
+			t.Fatalf("alice's oldest session %s still answers %s after she opened %d more; every goroutine:\n%s",
+				alice[0].ID(), time.Since(start).Round(time.Millisecond), maxSessions, goroutines())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -352,6 +360,14 @@ func TestACredentialHoldsAtMostItsCapOfSessions(t *testing.T) {
 	if err := bob.Ping(ctx, nil); err != nil {
 		t.Errorf("bob's session was closed for alice's: %v", err)
 	}
+}
+
+// goroutines is every goroutine's stack, alike ones counted together, for a
+// failure that only a loaded runner has shown.
+func goroutines() string {
+	var stacks bytes.Buffer
+	_ = pprof.Lookup("goroutine").WriteTo(&stacks, 1)
+	return stacks.String()
 }
 
 // This is the test that answers whether the SDK carries a per-request
