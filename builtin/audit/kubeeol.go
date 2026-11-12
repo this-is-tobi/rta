@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"net/http"
 	"slices"
 	"sort"
 	"strings"
@@ -150,7 +149,7 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 		return nil, verr
 	}
 
-	catalogue, verr := eolapi.FetchCatalogue(ctx, http.DefaultClient, base)
+	catalogue, verr := eolapi.FetchCatalogue(ctx, eolapi.Client, base)
 	if verr != nil {
 		return nil, verr
 	}
@@ -219,7 +218,7 @@ func (g *grader) product(name string) (*eolapi.Product, *view.Error) {
 		g.skipped[name] = true
 		return nil, nil
 	}
-	p, verr := eolapi.FetchProduct(g.ctx, http.DefaultClient, g.base, name)
+	p, verr := eolapi.FetchProduct(g.ctx, eolapi.Client, g.base, name)
 	if verr != nil {
 		if verr.Code == "eol.product.notfound" {
 			g.fetched[name] = nil
@@ -306,7 +305,7 @@ func (g *grader) kubernetes() (*eolapi.Product, *view.Error) {
 	if p, ok := g.fetched["kubernetes"]; ok {
 		return p, nil
 	}
-	p, verr := eolapi.FetchProduct(g.ctx, http.DefaultClient, g.base, "kubernetes")
+	p, verr := eolapi.FetchProduct(g.ctx, eolapi.Client, g.base, "kubernetes")
 	if verr != nil {
 		if verr.Code == "eol.product.notfound" {
 			g.fetched["kubernetes"] = nil

@@ -12,7 +12,6 @@ package eol
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -105,7 +104,7 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 		}
 		product, cycle, cycleInput = name, at, "product"
 	}
-	result, verr := eolapi.FetchProduct(ctx, http.DefaultClient, base, product)
+	result, verr := eolapi.FetchProduct(ctx, eolapi.Client, base, product)
 	if verr != nil {
 		if verr.Code == "eol.product.notfound" {
 			verr.Hint += " — " + req.Surface().CapabilityName("eol.products") + " searches it"
@@ -243,7 +242,7 @@ func suggestProducts(ctx context.Context, req plugin.Request) []string {
 // own comment already treats as cheap enough to pay on every call, run here
 // on a deliberate completion press rather than every keystroke.
 func suggestProductsAt(ctx context.Context, _ plugin.Request, base string) []string {
-	entries, verr := eolapi.FetchCatalogue(ctx, http.DefaultClient, base)
+	entries, verr := eolapi.FetchCatalogue(ctx, eolapi.Client, base)
 	if verr != nil {
 		return nil
 	}
@@ -277,7 +276,7 @@ func suggestCyclesAt(ctx context.Context, req plugin.Request, base string) []str
 	if product == "" {
 		return nil
 	}
-	result, verr := eolapi.FetchProduct(ctx, http.DefaultClient, base, product)
+	result, verr := eolapi.FetchProduct(ctx, eolapi.Client, base, product)
 	if verr != nil {
 		return nil
 	}

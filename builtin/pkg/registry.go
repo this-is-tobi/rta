@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/redirect"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -66,7 +67,7 @@ var processTags = newTagCache(time.Now)
 func newRegistryClient() *registryClient {
 	return &registryClient{
 		tags: processTags,
-		http: &http.Client{Timeout: registryTimeout},
+		http: &http.Client{Timeout: registryTimeout, CheckRedirect: redirect.Follow},
 		noFollow: &http.Client{Timeout: registryTimeout, CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}},

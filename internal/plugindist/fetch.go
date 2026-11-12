@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/redirect"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -30,6 +31,12 @@ var artifactCap = int64(256 << 20)
 // fetchTimeout bounds the whole transfer. Long enough for a large artifact
 // on a slow line; the context still wins when the caller's is sooner.
 const fetchTimeout = 5 * time.Minute
+
+// downloads is the client an artifact and an OCI token are fetched through: a
+// release asset is served from another host by design, so any https host is
+// followed, and nothing from https down to plain http (internal/redirect),
+// which net/http's default client followed as readily.
+var downloads = redirect.Client()
 
 // fetchArtifact downloads url into dst, hashing as it writes, and returns the
 // hex sha256 of what landed. The hash is computed by rta from the bytes —
@@ -52,7 +59,7 @@ func fetchArtifact(ctx context.Context, rawURL string, dst *os.File) (string, *v
 		if err != nil {
 			return "", view.Errorf("plugin.install.fetch", "%v", err)
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := downloads.Do(req)
 		if err != nil {
 			return "", view.Errorf("plugin.install.fetch", "fetching %s: %v", rawURL, err)
 		}

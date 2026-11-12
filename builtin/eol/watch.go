@@ -2,7 +2,6 @@ package eol
 
 import (
 	"context"
-	"net/http"
 	"strings"
 	"time"
 
@@ -136,7 +135,7 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 	}}
 	for _, e := range parsed {
 		product, cycle := e.product, e.cycle
-		result, verr := eolapi.FetchProduct(ctx, http.DefaultClient, base, product)
+		result, verr := eolapi.FetchProduct(ctx, eolapi.Client, base, product)
 		if verr != nil {
 			// An unknown product is one row, not a failed call: a watchlist
 			// with one typo in it is still a watchlist somebody wants graded.

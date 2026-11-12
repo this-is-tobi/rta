@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/this-is-tobi/rta/internal/redirect"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -318,12 +319,14 @@ func ociRequest(ctx context.Context, target, accept, token string) (*http.Respon
 // either way. Being explicit is for the day it is not: this is the exact line
 // a private registry's credential would sit behind, and "net/http probably
 // handles it" is the wrong thing to be finding out then. Host equality,
-// port included.
+// port included. And never down to plain http, wherever it goes
+// (internal/redirect): a blob is digest-checked, but a manifest or a token
+// read in the clear is not.
 func ociClient(registry string) *http.Client {
 	return &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return fmt.Errorf("stopped after %d redirects", len(via))
+			if err := redirect.Follow(req, via); err != nil {
+				return err
 			}
 			if req.URL.Host != registry {
 				req.Header.Del("Authorization")
@@ -394,7 +397,7 @@ func ociToken(ctx context.Context, challenge string, ref ociRef) (string, *view.
 	if err != nil {
 		return "", view.Errorf("plugin.install.oci", "%v", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := downloads.Do(req)
 	if err != nil {
 		return "", view.Errorf("plugin.install.oci", "reaching %s: %v", realm, err)
 	}
