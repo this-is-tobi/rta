@@ -1027,9 +1027,9 @@ func TestTheIndexesPageSaysWhatAManifestMayState(t *testing.T) {
 	}
 
 	was := agentsession.Self()
-	agentsession.SetSelf("0.59.0")
+	agentsession.SetSelf("0.61.0")
 	t.Cleanup(func() { agentsession.SetSelf(was) })
-	_, verr := plugindist.ParseManifest([]byte("apiVersion: rta/v2\n"))
+	_, verr := plugindist.ParseManifest([]byte("apiVersion: rta/v3\n"))
 	if verr == nil || verr.Code != plugindist.CodeAPIVersion {
 		t.Fatalf("a newer apiVersion: %v", verr)
 	}
@@ -1057,7 +1057,7 @@ func TestTheIndexesPageSaysWhatAManifestMayState(t *testing.T) {
 	}
 
 	publishing := readDoc(t, root, "docs/40-plugins/24-testing-and-publishing.md")
-	for _, want := range []string{"no `apiVersion` and no `annotations`", "goes under `annotations:`", "typed into it is gone"} {
+	for _, want := range []string{"states no `annotations`, and `apiVersion: rta/v2` only when", "goes under `annotations:`", "typed into it is gone"} {
 		if !strings.Contains(publishing, want) {
 			t.Errorf("the publishing page does not say %q", want)
 		}

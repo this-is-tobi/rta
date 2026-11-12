@@ -426,14 +426,14 @@ func TestIndexUpdateNamesTheManifestsItCannotRead(t *testing.T) {
 	}
 
 	commitIndexRepo(t, repo, map[string]string{
-		"redis": "apiVersion: rta/v2\n" + strings.ReplaceAll(noBuildHerePG, "pg", "redis"),
+		"redis": "apiVersion: rta/v3\n" + strings.ReplaceAll(noBuildHerePG, "pg", "redis"),
 		"mongo": "name: [",
 	})
 	out, errOut, err = run("plugin", "index", "update", "-o", "json")
 	if err != nil {
 		t.Fatalf("an update that left some of the index readable failed: %v %q", err, errOut)
 	}
-	for _, want := range []string{"updated", "plugin.index.apiversion", "lab/redis.yaml", "is newer than rta/v1", "upgrade rta", "lab/mongo.yaml"} {
+	for _, want := range []string{"updated", "plugin.index.apiversion", "lab/redis.yaml", "is newer than rta/v2", "upgrade rta", "lab/mongo.yaml"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("update printed %q, want it to say %q", out, want)
 		}

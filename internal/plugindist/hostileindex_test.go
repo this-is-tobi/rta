@@ -354,7 +354,7 @@ func TestAnIndexWhollyAheadIsRefusedAtAttachAndUpdate(t *testing.T) {
 	testData(t)
 	runningAs(t, "0.59.0")
 	ctx := context.Background()
-	ahead := "apiVersion: rta/v2\n" + goodManifest
+	ahead := "apiVersion: rta/v3\n" + goodManifest
 
 	verr := AddIndex(ctx, "future", gitFixture(t, map[string]string{"pg": ahead}))
 	if verr == nil || verr.Code != CodeAPIVersion || !strings.Contains(verr.Message, "upgrade rta") ||

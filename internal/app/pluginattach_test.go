@@ -324,7 +324,7 @@ func TestTheOfferSaysHowManyManifestsItCannotRead(t *testing.T) {
 		if verr := writeIndex("official", noBuildHerePG); verr != nil {
 			return verr
 		}
-		ahead := "apiVersion: rta/v2\n" + strings.ReplaceAll(noBuildHerePG, "pg", "redis")
+		ahead := "apiVersion: rta/v3\n" + strings.ReplaceAll(noBuildHerePG, "pg", "redis")
 		if err := os.WriteFile(filepath.Join(paths.Indexes(), "official", "index", "redis.yaml"), []byte(ahead), 0o644); err != nil {
 			return view.Errorf("test.index", "%v", err)
 		}
@@ -344,7 +344,7 @@ func TestTheOfferSaysHowManyManifestsItCannotRead(t *testing.T) {
 func TestAnIndexAheadOfThisRtaDoesNotEarnTheFirstPartyOffer(t *testing.T) {
 	s := newOfferSession(t)
 	s.terminal, s.answer = true, true
-	if verr := writeIndex("lab", "apiVersion: rta/v2\n"+noBuildHerePG); verr != nil {
+	if verr := writeIndex("lab", "apiVersion: rta/v3\n"+noBuildHerePG); verr != nil {
 		t.Fatal(verr)
 	}
 

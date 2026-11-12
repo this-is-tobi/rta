@@ -9,6 +9,7 @@ import (
 	"github.com/goccy/go-yaml"
 
 	"github.com/this-is-tobi/rta/internal/session"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // runningAs says which build this process is, for the message that names it,
@@ -44,6 +45,7 @@ func TestAManifestMayStateTheAPIVersionRtaReads(t *testing.T) {
 		"last":    goodManifest + "apiVersion: rta/v1\n",
 		"quoted":  stamped("rta/v1"),
 		"emptied": "apiVersion: \"\"\n" + goodManifest,
+		"v2":      stamped("rta/v2"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			m, verr := ParseManifest([]byte(doc))
@@ -67,14 +69,14 @@ func TestAManifestOfANewerAPIVersionIsRefusedWhateverElseItChanged(t *testing.T)
 	runningAs(t, "0.59.0")
 	mutate := func(from, to string) string { return strings.Replace(goodManifest, from, to, 1) }
 	cases := []struct{ name, doc string }{
-		{"decodes cleanly", stamped("rta/v2")},
-		{"stated last", goodManifest + "apiVersion: rta/v2\n"},
-		{"adds a key", stamped("rta/v2") + "scope: cluster\n"},
-		{"retypes a field", "apiVersion: rta/v2\n" + mutate("platforms:", "platforms: {linux: amd64}\nwas:")},
-		{"retypes the version", "apiVersion: rta/v2\n" + mutate("version: 0.1.0", "version: [0, 1, 0]")},
-		{"a safety class this reader has no word for", "apiVersion: rta/v2\n" + mutate("safety: write", "safety: privileged")},
-		{"a name this reader refuses", "apiVersion: rta/v2\n" + mutate("name: pg", "name: PG")},
-		{"drops a required field", "apiVersion: rta/v2\nname: pg\n"},
+		{"decodes cleanly", stamped("rta/v3")},
+		{"stated last", goodManifest + "apiVersion: rta/v3\n"},
+		{"adds a key", stamped("rta/v3") + "scope: cluster\n"},
+		{"retypes a field", "apiVersion: rta/v3\n" + mutate("platforms:", "platforms: {linux: amd64}\nwas:")},
+		{"retypes the version", "apiVersion: rta/v3\n" + mutate("version: 0.1.0", "version: [0, 1, 0]")},
+		{"a safety class this reader has no word for", "apiVersion: rta/v3\n" + mutate("safety: write", "safety: privileged")},
+		{"a name this reader refuses", "apiVersion: rta/v3\n" + mutate("name: pg", "name: PG")},
+		{"drops a required field", "apiVersion: rta/v3\nname: pg\n"},
 		{"a much later one", stamped("rta/v10") + "scope: cluster\n"},
 		{"one past any integer", stamped("rta/v99999999999999999999999999")},
 	}
@@ -87,7 +89,7 @@ func TestAManifestOfANewerAPIVersionIsRefusedWhateverElseItChanged(t *testing.T)
 			if verr.Code != "plugin.index.apiversion" {
 				t.Fatalf("code = %s (%s), want plugin.index.apiversion", verr.Code, verr.Message)
 			}
-			for _, want := range []string{"is newer than rta/v1", "upgrade rta", "(0.59.0)"} {
+			for _, want := range []string{"is newer than rta/v2", "upgrade rta", "(0.59.0)"} {
 				if !strings.Contains(verr.Message, want) {
 					t.Fatalf("message = %q, want it to say %q", verr.Message, want)
 				}
@@ -102,21 +104,21 @@ func TestAManifestOfANewerAPIVersionIsRefusedWhateverElseItChanged(t *testing.T)
 // reads in place of a plugin they were looking for.
 func TestTheRefusalOfANewerAPIVersionStandsAlone(t *testing.T) {
 	runningAs(t, "0.59.0")
-	_, verr := ParseManifest([]byte(stamped("rta/v2")))
+	_, verr := ParseManifest([]byte(stamped("rta/v3")))
 	if verr == nil {
 		t.Fatal("accepted")
 	}
-	const want = `apiVersion "rta/v2" is newer than rta/v1, which this rta (0.59.0) reads — upgrade rta`
+	const want = `apiVersion "rta/v3" is newer than rta/v2, which this rta (0.59.0) reads — upgrade rta`
 	if verr.Message != want {
 		t.Fatalf("message = %q\nwant      %q", verr.Message, want)
 	}
 
 	runningAs(t, "")
-	_, verr = ParseManifest([]byte(stamped("rta/v2")))
+	_, verr = ParseManifest([]byte(stamped("rta/v3")))
 	if verr == nil {
 		t.Fatal("accepted")
 	}
-	const unnamed = `apiVersion "rta/v2" is newer than rta/v1, which this rta reads — upgrade rta`
+	const unnamed = `apiVersion "rta/v3" is newer than rta/v2, which this rta reads — upgrade rta`
 	if verr.Message != unnamed {
 		t.Fatalf("message = %q\nwant      %q", verr.Message, unnamed)
 	}
@@ -129,7 +131,7 @@ func TestTheRefusalOfANewerAPIVersionStandsAlone(t *testing.T) {
 func TestAnAPIVersionRtaDoesNotKnowIsAnAuthorsSlip(t *testing.T) {
 	runningAs(t, "0.59.0")
 	for _, bad := range []string{
-		"rta/v0", "rta.v1", "v1", "RTA/V1", "rta/V2", "rta/v2beta1", "rta/v1alpha1", "1", "2",
+		"rta/v0", "rta.v1", "v1", "RTA/V1", "rta/V2", "rta/v3beta1", "rta/v1alpha1", "1", "2",
 		"rta/v01", "rta/v", "rta/v-1", "rta/v+2", "rta/v1.1", "rta/v1 ", " rta/v1", "rta/v1/x",
 		"rta/v\u0662", "example.com/v1", "rta.dev/v1", "kubernetes/v1", "rta",
 	} {
@@ -170,7 +172,7 @@ func TestAnAPIVersionIsQuotedAndClippedInTheRefusal(t *testing.T) {
 	hostile := "rta/v1\x1b[31m\u202e" + strings.Repeat("x", 900_000)
 	for name, value := range map[string]string{
 		"a malformed one":     hostile,
-		"a newer one's tail":  "rta/v2" + hostile,
+		"a newer one's tail":  "rta/v3" + hostile,
 		"a newer one's digit": "rta/v" + strings.Repeat("9", 900_000),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -508,7 +510,7 @@ func TestAGeneratedManifestStatesNeitherNewKey(t *testing.T) {
 		}
 	}
 	if got := strings.Join(keys, " "); got != "name version summary homepage platforms capabilities" {
-		t.Fatalf("a generated manifest's keys are %q; apiVersion and annotations must wait for a release that decides to write them", got)
+		t.Fatalf("a generated manifest's keys are %q; a plugin that needs no apiVersion is written as it always was", got)
 	}
 	parsed, verr := ParseManifest(doc)
 	if verr != nil {
@@ -527,5 +529,34 @@ func TestTheGeneratorRefusesAHomepageThatWouldNotDisplayAsItself(t *testing.T) {
 		Platforms: hostPlatform(fileURL(bin))})
 	if verr == nil || verr.Code != "plugin.manifest.homepage" {
 		t.Fatalf("verr = %v, want plugin.manifest.homepage", verr)
+	}
+}
+
+// The writer states rta/v2 for a plugin a reader of rta/v1 alone misreads, a
+// renamed key or a key that starts another, and nothing for any other, so
+// regenerating an index hides no other plugin from an older rta.
+func TestTheWriterStatesV2OnlyForAPluginAnOlderRtaWouldMisread(t *testing.T) {
+	declare := func(renamed map[string]string, keys ...string) plugin.Plugin {
+		inputs := make([]plugin.Field, len(keys))
+		for i, k := range keys {
+			inputs[i] = plugin.Field{Name: strings.ReplaceAll(k, ".", "-"), Type: plugin.String, Config: k}
+		}
+		return plugin.Plugin{Name: "demo", Summary: "s", Renamed: renamed,
+			Capabilities: []plugin.Capability{{ID: "demo.get", Summary: "g", Safety: plugin.Read, Inputs: inputs}}}
+	}
+	for _, tc := range []struct {
+		name string
+		p    plugin.Plugin
+		want string
+	}{
+		{"plain keys", declare(nil, "host", "query.limit", "limit"), ""},
+		{"a renamed key", declare(map[string]string{"sslmode": "tls"}, "tls"), APIVersionV2},
+		{"a key that starts another", declare(nil, "database", "database.list.limit"), APIVersionV2},
+		{"one level down", declare(nil, "query.list", "query.list.limit"), APIVersionV2},
+		{"a shared ending is no start", declare(nil, "limit", "query.limit", "list.limit"), ""},
+	} {
+		if got := claimsOf(tc.p, "1.0.0", "").APIVersion; got != tc.want {
+			t.Errorf("%s: apiVersion %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

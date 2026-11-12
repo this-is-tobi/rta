@@ -69,8 +69,8 @@ func FuzzParseManifest(f *testing.F) {
 	for _, seed := range []string{
 		goodManifest,
 		"apiVersion: rta/v1\n" + goodManifest,
-		"apiVersion: rta/v2\n" + goodManifest,
-		"apiVersion: rta/v2\nscope: cluster\n",
+		"apiVersion: rta/v3\n" + goodManifest,
+		"apiVersion: rta/v3\nscope: cluster\n",
 		"apiVersion: [rta/v1]\n" + goodManifest,
 		goodManifest + "apiVersion: \"rta/v\\u202e1\"\n",
 		goodManifest + "annotations:\n  license: Apache-2.0\n  example.com/owner: team\n",
@@ -91,7 +91,7 @@ func FuzzParseManifest(f *testing.F) {
 			}
 			return
 		}
-		if m.APIVersion != "" && m.APIVersion != APIVersionV1 {
+		if m.APIVersion != "" && m.APIVersion != APIVersionV1 && m.APIVersion != APIVersionV2 {
 			t.Fatalf("ParseManifest(%q) accepted apiVersion %q", raw, m.APIVersion)
 		}
 		if len(m.Annotations) > maxAnnotations {

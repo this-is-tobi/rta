@@ -472,12 +472,12 @@ func TestAnIndexAheadOfThisRtaIsReportedNotSkipped(t *testing.T) {
 	runningAs(t, "0.59.0")
 	repo := gitFixture(t, map[string]string{
 		"pg":    goodManifest,
-		"redis": "apiVersion: rta/v2\n" + named(goodManifest, "redis") + "scope: cluster\n",
+		"redis": "apiVersion: rta/v3\n" + named(goodManifest, "redis") + "scope: cluster\n",
 	})
 	if verr := AddIndex(context.Background(), "lab", repo); verr != nil {
 		t.Fatalf("an index with one readable manifest was refused: %v", verr)
 	}
-	const want = `lab/redis.yaml: apiVersion "rta/v2" is newer than rta/v1, which this rta (0.59.0) reads — upgrade rta`
+	const want = `lab/redis.yaml: apiVersion "rta/v3" is newer than rta/v2, which this rta (0.59.0) reads — upgrade rta`
 
 	ix, _ := IndexByName("lab")
 	listed, bad := Manifests(ix)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/yamlguard"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -124,30 +125,7 @@ func Generate(ctx context.Context, req GenerateRequest) ([]byte, Manifest, *view
 		seenPlatform[key] = true
 	}
 
-	// Neither APIVersion nor Annotations, and not for want of a flag. A
-	// manifest that states an apiVersion is refused by every rta that has
-	// not heard of it, and an index is regenerated for every plugin at once
-	// by whichever rta its release job runs, so writing the key here would
-	// hide the whole catalogue from every release older than that one. The
-	// first release to write either does it deliberately, for the manifests
-	// that need it, and states the lowest apiVersion that carries every claim
-	// it makes. Until then the output is byte for byte what it has always
-	// been, and a test holds it there.
-	m := Manifest{
-		Name:     declared.Name,
-		Version:  version,
-		Summary:  declared.Summary,
-		Homepage: req.Homepage,
-		Needs:    declared.Needs,
-	}
-	for _, c := range declared.Capabilities {
-		m.Capabilities = append(m.Capabilities, CapabilityClaim{
-			ID:      c.ID,
-			Summary: c.Summary,
-			Safety:  string(c.Safety),
-			Grant:   c.NeedsGrant,
-		})
-	}
+	m := claimsOf(declared, version, req.Homepage)
 	for _, src := range req.Platforms {
 		plat, verr := req.platform(ctx, src, pluginhost.BinaryName(declared.Name))
 		if verr != nil {
@@ -343,4 +321,35 @@ func ParseChecksums(raw []byte) (map[string]string, *view.Error) {
 		return nil, view.Errorf("plugin.manifest.checksums", "the checksums file is empty")
 	}
 	return out, nil
+}
+
+// claimsOf is the manifest a declaration implies before any platform is
+// added: what the binary says of itself, the version it was released as and
+// where a person reads more.
+//
+// An apiVersion only for a declaration that needs one (apiVersionFor), and
+// never Annotations, and not for want of a flag. A manifest that states an
+// apiVersion is refused by every rta that has not heard of it, and an index
+// is regenerated for every plugin at once by whichever rta its release job
+// runs, so stating one for every plugin would hide the whole catalogue from
+// every release older than that one. A plugin that needs none is written byte
+// for byte as it always was, and a test holds it there.
+func claimsOf(declared plugin.Plugin, version, homepage string) Manifest {
+	m := Manifest{
+		APIVersion: apiVersionFor(declared),
+		Name:       declared.Name,
+		Version:    version,
+		Summary:    declared.Summary,
+		Homepage:   homepage,
+		Needs:      declared.Needs,
+	}
+	for _, c := range declared.Capabilities {
+		m.Capabilities = append(m.Capabilities, CapabilityClaim{
+			ID:      c.ID,
+			Summary: c.Summary,
+			Safety:  string(c.Safety),
+			Grant:   c.NeedsGrant,
+		})
+	}
+	return m
 }

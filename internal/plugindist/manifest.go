@@ -53,10 +53,23 @@ import (
 // know the version refuses the manifest rather than skipping what it cannot
 // read. A new key that a reader may ignore without deciding any worse is what
 // annotations are for. The index writer states the lowest apiVersion that
-// carries every claim it makes, which for v1 is none; it writes no apiVersion
-// today, so that regenerating an index cannot hide a plugin from a release
-// older than the one that starts to.
+// carries every claim it makes, which for v1 is none, so that regenerating an
+// index cannot hide a plugin from a release older than the one that starts to
+// read the version it states (APIVersionV2, apiVersionFor).
 const APIVersionV1 = "rta/v1"
+
+// APIVersionV2 is a manifest for a plugin whose settings a reader of rta/v1
+// alone misreads: one that renamed a config key (plugin.Plugin.Renamed), or
+// that declares a key beside another that starts with it, `database` and
+// `database.list.limit`. Such an rta ran the plugin with a key it no longer
+// reads silently ignored, on the plugin's default, so a renamed TLS mode was
+// the default mode, and could not read the second key at all. A reader of
+// rta/v2 reads a key written flat or nested and refuses a section stating one
+// nothing reads, so v2 adds no field: the version is the claim, that the
+// plugin needs such a reader. An rta that reads only rta/v1 refuses the
+// manifest and says to upgrade, rather than install a plugin it would run
+// wrong (apiVersionFor writes it).
+const APIVersionV2 = "rta/v2"
 
 // Manifest is one plugin's entry in an index: claims about an artifact,
 // written by whoever maintains the index. Krew's shape (a YAML file per
@@ -261,13 +274,13 @@ func statedAPIVersion(raw []byte) string {
 	return probe.APIVersion
 }
 
-// isNewerAPIVersion reports whether v is rta/v<N> for an N past the one
-// version this reader has: ASCII digits only and no leading zero, so that
-// every spelling is one number and "rta/v1" is the one that is not newer.
-// Compared as text because N is the index's and may be any size.
+// isNewerAPIVersion reports whether v is rta/v<N> for an N past the versions
+// this reader has: ASCII digits only and no leading zero, so that every
+// spelling is one number and "rta/v1" and "rta/v2" are the ones that are not
+// newer. Compared as text because N is the index's and may be any size.
 func isNewerAPIVersion(v string) bool {
 	n, ok := strings.CutPrefix(v, "rta/v")
-	if !ok || n == "" || n == "1" || n[0] == '0' {
+	if !ok || n == "" || n == "1" || n == "2" || n[0] == '0' {
 		return false
 	}
 	for i := 0; i < len(n); i++ {
@@ -278,18 +291,52 @@ func isNewerAPIVersion(v string) bool {
 	return true
 }
 
-// checkAPIVersion is the gate: nothing, or v1, passes; a newer one is the
+// checkAPIVersion is the gate: nothing, v1 or v2 passes; a newer one is the
 // reader's to act on; and anything else is a slip in the manifest.
 func checkAPIVersion(v string) *view.Error {
 	switch {
-	case v == "" || v == APIVersionV1:
+	case v == "" || v == APIVersionV1 || v == APIVersionV2:
 		return nil
 	case isNewerAPIVersion(v):
 		return newerAPIVersion(v)
 	}
 	return view.Errorf("plugin.index.manifest",
-		"apiVersion %q is not one rta knows — a manifest states %s, or no apiVersion at all",
-		format.Clip(v, maxEchoedClaim), APIVersionV1)
+		"apiVersion %q is not one rta knows — a manifest states %s or %s, or no apiVersion at all",
+		format.Clip(v, maxEchoedClaim), APIVersionV1, APIVersionV2)
+}
+
+// apiVersionFor is the lowest apiVersion that carries every claim a manifest
+// of p makes: APIVersionV2 for a declaration a reader of rta/v1 misreads, and
+// none otherwise, so that regenerating an index hides no other plugin from a
+// release older than the first to read rta/v2.
+func apiVersionFor(p plugin.Plugin) string {
+	if len(p.Renamed) > 0 {
+		return APIVersionV2
+	}
+	keys := map[string]bool{}
+	for _, c := range p.Capabilities {
+		for _, f := range c.Inputs {
+			if f.Config != "" {
+				keys[f.Config] = true
+			}
+		}
+	}
+	for key := range keys {
+		for i := strings.IndexByte(key, '.'); i > 0; i = nextDot(key, i) {
+			if keys[key[:i]] {
+				return APIVersionV2
+			}
+		}
+	}
+	return ""
+}
+
+// nextDot is the index of the dot in key after the one at i, -1 when none.
+func nextDot(key string, i int) int {
+	if j := strings.IndexByte(key[i+1:], '.'); j >= 0 {
+		return i + 1 + j
+	}
+	return -1
 }
 
 // newerAPIVersion is the refusal of a manifest written for a later rta. It
@@ -304,7 +351,7 @@ func newerAPIVersion(v string) *view.Error {
 	}
 	return view.Errorf(CodeAPIVersion,
 		"apiVersion %q is newer than %s, which this rta%s reads — upgrade rta",
-		format.Clip(v, maxEchoedClaim), APIVersionV1, running)
+		format.Clip(v, maxEchoedClaim), APIVersionV2, running)
 }
 
 // check is every rule a manifest must satisfy before its claims are shown to
