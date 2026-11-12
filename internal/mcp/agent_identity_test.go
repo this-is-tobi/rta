@@ -170,3 +170,30 @@ func TestAHostileClientNameIsCleanedAndBounded(t *testing.T) {
 		t.Errorf("truncation cut a multi-byte rune in half: %q", got)
 	}
 }
+
+// rta knows a client is there from the handshake, InitializedHandler calling
+// Connected: the session record that `agent overview`, `grant allow`'s agent
+// guess, `grant revoke`'s still-connected warning and the TUI's lock form all
+// read. Protocol 2026-07-28 has no handshake, and the SDK's own client tries
+// it first, so a client on it called tools for a whole session while rta said
+// nothing was connected. Whatever revision a default client starts with, it
+// lands on one this server records, and a dependency update that moves the
+// lifecycle fails here rather than in an incident.
+func TestADefaultClientIsRecordedAsConnected(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	connected := make(chan string, 1)
+	opts := Options{Agent: "probe", Connected: func(client string) { connected <- client }}
+	session := asAgent(t, testRegistry(t), opts, "probe-client")
+	select {
+	case got := <-connected:
+		if got != "probe-client 1.0" {
+			t.Errorf("the record names the client %q, want the name and version it announced", got)
+		}
+	case <-time.After(10 * time.Second):
+		v := "unknown"
+		if r := session.InitializeResult(); r != nil {
+			v = r.ProtocolVersion
+		}
+		t.Fatalf("a default client connected on protocol %s and was never recorded as connected", v)
+	}
+}
