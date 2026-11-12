@@ -58,7 +58,7 @@ Ask for the least you need. Every location you declare is one the operator has t
 
 ## A credential goes to the host it was configured for
 
-A plugin that talks to a service over HTTP sends its credential with every request, and Go's `http.Client` follows a redirect unless told otherwise. On one that leaves the host it drops `Authorization` and cookies and sends every other header on, `X-Vault-Token`, an `api-key` or a `PRIVATE-TOKEN` included, to whatever host the answer names. A 301, 302 or 303 answering a write sends it again as a `GET` without its body, which your handler then reads as a write that succeeded. Give your client the SDK's policy:
+A plugin that talks to a service over HTTP sends its credential with every request, and Go's `http.Client` follows a redirect unless told otherwise. On one that leaves the host it drops `Authorization` and cookies and sends every other header on, `X-Vault-Token`, an `api-key` or a `PRIVATE-TOKEN` included, to whatever host the answer names. A 301, 302 or 303 answering a write sends it again as a `GET` without its body, which your handler then reads as a write that succeeded. A [`plugin.Service`](./21-declaring-inputs.md#a-connection-declared-once)'s `HTTPClient(req)` is built with the SDK's policy, and its `Refusal(req, err)` words a redirect it refused; give a client of your own the same policy:
 
 ```go
 client := &http.Client{CheckRedirect: plugin.RedirectSameOrigin.CheckRedirect}

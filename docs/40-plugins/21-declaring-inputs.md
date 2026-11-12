@@ -120,9 +120,51 @@ A plugin that talks to a service has a connection — where it is, and what auth
 - **A TUI form asks the connection last, in blocks.** The inputs that are `Local` and have a `Config` key, with the `Local` credentials a profile fills beside them, come after the capability's own inputs, wherever you declared them, each block under the name of its [group](#group-the-boxes-of-a-form); the call's own inputs keep the order you gave them, so put the one a caller needs first. A capability with no `Local` input that has a `Config` key has no connection to set apart, and its inputs are asked in declaration order.
 - **Never a `Path`, and never the input a grant is scoped by** — your `Scope` and `ScopeAlso` inputs. A profile chooses where a call goes, not which file it reads or writes, and not the record a grant was checked against.
 - **A service reached over the network can have a forward stand in for its address.** A profile may state `kube:` or `ssh:` for a connection, and rta opens a `kubectl port-forward` or an `ssh -L` for the call, hands your plugin a local address, and closes it afterwards; you never learn a tunnel was there. To receive that address, say which inputs hold it: `Endpoint: plugin.EndpointHost` together with `plugin.EndpointPort` (an `Int`), or `plugin.EndpointAddress` for one input holding `host:port`, or `plugin.EndpointURL` for one holding a URL. Name each for its role — `host` and `port`, `address`, `url` — as every first-party plugin does, so a profile's `set:` reads the same whichever plugin it fills. Each such input has to be `Local` — an address an agent could choose is a credential carried wherever it likes — and has a `Config` key, at most one input takes each role, and registration refuses a plugin that declares half an address. A plugin with no endpoint input cannot be given a forward, and a profile that states one for it is refused rather than opened and ignored. The same declaration is what gives a capability's command the flags that state a connection for one call — `--kube`, `--secret` and `--secrets-from` — so a plugin does nothing to offer them, a capability with no endpoint input does not have them, and they are on no tool an agent is offered: an input of your own may not take those names, since the host's flag would shadow it. The same holds for `--no-profile`, which the host adds wherever it adds `--profile`: the flag that leaves the environment that is switched on for one call, and on no tool an agent is offered.
-- **A forward is a raw byte pipe, so [TLS](../95-reference/10-glossary.md#acronyms) over it is the host's question.** Mark the input that holds your TLS switch `plugin.EndpointTLS`: a `Bool`, or a `String` whose `Options` include one of `disable`, `off`, `false` or `none`, which is what the host fills in over a forward. Not `insecure`, which in curl, kubectl and redis-cli means TLS without the certificate checked rather than none at all. A [CA](../95-reference/10-glossary.md#acronyms) file, a client certificate, its key or a name to check is an ordinary `Local` input with a `Config` key: the host turns the switch off and says nothing about the rest. A plugin that should still verify a server it was handed a CA for reads `req.Tunnel()` and turns TLS back on itself, as etcd's `ca-file`, pg's `sslrootcert` and mysql's `ca-file` do; one that does not leaves a value no call reads, or refuses it in its handler, naming its own input. [Profiles](../20-using/42-reaching-private-services.md#when-the-far-side-speaks-tls-on-its-own) is what the operator reads about this, and what to name in a hint.
+- **A forward is a raw byte pipe, so [TLS](../95-reference/10-glossary.md#acronyms) over it is the host's question.** Mark the input that holds your TLS switch `plugin.EndpointTLS`: a `Bool`, or a `String` whose `Options` include one of `disable`, `off`, `false` or `none`, which is what the host fills in over a forward. Not `insecure`, which in curl, kubectl and redis-cli means TLS without the certificate checked rather than none at all. A [CA](../95-reference/10-glossary.md#acronyms) file, a client certificate, its key or a name to check is an ordinary `Local` input with a `Config` key: the host turns the switch off and says nothing about the rest. A plugin that should still verify a server it was handed a CA for reads `req.Tunnel()` and turns TLS back on itself, as a [`plugin.Service`](#a-connection-declared-once) does, at verify-full; one that does not leaves a value no call reads, or refuses it in its handler, naming its own input. [Profiles](../20-using/42-reaching-private-services.md#when-the-far-side-speaks-tls-on-its-own) is what the operator reads about this, and what to name in a hint.
 
 A profile can only name a plugin that is installed — `rta profile set` refuses one that is not registered — so `rta plugin dev` does not apply one. To try one on the plugin you are writing, build it onto `$PATH`, approve it with `rta plugin trust <name>`, and state the profile with `rta profile set dev --plugin <name> --set region=north`; `rta <name> <capability> --profile dev` then runs through it, and `rta profile show dev` says where each value came from.
+
+## A connection, declared once
+
+Every plugin that talks to a service declares the same settings — where the service is, whether the connection is TLS, the CA its certificate is checked against — and reads them back the same way, and every first-party plugin once wrote its own copy, each drifting from the others. `plugin.Service` declares them once, under the names every first-party plugin spells alike, and reads them for your handlers:
+
+```go
+var weather = plugin.Service{
+    Namespace: "weather", Product: "Weather",
+    Reach: plugin.EndpointURL, Default: "http://127.0.0.1:8080",
+    Switch: plugin.TLSByScheme,
+}
+
+// A capability's inputs: the Service's settings, then the credential and its own.
+Inputs: append(weather.Fields(),
+    plugin.Field{Name: "token", Type: plugin.Secret, Local: true, EnvFallback: true, Help: "API token"}),
+
+// Its handler.
+client, verr := weather.HTTPClient(req)
+if verr != nil {
+    return nil, verr
+}
+target, _ := weather.Target(req)
+get, err := http.NewRequestWithContext(ctx, http.MethodGet, target.JoinPath("v1", "current").String(), nil)
+if err != nil {
+    return nil, err
+}
+resp, err := client.Do(get)
+if err != nil {
+    if verr := weather.Refusal(req, err); verr != nil {
+        return nil, verr
+    }
+    return nil, view.Errorf("weather.conn.failed", "%v", err)
+}
+```
+
+- **`Reach` is the setting that says where a call goes.** `plugin.EndpointURL` declares `url`, `plugin.EndpointAddress` declares `address`, `host[:port]` with `Port` given to one that names none, and `plugin.EndpointHost` declares `host` beside `port`. Each is the input a forward fills.
+- **`Switch` is how TLS is switched.** `plugin.TLSByScheme`, for a URL, whose `https://` is TLS. `plugin.TLSOnOff`, a `tls` switch, off by default, which `ca-file`, `tls-server-name` or a client certificate turns on. `plugin.TLSModes`, a `tls` that is one of `disable`, `prefer`, `require`, `verify-ca` and `verify-full`, for a database that offers TLS on its plain port. Through a forward, which turns the switch off, any of those settings turns TLS back on, at verify-full. `ClientCert` adds `cert-file` and `key-file`.
+- **`Fields()` are the settings**, every one `Local` and keyed by its own name: append the credential and your own inputs. You may add a clause to a returned `Help`, and change nothing else, since the names and keys are what a profile, the host and every other plugin read the same way. A `Service` that cannot exist — a URL with a switch of its own, an address with no port to give one — panics where it is declared, the first time the plugin starts.
+- **`Target(req)` is where the call goes**, checked before anything is dialled: an `http://` or `https://` URL holding no user and no password, or `host:port`. Anything else is refused as `weather.url.invalid` and its siblings.
+- **`TLS(req)` is the plan**: the mode in force and the `*tls.Config` it is made with, at least TLS 1.2, every file read and checked first, the CA in place of the system's roots and a client pair whole or refused. A setting the mode would not read, a CA beside `http://` or beside `require`, is refused as `weather.tls.ca.unused` and its siblings rather than taken in silence. A driver that takes paths reads them off the plan.
+- **`HTTPClient(req)` is an HTTP API's client, for one call.** Its transport keeps the operator's proxy, HTTP/2 and Go's dial and handshake timeouts, waits at most `ResponseTimeout`, 30 seconds unless you set it, for a response's headers and never for a long body, keeps no cookies, and follows redirects as `Redirects` says, `plugin.RedirectSameOrigin` unless you set it. Build it in the handler and let it go with the call: one plugin process serves every profile, and a client kept in a variable pools one profile's connections, client certificate and all, into the next profile's calls. An `https://` proxy beside `ca-file` or `tls-server-name` is refused as `weather.proxy.tls`, since Go would check the proxy's own certificate with them; an `http://` proxy carries the call.
+- **`Refusal(req, err)` words a failed connection** under the codes every connection plugin shares — `weather.host.unknown`, `.conn.unreachable`, `.conn.refused`, `.timeout`, `.redirect.refused`, `.tls.untrusted`, `.tls.name`, `.tls.forward`, `.tls.rejected` and `.tls.expected` — naming the proxy when the call went through one, and answers `nil` for anything else, which you word yourself. Read your server's own coded answer first, as [When a connection fails](./22-answers-errors-and-hints.md#when-a-connection-fails) says. You may replace a hint for your product, never a code.
 
 ## Next
 
