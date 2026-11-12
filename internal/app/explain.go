@@ -113,7 +113,7 @@ func catalogView(capabilities []plugin.Capability) view.View {
 func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 	return view.Sections{Items: []view.Section{
 		{ID: "card", Title: "Card", View: cardOf(reg, c)},
-		{ID: "inputs", Title: "Inputs", View: inputsTable(c)},
+		{ID: "inputs", Title: "Inputs", View: inputsTable(c, configSection(reg, c))},
 	}}
 }
 
@@ -127,7 +127,10 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 // the declared number, or the duration as the plugin spelled it, never the
 // sentence "from 1 to 500" the card writes. The config column is the key and,
 // as on the card, never the value: what an operator has configured is theirs.
-func inputsTable(c plugin.Capability) view.Table {
+// The key whole, under section (configSection), as `rta config set` takes it:
+// the column said `log.limit` under a card that said `plugins.git.log.limit`,
+// and the short form was refused by the command the card's last line names.
+func inputsTable(c plugin.Capability, section string) view.Table {
 	t := view.Table{
 		Columns: []view.Column{
 			{Name: "Name"}, {Name: "Type"}, {Name: "Required"}, {Name: "Default"}, {Name: "Min"}, {Name: "Max"},
@@ -146,9 +149,13 @@ func inputsTable(c plugin.Capability) view.Table {
 		if f.Default != nil && fmt.Sprint(f.Default) != "" {
 			def = fmt.Sprint(f.Default)
 		}
+		key := ""
+		if f.Config != "" {
+			key = section + "." + f.Config
+		}
 		t.Rows = append(t.Rows, []string{
 			f.Name, string(f.Type), flag(f.Required), def, boundText(f.Min), boundText(f.Max),
-			strings.Join(f.Options, "|"), f.Config, flag(f.Positional), flag(f.Local),
+			strings.Join(f.Options, "|"), key, flag(f.Positional), flag(f.Local),
 			flag(f.Type == plugin.Secret || f.Type == plugin.SecretSlice), f.Help,
 		})
 	}
