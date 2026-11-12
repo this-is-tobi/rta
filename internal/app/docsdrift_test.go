@@ -640,17 +640,17 @@ func TestTheDensestSecuritySentencesStayInPiecesAReaderCanHold(t *testing.T) {
 	}
 }
 
-// Start here gives each track a time, and a newcomer budgets a morning from it.
-// Nothing computed the numbers: the six pages of the second track said about 45
-// minutes and take about an hour to read, the eight of the third said about an
-// hour and take an hour and a half, and every page that grew since made them
-// less true. The claim is held to the words of the pages the track lists, read at
-// two hundred a minute, which is a slow pace on purpose: these are pages with
-// commands to read and a table to decode on most lines.
+// The introduction gives each track a time, and a newcomer budgets a morning
+// from it. Nothing computed the numbers: the six pages of the second track said
+// about 45 minutes and take about an hour to read, the eight of the third said
+// about an hour and take an hour and a half, and every page that grew since
+// made them less true. The claim is held to the words of the pages the track
+// lists, read at two hundred a minute, which is a slow pace on purpose: these
+// are pages with commands to read and a table to decode on most lines.
 //
 // A fifth either way is allowed, since a claim is "about" something and the pages
 // are edited every week; past that the test names the number to write.
-func TestTheTracksOnStartHereClaimTheTimeTheirPagesTakeToRead(t *testing.T) {
+func TestTheTracksOnTheIntroductionClaimTheTimeTheirPagesTakeToRead(t *testing.T) {
 	const rel = "docs/01-readme.md"
 	root := repoRoot(t)
 	page := readDoc(t, root, rel)

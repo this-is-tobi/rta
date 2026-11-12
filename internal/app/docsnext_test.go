@@ -7,18 +7,19 @@ import (
 	"testing"
 )
 
-// The docs are read as tracks, not as a shelf (Start here lists them), and a
-// track is only a track if every page says which one comes after it. Before
-// this, five pages ended with nothing, Grants, the record and Team policy
-// pointed at one another in a ring, and the TUI page pointed back at the CLI,
-// so a reader who followed the links to the end arrived where they had begun.
+// The docs are read as tracks, not as a shelf (the introduction lists them),
+// and a track is only a track if every page says which one comes after it.
+// Before this, five pages ended with nothing, Grants, the record and Team
+// policy pointed at one another in a ring, and the TUI page pointed back at
+// the CLI, so a reader who followed the links to the end arrived where they
+// had begun.
 //
 // Each page therefore ends with one Next: a single link, in the last section
 // of the page. Anything else a page wants to point at goes under Related,
-// which is where the links that used to share Next with it went. Start here
-// is the one page with no Next, being where tracks begin, and the reference
-// pages (the glossary, the path gate and the like) are looked things up in,
-// not read on from.
+// which is where the links that used to share Next with it went. The
+// introduction is the one page with no Next, being where tracks begin, and
+// the reference pages (the glossary, the path gate and the like) are looked
+// things up in, not read on from.
 func TestEveryDocsPageEndsWithOneNext(t *testing.T) {
 	root := repoRoot(t)
 	link := regexp.MustCompile(`\[[^\]]+\]\([^)\s]+\)`)
@@ -45,9 +46,9 @@ func TestEveryDocsPageEndsWithOneNext(t *testing.T) {
 	}
 }
 
-// Following each page's Next to its end has to reach Start here or a page with
-// no Next, never come back to a page already passed: a loop is a reader told
-// to go on to somewhere they have been.
+// Following each page's Next to its end has to reach the introduction or a
+// page with no Next, never come back to a page already passed: a loop is a
+// reader told to go on to somewhere they have been.
 func TestTheNextLinksNeverLoop(t *testing.T) {
 	root := repoRoot(t)
 	link := regexp.MustCompile(`\[[^\]]+\]\(([^)\s]+)\)`)
@@ -79,16 +80,16 @@ func TestTheNextLinksNeverLoop(t *testing.T) {
 	}
 }
 
-// exemptFromNext is the pages that are not read on from: the README, Start
-// here, and the reference pages.
+// exemptFromNext is the pages that are not read on from: the README, the
+// introduction, and the reference pages.
 func exemptFromNext(page string) bool {
 	return page == "README.md" || page == "docs/01-readme.md" || strings.HasPrefix(page, "docs/95-reference/")
 }
 
 // The README is the front door the repository shows, and its list of the
-// documentation is how a reader who does not start at Start here finds a page
-// at all. A page added to docs/ and left out of it is one that is reached only
-// by a reader who happens to follow the Next before it.
+// documentation is how a reader who does not start at the introduction finds
+// a page at all. A page added to docs/ and left out of it is one that is
+// reached only by a reader who happens to follow the Next before it.
 func TestEveryDocsPageIsInTheReadmeList(t *testing.T) {
 	root := repoRoot(t)
 	readme := readDoc(t, root, "README.md")
