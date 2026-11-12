@@ -1007,5 +1007,9 @@ var urlUserinfo = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)([^/:@\s]+):[^
 // Restricted to http(s), unlike urlUserinfo above: ssh://git@host names the
 // conventional SSH user and no secret, and the SCP-like git@host:path form
 // has no "://" for this pattern to anchor on in the first place — both are
-// left alone, same as urlUserinfo already leaves them.
-var urlBareUserinfo = regexp.MustCompile(`(https?://)([^/:@\s]+)@`)
+// left alone, same as urlUserinfo already leaves them. In any case, as
+// urlUserinfo's scheme already was: a scheme is case-insensitive, git
+// matches a credential.<url> key so, and an HTTPS:// remote works on a
+// case-insensitive disk, so the lowercase-only pattern printed the token of
+// every other spelling whole.
+var urlBareUserinfo = regexp.MustCompile(`(?i)(https?://)([^/:@\s]+)@`)

@@ -156,10 +156,21 @@ func TestTheUsernameSurvivesMaskingButThePasswordDoesNot(t *testing.T) {
 // neither is http(s), and both name the conventional SSH user, not a
 // secret.
 func TestBareUserinfoIsMaskedForHTTPSOnly(t *testing.T) {
-	if got := maskURLCredentials("https://ghp_abc123@github.com/owner/repo.git"); strings.Contains(got, "ghp_abc123") {
-		t.Errorf("the bare-userinfo token survived: %s", got)
-	} else if !strings.Contains(got, view.Mask) {
-		t.Errorf("nothing was masked, so nothing tells the reader something is hidden: %s", got)
+	// A scheme is case-insensitive (RFC 3986 §3.1), and git reads it so: the
+	// credential.<url> keys match HTTPS:// as https://, and on a
+	// case-insensitive disk an HTTPS:// remote finds git-remote-https. The
+	// pattern matched the lowercase spelling alone, and printed the token of
+	// any other whole, to the terminal and to an agent.
+	for _, url := range []string{
+		"https://ghp_abc123@github.com/owner/repo.git",
+		"HTTPS://ghp_abc123@github.com/owner/repo.git",
+		"Http://ghp_abc123@github.com/owner/repo.git",
+	} {
+		if got := maskURLCredentials(url); strings.Contains(got, "ghp_abc123") {
+			t.Errorf("the bare-userinfo token survived: %s", got)
+		} else if !strings.Contains(got, view.Mask) {
+			t.Errorf("nothing was masked, so nothing tells the reader something is hidden: %s", got)
+		}
 	}
 
 	for _, unchanged := range []string{
