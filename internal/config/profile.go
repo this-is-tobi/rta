@@ -335,6 +335,8 @@ type Connection struct {
 	// lands on, since the old single-plugin shape put `set:` where `plugins:`
 	// now goes.
 	unknown []string
+	// twice is every key `set:` or `only:` states in two spellings (Twice).
+	twice []string
 }
 
 // Tunnelled reports whether a call filled from this connection runs through a
@@ -403,6 +405,24 @@ func (c Connection) BadSecretRefs() []string {
 
 // UnknownKeys lists the keys in this connection that no field claims, sorted.
 func (c Connection) UnknownKeys() []string { return c.unknown }
+
+// Twice lists each key `set:` or `only:` states in two spellings, as one key
+// and inside a block, as `set: query.limit`. No reader can choose between
+// them, so a connection stating one is refused.
+func (c Connection) Twice() []string { return c.twice }
+
+// flatBlock is a `set:` or `only:` block flattened (FlatSection), and twice
+// with each path it states twice added, named under block. Nil stays nil.
+func flatBlock(m map[string]any, block string, twice []string) (map[string]any, []string) {
+	if m == nil {
+		return nil, twice
+	}
+	flat, dup := FlatSection(m)
+	for _, key := range dup {
+		twice = append(twice, block+": "+key)
+	}
+	return flat, twice
+}
 
 // UnknownKeys lists the keys in this profile that no field claims, sorted.
 func (p Profile) UnknownKeys() []string { return p.unknown }

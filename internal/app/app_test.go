@@ -1564,7 +1564,7 @@ func TestConfigFillsAnInputTheCallerDidNotPassOnTheCLI(t *testing.T) {
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal", "port": uint64(6543)},
-	}}), reg.Origin))
+	}}), reg))
 
 	out, _, err := run(t, reg, "pg", "query")
 	if err != nil {
@@ -1591,7 +1591,7 @@ func TestARefusedConfigValueNamesTheKeyItCameFrom(t *testing.T) {
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"gen": {"encoding": "b64"},
-	}}), reg.Origin))
+	}}), reg))
 
 	_, errOut, err := run(t, reg, "gen", "token")
 	if err == nil {
@@ -1619,7 +1619,7 @@ func TestAPassedFlagBeatsConfigIncludingAFalseBool(t *testing.T) {
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal", "verbose": true},
-	}}), reg.Origin))
+	}}), reg))
 
 	out, _, err := run(t, reg, "pg", "query", "--host", "typed.example", "--verbose=false")
 	if err != nil {
@@ -1642,7 +1642,7 @@ func TestARequiredInputIsSatisfiedByConfigAndReportedWhenNeitherSuppliesIt(t *te
 
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal"},
-	}}), reg.Origin))
+	}}), reg))
 	if _, _, err := run(t, reg, "pg", "query"); err != nil {
 		t.Fatalf("a config-satisfied required input was still refused: %v", err)
 	}
@@ -1694,7 +1694,7 @@ func TestAFailureSaysWhenTheOperatorsSectionWasNotApplied(t *testing.T) {
 	// which is what a working-directory file loads as.
 	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal"},
-	}}, reg.Origin))
+	}}, reg))
 
 	_, errOut, err := run(t, reg, "pg", "query")
 	if err == nil {
@@ -1722,7 +1722,7 @@ func TestAStaleSectionRefusesThePluginsCalls(t *testing.T) {
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@111111111111": {"host": "db.internal"},
-	}}), reg.Origin))
+	}}), reg))
 
 	for _, args := range [][]string{{"pg", "status"}, {"pg", "status", "--dry-run"}} {
 		out, errOut, err := run(t, reg, args...)
@@ -1755,7 +1755,7 @@ func TestAStaleSectionIsRefusedBeforeTheConfirmation(t *testing.T) {
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@111111111111": {"host": "db.internal"},
-	}}), reg.Origin))
+	}}), reg))
 
 	_, errOut, err := run(t, reg, "pg", "drop")
 	if err == nil || !strings.Contains(errOut, "core.config.unapplied") || strings.Contains(errOut, "--yes") {
@@ -1770,7 +1770,7 @@ func TestNoNoteWhenTheSectionAppliedOrTheRunSucceeded(t *testing.T) {
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal"},
-	}}), reg.Origin))
+	}}), reg))
 
 	_, errOut, err := run(t, reg, "pg", "query")
 	if err == nil {
@@ -1787,7 +1787,7 @@ func TestNoNoteWhenTheSectionAppliedOrTheRunSucceeded(t *testing.T) {
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal"},
 		"nosuchplugin@0000":    {"host": "elsewhere"},
-	}}), reg.Origin))
+	}}), reg))
 	_, errOut, err = run(t, reg, "pg", "query")
 	if err == nil {
 		t.Fatal("the capability was supposed to fail")
@@ -1803,7 +1803,7 @@ func TestNoNoteWhenTheSectionAppliedOrTheRunSucceeded(t *testing.T) {
 	okReg, _ := configCapability(t)
 	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
 		"pg@0000000000": {"host": "db.internal"},
-	}}, okReg.Origin))
+	}}, okReg))
 	out, errOut, err := run(t, okReg, "pg", "query", "--host", "typed.example")
 	if err != nil {
 		t.Fatalf("run: %v", err)

@@ -91,31 +91,40 @@ func TestConfigSchemaDescribesEachPluginsKeys(t *testing.T) {
 	}
 }
 
-// A key that is also the first part of another is described as a value or the
-// block the longer key nests in: the walk to the longer one went into the
-// value as if it were a block and panicked, taking `rta config schema` and
-// `rta config edit` down with it.
-func TestTheSchemaDescribesAKeyThatIsAlsoTheStartOfAnother(t *testing.T) {
+// Every key is offered as one key, the way the writers write it, and a dotted
+// key nested too, the other spelling a section may use, except under a name
+// that is itself a key: `database` beside `database.list.limit` is a value,
+// and a block in its place made the editor flag one of the two. The walk to
+// the longer key once went into the value as if it were a block and panicked,
+// taking `rta config schema` and `rta config edit` down with it.
+func TestTheSchemaOffersEachKeyFlatAndNestedWhereItCanBe(t *testing.T) {
 	reg := registry.New()
 	p := plugin.Plugin{Name: "zz", Summary: "zz", Capabilities: []plugin.Capability{{
 		ID: "zz.database.list", Summary: "s", Safety: plugin.Read,
 		Inputs: []plugin.Field{
 			{Name: "database", Type: plugin.String, Config: "database"},
 			{Name: "limit", Type: plugin.Int, Default: 50, Min: 1, Max: 500, Config: "database.list.limit"},
+			{Name: "rows", Type: plugin.Int, Config: "query.limit"},
 		},
 		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
 	}}}
 	if err := reg.Register(p); err != nil {
 		t.Fatal(err)
 	}
-	database := pluginSchema(reg, p)["properties"].(map[string]any)["database"].(map[string]any)
-	either, _ := database["anyOf"].([]any)
-	if len(either) != 2 || either[0].(map[string]any)["type"] != "string" {
-		t.Fatalf("database = %v, want a string or a block", database)
+	props := pluginSchema(reg, p)["properties"].(map[string]any)
+	if database := props["database"].(map[string]any); database["type"] != "string" {
+		t.Fatalf("database = %v, want the string it is", database)
 	}
-	limit := either[1].(map[string]any)["properties"].(map[string]any)["list"].(map[string]any)["properties"].(map[string]any)["limit"].(map[string]any)
+	limit := props["database.list.limit"].(map[string]any)
 	if limit["type"] != "integer" || fmt.Sprint(limit["maximum"]) != "500" {
 		t.Errorf("database.list.limit = %v", limit)
+	}
+	if props["query.limit"].(map[string]any)["type"] != "integer" {
+		t.Errorf("query.limit flat = %v", props["query.limit"])
+	}
+	nested := props["query"].(map[string]any)["properties"].(map[string]any)["limit"].(map[string]any)
+	if nested["type"] != "integer" {
+		t.Errorf("query.limit nested = %v", nested)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -478,10 +479,10 @@ func pingShapedPlugin() plugin.Plugin {
 	}
 }
 
-// A dotted key is read from the file one block per segment, and an editor that
-// wrote `ping.count` as one key with a dot in it wrote a value nothing reads,
-// beside a form that showed the right one as empty.
-func TestTheConfigFormReadsAndWritesADottedKeyNested(t *testing.T) {
+// The form reads a dotted key however the file states it, nested here, and
+// the save writes the section back flat, one key per value, keeping what the
+// form never showed: a key of the same block and a key of another.
+func TestTheConfigFormReadsANestedKeyAndSavesTheSectionFlat(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	if err := config.Write(config.Config{Plugins: map[string]map[string]any{
 		"net": {
@@ -505,27 +506,18 @@ func TestTheConfigFormReadsAndWritesADottedKeyNested(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	section := onDisk.Plugins["net"]
-	if _, flat := section["ping.count"]; flat {
-		t.Errorf("the editor wrote ping.count flat, which nothing reads: %v", section)
+	got := map[string]string{}
+	for k, v := range onDisk.Plugins["net"] {
+		got[k] = fmt.Sprint(v)
 	}
-	if v, _ := config.SectionValue(section, "ping.count"); fmt.Sprint(v) != "9" {
-		t.Errorf("ping.count = %v, want 9 nested under ping: %v", v, section)
-	}
-	if v, _ := config.SectionValue(section, "ping.interval"); v != "2s" {
-		t.Errorf("ping.interval = %v, want 2s: %v", v, section)
-	}
-	if v, _ := config.SectionValue(section, "ping.keep"); v != "me" {
-		t.Errorf("a key of the same block the form never showed was lost: %v", section)
-	}
-	if section["other"] != "kept" {
-		t.Errorf("a key the form never showed was lost: %v", section)
+	want := map[string]string{"ping.count": "9", "ping.interval": "2s", "ping.keep": "me", "other": "kept"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("section = %v, want %v", got, want)
 	}
 }
 
-// What an earlier save wrote flat is the nested key it was meant to be, shown
-// in the form and moved on the next save.
-func TestTheConfigFormMovesAFlatDottedKeyAnEarlierSaveWrote(t *testing.T) {
+// A key an earlier save wrote flat is shown in the form and stays flat.
+func TestTheConfigFormReadsAFlatKey(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	if err := config.Write(config.Config{Plugins: map[string]map[string]any{
 		"net": {"ping.count": int64(7)},
@@ -543,11 +535,7 @@ func TestTheConfigFormMovesAFlatDottedKeyAnEarlierSaveWrote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	section := onDisk.Plugins["net"]
-	if _, flat := section["ping.count"]; flat {
-		t.Errorf("the flat key survived the save: %v", section)
-	}
-	if v, _ := config.SectionValue(section, "ping.count"); fmt.Sprint(v) != "7" {
-		t.Errorf("ping.count = %v, want 7 nested: %v", v, section)
+	if v := onDisk.Plugins["net"]["ping.count"]; fmt.Sprint(v) != "7" {
+		t.Errorf("ping.count = %v, want 7 flat: %v", v, onDisk.Plugins["net"])
 	}
 }

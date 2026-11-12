@@ -191,6 +191,23 @@ func TestATilePinnedToARemovedProfileIsNamedByRmAndByDoctor(t *testing.T) {
 	}
 }
 
+// Doctor names a tile whose `with:` gives an input its capability does not
+// take, in the words the tile draws, since the tile no longer runs without
+// the value: a warn for a refusal on screen, and none for a tile that runs.
+func TestDoctorNamesATileGivingAnInputItsCapabilityDoesNotTake(t *testing.T) {
+	reg := setRegistry(t)
+	session(t, reg)
+	file := "dashboard:\n  add:\n  - id: db.status\n    with:\n      dbnmae: orders\n  - id: db.status\n    with:\n      dbname: orders\n"
+	if err := os.WriteFile(config.Path(), []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	warned := dashboardWarnings(reg)
+	if len(warned) != 1 || !strings.Contains(warned[0], `gives db.status "dbnmae", an input it does not take`) ||
+		!strings.Contains(warned[0], `did you mean "dbname"?`) {
+		t.Fatalf("doctor warned %q", warned)
+	}
+}
+
 // dashboardWarnings is what doctor warns of the dashboard.
 func dashboardWarnings(reg *registry.Registry) []string {
 	var warned []string

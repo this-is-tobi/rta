@@ -1421,7 +1421,7 @@ func TestPluginDevDoesNotHandTheInstalledCopysPinnedConfigToTheBuild(t *testing.
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + installedOrigin.Short(): {"host": "db.internal"},
-	}}), reg.Origin))
+	}}), reg))
 	queryCap, _ := reg.Capability("pg.query")
 	if PluginConfig(queryCap)["host"] != "db.internal" {
 		t.Fatalf("the installed copy does not read its own section: %v", PluginConfig(queryCap))
@@ -1447,7 +1447,7 @@ func TestPluginDevKeepsPinnedConfigForABuildThatIsTheInstalledArtifact(t *testin
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + installedOrigin.Short(): {"host": "db.internal"},
-	}}), reg.Origin))
+	}}), reg))
 	queryCap, _ := reg.Capability("pg.query")
 
 	dev := plugin.Plugin{Name: "pg", Summary: "postgres", Capabilities: []plugin.Capability{{
@@ -1471,7 +1471,7 @@ func TestPluginDevSaysThatTheInstalledCopysPinsDoNotApplyToTheBuild(t *testing.T
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + installedOrigin.Short(): {"host": "db.internal"},
-	}}), reg.Origin))
+	}}), reg))
 	dev := plugin.Plugin{Name: "pg", Summary: "postgres, edited", Capabilities: []plugin.Capability{{
 		ID: "pg.query", Summary: "run a query", Safety: plugin.Read,
 		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },

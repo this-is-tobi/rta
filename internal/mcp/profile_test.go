@@ -114,7 +114,7 @@ func newProfileFixtureIn(t *testing.T, yaml, dir string, tweaks ...func(*Options
 		t.Fatal(err)
 	}
 
-	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
+	resolver, _ := pluginconf.Resolve(cfg, reg)
 	opts := Options{
 		Origin: reg.Origin, Config: resolver.For, Profiles: cfg,
 		// Wired the way internal/app wires it, so these tests exercise what a
@@ -1080,7 +1080,7 @@ profiles:
 	}}}); err != nil {
 		t.Fatal(err)
 	}
-	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
+	resolver, _ := pluginconf.Resolve(cfg, reg)
 	s := connectWith(t, reg, Options{Origin: reg.Origin, Config: resolver.For, Profiles: cfg})
 	now := time.Now()
 	if verr := grant.Save([]grant.Grant{{

@@ -114,7 +114,7 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 		out = append(out, configProblem{Key: key, Line: lines[key], Text: text})
 	}
 
-	resolver, problems := pluginconf.Resolve(cfg, reg.Origin)
+	resolver, problems := pluginconf.Resolve(cfg, reg)
 	problems = append(problems, resolver.Check(reg)...)
 	for _, p := range problems {
 		text := p.Reason

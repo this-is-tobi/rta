@@ -25,6 +25,8 @@ plugins:
     timout: 5
   gen:
     password.symbols: true
+    password:
+      symbols: false
 theme:
   good: green
 roles:
@@ -42,7 +44,7 @@ func TestConfigCheckNamesWhatDoesNotApplyAndExitsNonZero(t *testing.T) {
 	for _, want := range []string{
 		"dashboard.widht", `did you mean "width"?`,
 		"plugins.net.timout", `did you mean "timeout"?`,
-		"plugins.gen.password.symbols", "written as one key", "password: {symbols: <value>}",
+		"plugins.gen.password.symbols", "stated twice, as one key and inside a block",
 		"theme.good", "is not a color",
 		"roles.morning.grnts", `did you mean "grants"?`,
 	} {
@@ -84,7 +86,7 @@ func TestConfigCheckGivesEachKeyItsLine(t *testing.T) {
 	}
 	for key, want := range map[string]string{
 		"dashboard.widht": "5", "plugins.net.timout": "10", "plugins.gen.password.symbols": "12",
-		"theme.good": "14", "roles.morning.grnts": "17",
+		"theme.good": "16", "roles.morning.grnts": "19",
 	} {
 		if line[key] != want {
 			t.Errorf("%s is on line %s, check says %q", key, want, line[key])

@@ -200,7 +200,7 @@ func (p Profile) clone() Profile {
 		out.Plugins = make(map[string]Connection, len(p.Plugins))
 		for k, c := range p.Plugins {
 			c.Set, c.Only = cloneValues(c.Set), cloneValues(c.Only)
-			c.Secrets, c.unknown = maps.Clone(c.Secrets), slices.Clone(c.unknown)
+			c.Secrets, c.unknown, c.twice = maps.Clone(c.Secrets), slices.Clone(c.unknown), slices.Clone(c.twice)
 			out.Plugins[k] = c
 		}
 	}

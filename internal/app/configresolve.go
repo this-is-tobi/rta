@@ -258,15 +258,9 @@ func unknownPluginKey(reg *registry.Registry, ns, key string, readers map[string
 	if len(keys) == 0 {
 		return verr.WithHint(ns + " reads no config keys at all")
 	}
-	if guess := near.Word(key, keys); guess != "" {
-		return verr.WithHint("did you mean `plugins." + ns + "." + guess + "`?")
-	}
-	if where := near.Qualified(key, keys); len(where) > 0 {
-		spelled := make([]string, len(where))
-		for i, w := range where {
-			spelled[i] = "`plugins." + ns + "." + w + "`"
-		}
-		return verr.WithHint("it is spelled with the capability that reads it: " + strings.Join(spelled, " or "))
+	spell := func(k string) string { return "`plugins." + ns + "." + k + "`" }
+	if hint := pluginconf.NearestKey(pluginconf.RenamedIn(reg.Plugins(), ns), readers, key).Hint(ns, spell); hint != "" {
+		return verr.WithHint(hint)
 	}
 	for _, c := range reg.Capabilities() {
 		if plugin.Namespace(c.ID) == ns {

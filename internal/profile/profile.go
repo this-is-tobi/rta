@@ -26,14 +26,12 @@ package profile
 import (
 	"context"
 	"fmt"
-	"maps"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
-	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/tunnel"
@@ -65,6 +63,29 @@ type Origin func(namespace string) (registry.Origin, bool)
 type Installed interface {
 	Origin(namespace string) (registry.Origin, bool)
 	Capabilities() []plugin.Capability
+}
+
+// Declared is implemented by an Installed that also holds the plugins'
+// declarations, as the registry does: what a key nothing reads is told it was
+// renamed to (plugin.Plugin.Renamed). Optional and asserted, like withheld
+// below, since it only words a refusal.
+type Declared interface {
+	Plugins() []plugin.Plugin
+}
+
+// renamedOf is the Renamed table of the plugin inst declares under ns, nil
+// when inst cannot say.
+func renamedOf(inst Installed, ns string) map[string]string {
+	d, ok := inst.(Declared)
+	if !ok {
+		return nil
+	}
+	for _, p := range d.Plugins() {
+		if p.Name == ns {
+			return p.Renamed
+		}
+	}
+	return nil
 }
 
 // withheld is implemented by an Installed that also knows which artifacts
@@ -204,6 +225,11 @@ func Lookup(cfg config.Config, c plugin.Capability, ref string, inst Installed) 
 			"profile %q, under %s, has %s, which nothing reads",
 			name, key, strings.Join(unknown, ", ")).
 			WithHint("a plugin entry takes set, only, secrets, secrets-from, kube, ssh and tunnelTLS")
+	}
+	if twice := conn.Twice(); len(twice) > 0 {
+		return none, view.Errorf("core.profile.twice",
+			"profile %q, under %s, states `%s` twice, as one key and inside a block", name, key, twice[0]).
+			WithHint(twiceHint)
 	}
 	if bad := conn.BadSecretRefs(); len(bad) > 0 {
 		return none, view.Errorf("core.profile.secret.scheme",
@@ -1084,6 +1110,10 @@ func CheckConnection(name, key string, conn config.Connection, inst Installed) [
 			"a plugin entry takes set, only, secrets, secrets-from, kube, ssh and tunnelTLS")
 		return problems
 	}
+	if twice := conn.Twice(); len(twice) > 0 {
+		at("states `"+twice[0]+"` twice, as one key and inside a block", twiceHint)
+		return problems
+	}
 	// The same refusal Lookup makes for a label that does not parse, in the
 	// same words — before the pin check, which would otherwise misread
 	// `pg/x_y` as a namespace nothing registered.
@@ -1238,7 +1268,7 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 	var problems []Problem
 	for _, k := range set {
 		if len(readers[k]) == 0 {
-			problems = append(problems, unreadKey(name, key, k, ns, "", readers, reach))
+			problems = append(problems, unreadKey(name, key, k, ns, "", readers, reach, renamedOf(inst, ns)))
 			continue
 		}
 		f := pluginconf.SharedField(readers[k])
@@ -1285,6 +1315,11 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 	return problems
 }
 
+// twiceHint is what a connection stating one key in two spellings is told:
+// the two are one key (config.FlatSection), and only the operator knows which
+// value they meant.
+const twiceHint = "keep one of the two: they are the same key, and which was meant is not rta's to guess"
+
 // unreadKey is the problem of a key a profile block names and no capability in
 // the namespace lets a profile fill: a misspelling, or a key that is declared
 // and refused.
@@ -1293,13 +1328,12 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 // `only:` cannot come to disagree about what a key that reads nothing means.
 // block names the one that held it — "" for `set:`, whose wording this is, and
 // "only" for the allowlist, whose reader is told which block to look in.
-func unreadKey(name, key, k, ns, block string, readers map[string][]plugin.Field, reach map[string]keyReach) Problem {
+func unreadKey(name, key, k, ns, block string, readers map[string][]plugin.Field, reach map[string]keyReach,
+	renamed map[string]string) Problem {
 	reason := fmt.Sprintf("nothing in %s reads %q", ns, k)
-	hint := "`rta explain <capability>` lists the config keys it reads"
-	if guess := near.Word(k, slices.Sorted(maps.Keys(readers))); guess != "" {
-		hint = fmt.Sprintf("did you mean %q?", guess)
-	} else if where := near.Qualified(k, slices.Sorted(maps.Keys(readers))); len(where) > 0 {
-		hint = "it is spelled with the capability that reads it: " + strings.Join(where, " or ")
+	hint := pluginconf.NearestKey(renamed, readers, k).Hint(ns, pluginconf.Quoted)
+	if hint == "" {
+		hint = "`rta explain <capability>` lists the config keys it reads"
 	}
 	if declared, isKey := reach[k]; isKey {
 		// Declared but refused: a Path, or the capability's own Scope.

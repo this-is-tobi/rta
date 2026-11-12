@@ -65,7 +65,7 @@ func agreeServer(t *testing.T) *sdk.ClientSession {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
+	resolver, _ := pluginconf.Resolve(cfg, reg)
 	return connectWith(t, reg, Options{Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: (&config.Loader{}).Load})
 }
 

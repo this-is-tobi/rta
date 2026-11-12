@@ -39,8 +39,9 @@ func sharedRegistry(t *testing.T) *registry.Registry {
 
 func sharedCheck(t *testing.T, values map[string]any) []Problem {
 	t.Helper()
-	r, _ := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": values}}), installed)
-	return r.Check(sharedRegistry(t))
+	reg := sharedRegistry(t)
+	r, _ := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": values}}), installed.declaring(reg))
+	return r.Check(reg)
 }
 
 func TestAKeyIsReportedOnlyWhenNoCapabilityReadingItAcceptsTheValue(t *testing.T) {

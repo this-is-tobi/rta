@@ -2,8 +2,9 @@ package app
 
 import (
 	"encoding/json"
+	"maps"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -78,27 +79,34 @@ func pluginSchema(reg *registry.Registry, p plugin.Plugin) map[string]any {
 	if len(readers) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(readers))
-	for k := range readers {
-		keys = append(keys, k)
-	}
-	// Longest first, so every block a key leads through is made before a key
-	// of the same name is placed over it. A plugin may declare a key that is
-	// also the first part of another — `database` beside `database.list.limit`
-	// — and the walk to the second went into the first's value as if it were a
-	// block and panicked, which took `rta config schema` and `rta config edit`
-	// down for anyone with that plugin installed. Nested, the name holds a value
-	// or a block and not both, which is what a reader takes: the schema says
-	// either.
-	sort.Sort(sort.Reverse(sort.StringSlice(keys)))
+	keys := slices.Sorted(maps.Keys(readers))
 	root := schemaBlock(p.Summary)
+	props := root["properties"].(map[string]any)
+	// Every key as one key, the way `rta explain` prints it and every writer
+	// writes it.
 	for _, key := range keys {
+		props[key] = keySchema(reg, p.Name, key, readers[key])
+	}
+	// And a dotted key nested as well, a block per segment, the other spelling
+	// a section may use (config.FlatSection), except under a first segment
+	// that is itself a key: `database` beside `database.list.limit` is a value,
+	// and the block would make the editor flag the value or the key.
+	//
+	// Longest first, so a block a key leads through is made before a key of
+	// the same name below the top is placed over it: there the name holds a
+	// value or a block, and the schema says either. The walk into a value as if
+	// it were a block panicked `rta config schema` and `rta config edit` for
+	// anyone with such a plugin installed.
+	for _, key := range slices.Backward(keys) {
 		segs := strings.Split(key, ".")
+		if len(segs) == 1 || len(readers[segs[0]]) > 0 {
+			continue
+		}
 		cur := root
 		for _, seg := range segs[:len(segs)-1] {
 			props := cur["properties"].(map[string]any)
 			next, ok := props[seg].(map[string]any)
-			if !ok {
+			if !ok || next["properties"] == nil {
 				next = schemaBlock("")
 				props[seg] = next
 			}

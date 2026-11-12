@@ -417,6 +417,12 @@
                   },
                   "type": "object"
                 },
+                "deps.timeout": {
+                  "default": "30s",
+                  "description": "query timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m) (read by audit.deps)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
+                },
                 "images": {
                   "description": "<repository suffix>=<product>, or =- to leave an image out, repeatable \u2014 usually from `plugins: audit: images:` (read by audit.kube.eol)",
                   "items": {
@@ -435,6 +441,12 @@
                     }
                   },
                   "type": "object"
+                },
+                "mail.timeout": {
+                  "default": "15s",
+                  "description": "lookup timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m) (read by audit.mail)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
                 },
                 "namespace": {
                   "description": "audit one namespace instead of the whole cluster (read by audit.kube.eol, audit.kube.netpol, audit.kube.podsecurity, audit.kube.quotas, audit.kube.rbac)",
@@ -464,6 +476,12 @@
                     }
                   },
                   "type": "object"
+                },
+                "web.timeout": {
+                  "default": "15s",
+                  "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m) (read by audit.web)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
                 }
               },
               "type": "object"
@@ -510,6 +528,13 @@
                     }
                   },
                   "type": "object"
+                },
+                "catalogue.limit": {
+                  "default": 50,
+                  "description": "how many products to list (read by eol.products)",
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
                 },
                 "products": {
                   "description": "product or product@cycle, repeatable \u2014 usually from `plugins: eol: products:` in your config (read by eol.watch)",
@@ -569,6 +594,20 @@
                   },
                   "type": "object"
                 },
+                "tree.depth": {
+                  "default": 2,
+                  "description": "how many levels to show (read by fs.tree)",
+                  "maximum": 12,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "tree.limit": {
+                  "default": 12,
+                  "description": "entries to show per directory (read by fs.tree)",
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
                 "usage": {
                   "additionalProperties": false,
                   "properties": {
@@ -587,6 +626,19 @@
                     }
                   },
                   "type": "object"
+                },
+                "usage.depth": {
+                  "default": 0,
+                  "description": "how deep to descend when totalling (0 = no limit) (read by fs.usage)",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "usage.limit": {
+                  "default": 20,
+                  "description": "how many entries to rank (read by fs.usage)",
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
                 }
               },
               "type": "object"
@@ -619,6 +671,14 @@
                     }
                   },
                   "type": "object"
+                },
+                "password.exclude-ambiguous": {
+                  "description": "drop look-alike characters: 0O1lI (read by gen.password)",
+                  "type": "boolean"
+                },
+                "password.symbols": {
+                  "description": "include symbols: !@#$%^&*()-_=+[]{}<>? (read by gen.password)",
+                  "type": "boolean"
                 }
               },
               "type": "object"
@@ -643,6 +703,13 @@
                     }
                   },
                   "type": "object"
+                },
+                "log.limit": {
+                  "default": 20,
+                  "description": "how many of the most recent commits to show (read by git.log)",
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
                 }
               },
               "type": "object"
@@ -663,6 +730,13 @@
                     }
                   },
                   "type": "object"
+                },
+                "list.limit": {
+                  "default": 50,
+                  "description": "how many templates to list (read by gitignore.list)",
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
                 }
               },
               "type": "object"
@@ -702,6 +776,19 @@
                     }
                   },
                   "type": "object"
+                },
+                "env.format": {
+                  "default": "export",
+                  "description": "shell exports, or .env syntax \u2014 one of export, dotenv (read by kv.env)",
+                  "examples": [
+                    "export",
+                    "dotenv"
+                  ],
+                  "type": "string"
+                },
+                "env.prefix": {
+                  "description": "prepend this to every variable name, e.g. APP_ (read by kv.env)",
+                  "type": "string"
                 }
               },
               "type": "object"
@@ -726,6 +813,16 @@
                   },
                   "type": "object"
                 },
+                "dns.server": {
+                  "description": "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver) (read by net.dns)",
+                  "type": "string"
+                },
+                "dns.timeout": {
+                  "default": "5s",
+                  "description": "query timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m) (read by net.dns)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
+                },
                 "ping": {
                   "additionalProperties": false,
                   "properties": {
@@ -745,6 +842,19 @@
                   },
                   "type": "object"
                 },
+                "ping.count": {
+                  "default": 4,
+                  "description": "number of probes (read by net.ping)",
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "ping.timeout": {
+                  "default": "10s",
+                  "description": "overall timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m) (read by net.ping)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
+                },
                 "port": {
                   "additionalProperties": false,
                   "properties": {
@@ -756,6 +866,12 @@
                     }
                   },
                   "type": "object"
+                },
+                "port.timeout": {
+                  "default": "2s",
+                  "description": "timeout per port (a duration with its unit, such as 30s, 5m or 2h; from 1s to 1m) (read by net.port)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
                 },
                 "probe": {
                   "additionalProperties": false,
@@ -769,6 +885,12 @@
                   },
                   "type": "object"
                 },
+                "probe.timeout": {
+                  "default": "5s",
+                  "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m) (read by net.probe)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
+                },
                 "send": {
                   "additionalProperties": false,
                   "properties": {
@@ -780,6 +902,12 @@
                     }
                   },
                   "type": "object"
+                },
+                "send.timeout": {
+                  "default": "5s",
+                  "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m) (read by net.send)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
                 },
                 "trace": {
                   "additionalProperties": false,
@@ -811,6 +939,31 @@
                     }
                   },
                   "type": "object"
+                },
+                "trace.max-hops": {
+                  "default": 30,
+                  "description": "stop after this many hops (read by net.trace)",
+                  "maximum": 64,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "trace.probes": {
+                  "default": 3,
+                  "description": "probes per hop (read by net.trace)",
+                  "maximum": 10,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "trace.resolve": {
+                  "default": true,
+                  "description": "resolve hop addresses back to names (read by net.trace)",
+                  "type": "boolean"
+                },
+                "trace.timeout": {
+                  "default": "2s",
+                  "description": "timeout per probe (a duration with its unit, such as 30s, 5m or 2h; from 1s to 1m) (read by net.trace)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
                 }
               },
               "type": "object"
@@ -854,6 +1007,10 @@
                   },
                   "type": "object"
                 },
+                "cpu.cores": {
+                  "description": "per-core usage as a bar chart (read by sys.cpu)",
+                  "type": "boolean"
+                },
                 "disk": {
                   "additionalProperties": false,
                   "properties": {
@@ -863,6 +1020,10 @@
                     }
                   },
                   "type": "object"
+                },
+                "disk.all": {
+                  "description": "include pseudo, duplicate and zero-size filesystems (read by sys.disk)",
+                  "type": "boolean"
                 },
                 "ps": {
                   "additionalProperties": false,
@@ -885,6 +1046,22 @@
                     }
                   },
                   "type": "object"
+                },
+                "ps.limit": {
+                  "default": 15,
+                  "description": "maximum processes to list (read by sys.ps)",
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "ps.sort": {
+                  "default": "cpu",
+                  "description": "sort by \u2014 one of cpu, mem (read by sys.ps)",
+                  "examples": [
+                    "cpu",
+                    "mem"
+                  ],
+                  "type": "string"
                 }
               },
               "type": "object"

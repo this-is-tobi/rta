@@ -183,7 +183,7 @@ func main() {
 	reading, cfgErr := config.Read()
 	cfg := reading.Config()
 	app.ReportConfigError(os.Stderr, cfgErr, os.Args[1:])
-	app.SetPluginConfig(pluginconf.Resolve(cfg, reg.Origin))
+	app.SetPluginConfig(pluginconf.Resolve(cfg, reg))
 
 	// Before the command tree, so every renderer — CLI, TUI and help alike —
 	// reads the same palette from its first line of output: the one of the

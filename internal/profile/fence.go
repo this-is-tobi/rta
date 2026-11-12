@@ -58,7 +58,7 @@ func checkOnly(name, key string, conn config.Connection, ns string, inst Install
 	}
 	for _, k := range keys {
 		if len(readers[k]) == 0 {
-			problems = append(problems, unreadKey(name, key, k, ns, "only", readers, reach))
+			problems = append(problems, unreadKey(name, key, k, ns, "only", readers, reach, renamedOf(inst, ns)))
 			continue
 		}
 		f := pluginconf.SharedField(readers[k])

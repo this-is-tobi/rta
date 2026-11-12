@@ -20,7 +20,7 @@ func TestAnEmptyRequiredInputIsRefusedOnTheCLI(t *testing.T) {
 
 	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": ""},
-	}}), reg.Origin))
+	}}), reg))
 	for _, args := range [][]string{{"pg", "query"}, {"pg", "query", "--host", ""}} {
 		out, errOut, err := run(t, reg, args...)
 		if err == nil {

@@ -36,7 +36,6 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
-	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -95,8 +94,29 @@ func (p Problem) String() string {
 // shape, and so does mcp.Options.Origin — one accessor, three readers.
 type Origin func(namespace string) (registry.Origin, bool)
 
-// Resolve matches every stated section to the artifact it names.
-func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
+// Catalogue is what Resolve reads of what is installed: where each plugin
+// came from, to match a section's pin, and what each declares, to hold a
+// section to the keys something reads. *registry.Registry is one.
+type Catalogue interface {
+	Origin(namespace string) (registry.Origin, bool)
+	Plugins() []plugin.Plugin
+}
+
+// Resolve matches every stated section to the artifact it names, and applies
+// one only when every key it states is read: flattened, so a key is the same
+// key written as one with dots in it or nested a block per segment
+// (config.FlatSection), and refused whole otherwise.
+//
+// **A key nothing reads withholds the section**, and every call of the plugin
+// is refused until it is fixed, as a profile's `set:` already was. It used to
+// be reported by `rta doctor` and run on the plugin's default: a key a plugin
+// renamed, `sslmode` become `tls`, was then a silent downgrade to the default
+// mode, and a typo in a host ran against wherever the plugin points by
+// default, with the operator's credential. The refusal names what the key
+// was likely meant as (NearestKey). One stray key stopping the whole plugin
+// is the blast radius a profile already had, and the price of the operator's
+// file meaning what it says.
+func Resolve(cfg config.Config, cat Catalogue) (*Resolver, []Problem) {
 	r := &Resolver{sections: map[string]map[string]any{}, headings: map[string]string{},
 		withheld: map[string]Problem{}, displaced: map[string]bool{}}
 	var problems []Problem
@@ -150,9 +170,40 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 			unapplied[ns] = p
 		}
 	}
+	declared := cat.Plugins()
+	// apply makes section the one ns runs with, or refuses it: a path stated
+	// twice, which no reader can choose between, or a key nothing in ns reads.
+	apply := func(ns, section string) {
+		flat, twice := config.FlatSection(cfg.Plugins[section])
+		if len(twice) > 0 {
+			refuse(ns, Problem{Section: section, Key: twice[0],
+				Reason: twice[0] + " is stated twice, as one key and inside a block",
+				Hint:   "keep one of the two: they are the same key, and which was meant is not rta's to guess"})
+			return
+		}
+		var readers map[string][]plugin.Field
+		for _, p := range declared {
+			if p.Name == ns {
+				readers = readersIn(p.Capabilities, ns)
+			}
+		}
+		for _, key := range slices.Sorted(maps.Keys(flat)) {
+			if len(readers[key]) > 0 {
+				continue
+			}
+			hint := NearestKey(RenamedIn(declared, ns), readers, key).Hint(ns, Quoted)
+			if hint == "" {
+				hint = "`rta explain` lists the keys a capability reads"
+			}
+			refuse(ns, Problem{Section: section, Key: key,
+				Reason: fmt.Sprintf("nothing in %q reads %q", ns, key), Hint: hint})
+			return
+		}
+		r.sections[ns], r.headings[ns] = flat, section
+	}
 	for _, section := range names {
 		ns, pin, pinned := strings.Cut(section, "@")
-		o, known := origin(ns)
+		o, known := cat.Origin(ns)
 		switch {
 		case !known:
 			problems = append(problems, Problem{Section: section,
@@ -168,7 +219,7 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 					Hint:   "write it as `" + ns + ":`"})
 				continue
 			}
-			r.sections[ns], r.headings[ns] = cfg.Plugins[section], section
+			apply(ns, section)
 		case !pinned:
 			hint := "write it as `" + ns + "@" + o.Short() + ":`" + repinTail(ns, o)
 			if o.Dev {
@@ -194,7 +245,7 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 				Reason: "this pin does not match " + o.Called(ns),
 				Hint:   o.Which(ns) + repinTail(ns, o)})
 		default:
-			r.sections[ns], r.headings[ns] = cfg.Plugins[section], section
+			apply(ns, section)
 		}
 	}
 	// A plugin with a section that applied is not withheld for a second one
@@ -365,8 +416,9 @@ func RawSection(cfg config.Config, namespace string) (heading string, values map
 	return last, cfg.Plugins[last], true
 }
 
-// Check reports stated values the catalogue cannot use: a key no input
-// declares, and a value outside an input's declared Options.
+// Check reports stated values of an applied section the catalogue cannot use
+// as written: a value of a type its readers cannot read, a number outside
+// every reader's range, an option none of them declares.
 //
 // Separate from Resolve because it needs the declarations and Resolve needs
 // only the origins, and because these are reported once by `rta doctor`
@@ -385,31 +437,15 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 	sort.Strings(namespaces)
 
 	for _, ns := range namespaces {
+		// Every key of an applied section has a reader: Resolve withheld any
+		// section stating one that does not.
 		readers := Readers(reg, ns)
-		for _, key := range flatten(r.sections[ns], "") {
+		for _, key := range slices.Sorted(maps.Keys(r.sections[ns])) {
 			if len(readers[key]) == 0 {
-				hint := "`rta explain` lists the inputs a capability takes"
-				if guess := near.Word(key, slices.Sorted(maps.Keys(readers))); guess != "" {
-					hint = fmt.Sprintf("did you mean %q?", guess)
-				} else if where := near.Qualified(key, slices.Sorted(maps.Keys(readers))); len(where) > 0 {
-					hint = "it is spelled with the capability that reads it: " + strings.Join(where, " or ")
-				}
-				problems = append(problems, Problem{Section: ns, Key: key,
-					Reason: fmt.Sprintf("nothing in %q reads %q", ns, key), Hint: hint})
 				continue
 			}
 			f := SharedField(readers[key])
-			v, found := lookup(r.sections[ns], key)
-			if !found && strings.Contains(key, ".") {
-				// A key the plugin declares as a dotted path, written as one key
-				// with a dot in it: nothing reads it, because the section is
-				// nested. Said as what it is — reported as "no value" it sent the
-				// operator to fill in a key that already had one.
-				problems = append(problems, Problem{Section: ns, Key: key,
-					Reason: fmt.Sprintf("%s is written as one key, and the section nests it", key),
-					Hint:   "write it as `" + nestedSpelling(key) + "`, or `rta config set plugins." + ns + "." + key + " <value>` does it"})
-				continue
-			}
+			v := r.sections[ns][key]
 			// Before the Options check, and reported here for the reason the
 			// rest of this function exists: a value whose type the handler
 			// cannot read was not ignored, it was read as the zero — a
@@ -459,8 +495,13 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 // answer to "what does this key mean" that doctor, `rta config set` and the
 // schema all hold a stated value to.
 func Readers(reg *registry.Registry, ns string) map[string][]plugin.Field {
+	return readersIn(reg.Capabilities(), ns)
+}
+
+// readersIn is Readers over a list of capabilities, ns's among them.
+func readersIn(caps []plugin.Capability, ns string) map[string][]plugin.Field {
 	readers := map[string][]plugin.Field{}
-	for _, c := range reg.Capabilities() {
+	for _, c := range caps {
 		if !strings.HasPrefix(c.ID, ns+".") {
 			continue
 		}
@@ -471,21 +512,6 @@ func Readers(reg *registry.Registry, ns string) map[string][]plugin.Field {
 		}
 	}
 	return readers
-}
-
-// nestedSpelling is a dotted key as the block that states it, in the one-line
-// form that can be pasted: `password: {symbols: <value>}`. The value is a
-// placeholder and never the stated one, which this report does not echo.
-func nestedSpelling(key string) string {
-	parts := strings.Split(key, ".")
-	nest := "<value>"
-	for i := len(parts) - 1; i >= 0; i-- {
-		nest = parts[i] + ": " + nest
-		if i > 0 {
-			nest = "{" + nest + "}"
-		}
-	}
-	return nest
 }
 
 // OptionValues is a stated value as the option strings a run compares: one
@@ -608,49 +634,4 @@ func number(v any) (float64, bool) {
 		return n, true
 	}
 	return 0, false
-}
-
-// flatten lists the dotted keys that hold a value, deepest-first, so a nested
-// block is reported by the leaves an input could actually name.
-func flatten(m map[string]any, prefix string) []string {
-	var out []string
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		full := k
-		if prefix != "" {
-			full = prefix + "." + k
-		}
-		switch v := m[k].(type) {
-		case map[string]any:
-			out = append(out, flatten(v, full)...)
-		case map[any]any:
-			conv := make(map[string]any, len(v))
-			for kk, vv := range v {
-				conv[fmt.Sprint(kk)] = vv
-			}
-			out = append(out, flatten(conv, full)...)
-		default:
-			out = append(out, full)
-		}
-	}
-	return out
-}
-
-func lookup(m map[string]any, key string) (any, bool) {
-	cur := any(m)
-	for _, seg := range strings.Split(key, ".") {
-		mm, ok := cur.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		cur, ok = mm[seg]
-		if !ok {
-			return nil, false
-		}
-	}
-	return cur, true
 }

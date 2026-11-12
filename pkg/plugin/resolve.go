@@ -615,18 +615,26 @@ func (f Field) CanonicalOption(s string) (string, bool) {
 	return s, false
 }
 
-// lookupConfig walks a dotted key through nested maps.
+// lookupConfig is the value cfg states at a dotted key: written as one key,
+// which is how the host hands a plugins: section over (flattened, a path
+// stated twice refused, internal/pluginconf), or nested one map per segment,
+// which is how any other caller may hold it.
 //
-// Both map shapes, because the same file reaches here two ways: goccy-yaml
-// decodes a nested block as map[string]any, and anything that has been
-// through a JSON round trip or an older decoder can hand back
-// map[any]any. A key that runs out of map before it runs out of segments is
-// simply absent — a config file that says something this capability does not
-// understand is not an error at the point of use, it is reported once by
-// internal/pluginconf against the whole catalogue.
+// Both map shapes when nested, because goccy-yaml decodes a nested block as
+// map[string]any and anything that has been through a JSON round trip or an
+// older decoder can hand back map[any]any. A key that runs out of map before
+// it runs out of segments is simply absent: a key nothing reads is refused
+// once, against the whole catalogue, before any call (internal/pluginconf).
 func lookupConfig(cfg map[string]any, key string) (any, bool) {
 	if cfg == nil || key == "" {
 		return nil, false
+	}
+	if v, ok := cfg[key]; ok {
+		switch v.(type) {
+		case map[string]any, map[any]any, nil:
+			return nil, false
+		}
+		return v, true
 	}
 	cur := any(cfg)
 	for _, seg := range strings.Split(key, ".") {

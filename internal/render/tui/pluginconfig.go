@@ -98,16 +98,11 @@ func (m Model) startConfigForm(row pluginRow) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	_, section, _ := pluginconf.RawSection(onDisk, row.plugin.Name)
-	// A plugin declares the key it reads as a dotted path (`ping.count`) and the
-	// file holds it nested, one block per segment, which is the one place a
-	// reader looks for it. The form binds by the dotted name, so it is seeded
-	// from what the file says at each of them and not from a key literally
-	// named with a dot, and a key an earlier save wrote flat is read as the
-	// nested one it was meant to be.
-	nested := config.NestSection(section)
+	// The form binds by the dotted key (`ping.count`), which the file states
+	// flat or nested; SectionValue reads either.
 	raw := map[string]any{}
 	for _, f := range fields {
-		if v, ok := config.SectionValue(nested, f.Name); ok {
+		if v, ok := config.SectionValue(section, f.Name); ok {
 			raw[f.Name] = v
 		}
 	}
@@ -184,14 +179,13 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 		// Declared keys are therefore taken from the form even when absent —
 		// absent means cleared — and only undeclared ones are carried forward.
 		//
-		// Nested, as the file is read: a declared key is a dotted path, and
-		// written as one key with a dot in it the value is never read, which is
-		// what this editor did for any plugin that declares one. What is carried
-		// is merged leaf by leaf so that a block holding one key the form showed
-		// and one it did not keeps the second.
+		// Carried leaf by leaf, so a block holding one key the form showed and
+		// one it did not keeps the second. The section is written back flat,
+		// one key per value, as every writer writes: a key and a block of the
+		// same name, `database` beside `database.list.limit`, cannot collide.
 		merged := map[string]any{}
 		carry := func(section map[string]any) {
-			for _, leaf := range config.SectionLeaves(config.NestSection(section)) {
+			for _, leaf := range config.SectionLeaves(section) {
 				config.SetSectionValue(merged, leaf.Key, leaf.Value)
 			}
 		}
@@ -248,7 +242,7 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 		m.refuse("saved, but not re-read: " + err.Error())
 		return m.closeToOrigin()
 	}
-	resolver, _ := pluginconf.Resolve(written, m.reg.Origin)
+	resolver, _ := pluginconf.Resolve(written, m.reg)
 	m.pluginCfg = resolver
 	m.plugins = m.pluginInventory()
 
