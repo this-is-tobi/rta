@@ -228,7 +228,9 @@ func Plugin() plugin.Plugin {
 				Scope:  "host",
 				Description: "Opens a TCP connection, writes what you give it, and shows the reply — " +
 					"how you poke a protocol that expects the client to speak first (SMTP, Redis, " +
-					"HTTP/1.0). \\r\\n and \\n in `data` are interpreted. `tls` speaks it over TLS. " +
+					"HTTP/1.0). \\r\\n and \\n in `data` are interpreted. `tls` speaks it over TLS, to a host " +
+					"whose certificate checks out for its name: `ca-file` names the CA to check it against and " +
+					"`tls-server-name` the name, and either turns TLS on. " +
 					"What arrives is executed by whatever is listening, and FLUSHALL empties a Redis, " +
 					"so it is destructive: a person is asked before it sends, and an AI agent needs an " +
 					"explicit grant. `net.probe` is the read-only half — connect, handshake, listen — " +
@@ -236,7 +238,8 @@ func Plugin() plugin.Plugin {
 					"choose either way.",
 				Agent: "Opens a TCP connection, writes `data` and shows the reply: how you poke a protocol where " +
 					"the client speaks first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in `data` are interpreted; `tls` " +
-					"speaks it over TLS. What arrives is executed by whatever is listening (FLUSHALL empties a " +
+					"speaks it over TLS, to a host whose certificate this machine trusts for the name you call it by. " +
+					"What arrives is executed by whatever is listening (FLUSHALL empties a " +
 					"Redis), so it is destructive. `net.probe` is the read-only half (connect, handshake, listen) " +
 					"and needs a grant too, since the destination is the caller's choice either way.",
 				Inputs: []plugin.Field{
@@ -245,7 +248,19 @@ func Plugin() plugin.Plugin {
 					{Name: "port", Type: plugin.Int, Positional: true, Required: true, Min: 1, Max: 65535, Help: "port to connect to"},
 					{Name: "data", Type: plugin.String, Required: true, Help: `bytes to send, e.g. "GET / HTTP/1.0\r\n\r\n"`},
 					{Name: "tls", Type: plugin.Bool,
-						Help: "complete a TLS handshake before sending, in TLS 1.2 or newer since the payload crosses it"},
+						Help: "complete a TLS handshake before sending, TLS 1.2 or newer, with a host whose certificate " +
+							"checks out for its name"},
+					// Local, and no config key. Which CA a send trusts is never
+					// the caller's to choose, so an agent's call is checked
+					// against the system's roots. And a CA set for every send
+					// would replace those roots for every host a send reaches,
+					// public ones included, and turn TLS on for plain sends.
+					{Name: "ca-file", Type: plugin.String, Local: true,
+						Help: "PEM bundle of the CA the host's certificate is checked against, in place of the " +
+							"system's roots — a self-signed host's own certificate is its CA; turns TLS on"},
+					{Name: "tls-server-name", Type: plugin.String, Local: true,
+						Help: "name the host's certificate is checked for, in place of the host the call reaches; " +
+							"turns TLS on"},
 					{Name: "timeout", Type: plugin.Duration, Config: "send.timeout", Default: "5s", Min: "1s", Max: "2m", Help: "connect timeout"},
 					{Name: "wait", Type: plugin.Duration, Default: "2s", Min: "1s", Max: "2m", Help: "how long to wait for a reply"},
 				},
