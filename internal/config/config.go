@@ -337,6 +337,31 @@ func (c Config) Stamp(p Profile) Profile {
 	return p
 }
 
+// ConfineStrict is the one word confine: takes.
+const ConfineStrict = "strict"
+
+// StrictConfinement says whether the file asks for strict confinement, and
+// refuses a confine: that is not a word it takes.
+//
+// **Because a misspelt confine: ran every plugin unconfined.** The launch asked
+// "is it strict" and nothing else, so `confine: Strict` or `confine: stric` —
+// typed by hand, or in a drop-in somebody else keeps — was a file asking for
+// confinement that Linux read as not asking, with nothing anywhere saying so,
+// while `rta config set` refused the same word. A security setting that does
+// not read must not fail open: the launch refuses it as it refuses a file that
+// does not load, since either may be the file that asks (pluginhost).
+func (c Config) StrictConfinement() (bool, *view.Error) {
+	switch c.Confine {
+	case "":
+		return false, nil
+	case ConfineStrict:
+		return true, nil
+	}
+	return false, view.Errorf("config.confine", "confine: %q in %s is not a confinement rta knows",
+		c.Confine, Where("confine", "")).
+		WithHint("confine takes " + ConfineStrict + " — or remove the key, and plugins are confined as the platform confines them")
+}
+
 // TrustedDashboard is the arrangement to actually draw: the stated one when
 // somebody named this config file, and the empty one otherwise — which is not
 // a blank screen but the automatic dashboard, one tile per registered plugin,

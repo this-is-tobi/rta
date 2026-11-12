@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Confinement on macOS is sandbox-exec wrapping the plugin's argv.
@@ -119,9 +120,21 @@ func Confined() bool { return confined }
 // is a Linux setting: macOS confines every plugin with the deny list whatever
 // it says, so the answer is for `rta doctor` to say so, and nothing here
 // changes with it.
+//
+// A confine: that is not strict is an error here too, though nothing it says
+// changes a launch on this platform: the same file stops every plugin on
+// Linux, and a setting somebody believes in is one doctor says is not read.
+//
+// A file that does not load answers not strict and no error: nothing here
+// starts differently for it, and the config row is where doctor says why.
 func Strict() (on bool, abi int, err error) {
-	cfg, err := config.Load()
-	return err == nil && cfg.Confine == "strict", 0, nil
+	if cfg, lerr := config.Load(); lerr == nil {
+		var verr *view.Error
+		if on, verr = cfg.StrictConfinement(); verr != nil {
+			return false, 0, verr
+		}
+	}
+	return on, 0, nil
 }
 
 // strictReady has nothing to fill in on macOS (Strict).

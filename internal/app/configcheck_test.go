@@ -55,6 +55,21 @@ func TestConfigCheckNamesWhatDoesNotApplyAndExitsNonZero(t *testing.T) {
 	}
 }
 
+// A confine: that is not strict is refused as a bad output: is, on the line it
+// is on: on Linux the launch refuses it and no plugin starts, where it used to
+// read it as not asking and start every one with this user's full access.
+func TestConfigCheckRefusesAConfineThatIsNotStrict(t *testing.T) {
+	out, _, _, err := configRun(t, configRegistry(t), "output: json\nconfine: Strict\n", "config", "check", "-o", "pretty")
+	if err == nil || ExitCode(err) != 1 {
+		t.Fatalf("exit %d, %v", ExitCode(err), err)
+	}
+	for _, want := range []string{"confine", `"Strict" is not a confinement rta knows`, "no plugin starts"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("check does not say %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestConfigCheckGivesEachKeyItsLine(t *testing.T) {
 	out, _, _, _ := configRun(t, configRegistry(t), typoFile, "config", "check", "-o", "json")
 	var table struct {
