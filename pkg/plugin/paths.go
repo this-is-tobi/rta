@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -85,4 +86,43 @@ func PathInput(input string, err error) string {
 		return input
 	}
 	return ""
+}
+
+// maxPathSuggestions bounds one completion of a path: a directory is listed
+// on a keystroke, and a person choosing among more than this many types more.
+const maxPathSuggestions = 200
+
+// SuggestPath completes the path being typed into the input called name,
+// directory by directory, for a file setting declared a String, a CA file, so
+// that a profile can hold it: a Path input completes as one on its own, and a
+// String lost that by being one. A directory is offered with its slash, an
+// entry starting with a dot only once the dot is typed, and ~ stays as typed.
+// Human surfaces only, as every Suggest.
+func SuggestPath(name string) func(context.Context, Request) []string {
+	return func(_ context.Context, req Request) []string {
+		dir, prefix := filepath.Split(req.String(name))
+		look := ExpandHome(dir)
+		if look == "" {
+			look = "."
+		}
+		entries, err := os.ReadDir(look)
+		if err != nil {
+			return nil
+		}
+		var out []string
+		for _, e := range entries {
+			n := e.Name()
+			if !strings.HasPrefix(n, prefix) || (strings.HasPrefix(n, ".") && !strings.HasPrefix(prefix, ".")) {
+				continue
+			}
+			if e.IsDir() {
+				n += "/"
+			}
+			out = append(out, dir+n)
+			if len(out) == maxPathSuggestions {
+				break
+			}
+		}
+		return out
+	}
 }

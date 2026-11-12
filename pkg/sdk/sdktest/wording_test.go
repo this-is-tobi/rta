@@ -160,6 +160,14 @@ func TestATimeThatIsANumberMustSayItsUnitAndIsAskedToBeADuration(t *testing.T) {
 	if rec := wordingOf(c); len(rec.errs) > 0 || len(rec.logs) > 0 {
 		t.Errorf("a Duration was reported:\nerrors %q\nnotes %q", rec.errText(), rec.logText())
 	}
+
+	// Text carries its unit, so it is asked and not refused: a TTL a handler
+	// parses with Go's grammar fails `1d`, and nothing bounds it.
+	c.Inputs[1] = plugin.Field{Name: "wrap-ttl", Type: plugin.String, Help: "how long the wrapping lives"}
+	rec = wordingOf(c)
+	if len(rec.errs) > 0 || !strings.Contains(rec.logText(), `input "wrap-ttl" is a length of time given as text; declare it plugin.Duration`) {
+		t.Errorf("a time given as text: errors %q, notes %q", rec.errText(), rec.logText())
+	}
 }
 
 func TestASummaryAndANameUnlikeTheCataloguesAreNotedNotRejected(t *testing.T) {
