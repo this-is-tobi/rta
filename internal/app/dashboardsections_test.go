@@ -80,7 +80,7 @@ func TestDashboardRmNamesTheWholeEntryAsTheWayBack(t *testing.T) {
 	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	const line = "rta dashboard add db.status --profile prod --width 6 --section host --set dbname=shop --view ops"
+	const line = "rta dashboard add db.status --profile prod --width 6 --section host --with dbname=shop --view ops"
 	args := strings.Fields(strings.TrimPrefix(line, "rta "))
 	if out, errOut, err := run(args...); err != nil {
 		t.Fatalf("%v %q\n%s", err, errOut, out)
@@ -125,7 +125,7 @@ func TestDashboardAddRefusesASectionNoOneCanName(t *testing.T) {
 		"reordering":     "ab" + string(rune(0x202e)) + "cd",
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, errOut, err := run("dashboard", "add", "db.status", "--set", "dbname=shop", "--section", section)
+			_, errOut, err := run("dashboard", "add", "db.status", "--with", "dbname=shop", "--section", section)
 			if err == nil || !strings.Contains(errOut, "core.dashboard.section") {
 				t.Errorf("accepted %q: %v %q", section, err, errOut)
 			}

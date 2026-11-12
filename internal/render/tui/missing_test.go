@@ -39,7 +39,7 @@ func TestAPipedInputNoTileStatesIsMissing(t *testing.T) {
 // debug.ansi has codec.jwt's shape with no credential in it, and inferring
 // the shape from "a positional credential" missed it: `rta dashboard add
 // debug.ansi` and + wrote a tile answering "no text to explain" on every
-// refresh. Its text is no credential, so --set states it, and the refusal
+// refresh. Its text is no credential, so --with states it, and the refusal
 // says so.
 func TestAPipedInputATileCanStateIsHintedWithSet(t *testing.T) {
 	c := plugin.Capability{
@@ -51,10 +51,10 @@ func TestAPipedInputATileCanStateIsHintedWithSet(t *testing.T) {
 		t.Errorf("missing = %v, want [input]", got)
 	}
 	if got := Untileable(c); len(got) != 0 {
-		t.Errorf("untileable = %v, want nothing: --set can state text", got)
+		t.Errorf("untileable = %v, want nothing: --with can state text", got)
 	}
-	if why := addRefusal(c, false); !strings.Contains(why, "--set input=") {
-		t.Errorf("+ on debug.ansi: %q, want a --set hint", why)
+	if why := addRefusal(c, false); !strings.Contains(why, "--with input=") {
+		t.Errorf("+ on debug.ansi: %q, want a --with hint", why)
 	}
 	// Nor does the automatic dashboard run it unasked, NoPreview or not.
 	if previewable(c) {
@@ -88,7 +88,7 @@ func TestARequiredInputStillNeedsAForm(t *testing.T) {
 	if got := MissingInputs(c, nil, false); !slices.Equal(got, []string{"schema"}) {
 		t.Errorf("missing = %v, want [schema]", got)
 	}
-	if why := addRefusal(c, false); !strings.Contains(why, "--set schema=") {
+	if why := addRefusal(c, false); !strings.Contains(why, "--with schema=") {
 		t.Errorf("+ on it: %q, want the input it needs named", why)
 	}
 }
@@ -109,7 +109,7 @@ func TestAPipedInputIsRequiredInAForm(t *testing.T) {
 }
 
 // + refuses such a capability in words that lead somewhere. It hinted
-// `rta dashboard add codec.jwt --set token=…`, which `rta dashboard add`
+// `rta dashboard add codec.jwt --with token=…`, which `rta dashboard add`
 // refuses in turn — a credential is never written into the config — so the
 // flash sent the reader from one refusal to the next. The way on is the
 // capability's own form, named as the TUI's catalogue lists it.
@@ -124,14 +124,14 @@ func TestPlusRefusesAnUntileableCredentialWithoutPointingAtSet(t *testing.T) {
 	}
 	for _, pinned := range []bool{false, true} {
 		why := addRefusal(c, pinned)
-		if strings.Contains(why, "--set") || !strings.Contains(why, "token") ||
+		if strings.Contains(why, "--with") || !strings.Contains(why, "token") ||
 			!strings.Contains(why, "run `codec.jwt` when") {
 			t.Errorf("pinned=%v: %q", pinned, why)
 		}
 	}
-	// A required input a --set can state is still hinted with one.
+	// A required input a --with can state is still hinted with one.
 	c.Inputs = []plugin.Field{{Name: "namespace", Type: plugin.String, Required: true}}
-	if why := addRefusal(c, false); !strings.Contains(why, "--set namespace=") {
+	if why := addRefusal(c, false); !strings.Contains(why, "--with namespace=") {
 		t.Errorf("a settable input lost its hint: %q", why)
 	}
 }

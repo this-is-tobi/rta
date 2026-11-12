@@ -929,8 +929,8 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	// in a server nobody is watching is worse than a refusal.
 	cmd.Flags().BoolVar(&consentOn, "consent", false,
 		"ask instead of refusing when a call needs a grant nobody issued — you answer with `rta agent approve`")
-	cmd.Flags().DurationVar(&consentWait, "consent-wait", consent.DefaultWait,
-		"how long a parked call waits for your answer before it is refused")
+	cmd.Flags().Var(durationInto(&consentWait, consent.DefaultWait), "consent-wait",
+		"how long a parked call waits for your answer before it is refused, such as 90s or 5m")
 	cmd.Flags().BoolVar(&consentNotify, "consent-notify", false,
 		"also ring this machine's desktop notification when a call is parked")
 	cmd.Flags().IntVar(&maxResultMiB, "max-result", plugin.DefaultResultLimit>>20,

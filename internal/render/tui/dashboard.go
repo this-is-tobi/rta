@@ -481,7 +481,7 @@ func previewable(c plugin.Capability) bool {
 // Piped, so no file and no profile fills one. This inferred the shape once,
 // as "a positional credential", which caught codec.jwt and missed
 // debug.ansi, whose text is no credential; the declaration says it now.
-// Untileable is what still tells a credential, which --set refuses, from
+// Untileable is what still tells a credential, which --with refuses, from
 // text it states.
 func MissingInputs(c plugin.Capability, with map[string]any, pinned bool) []string {
 	var missing []string
@@ -513,13 +513,13 @@ func MissingInputs(c plugin.Capability, with map[string]any, pinned bool) []stri
 
 // Untileable lists the inputs no tile of c can ever be given, whatever it is
 // pinned to or states: what MissingInputs still reports with every input
-// `--set` accepts given and a profile pinned. `--set` refuses a credential,
+// `--with` accepts given and a profile pinned. `--with` refuses a credential,
 // so what is left is a credential nothing but the caller supplies — the
 // token codec.jwt decodes, the key codec.jwk reads.
 //
 // Beside MissingInputs, and exported, because every refusal of a tile words
 // itself by it: `rta dashboard add`, explain's dashboard row, and + in the
-// TUI, whose refusal kept hinting `--set token=…` for codec.jwt after the
+// TUI, whose refusal kept hinting `--with token=…` for codec.jwt after the
 // CLI's had stopped — a command refused in turn, as a credential.
 func Untileable(c plugin.Capability) []string {
 	settable := map[string]any{}
@@ -539,7 +539,7 @@ func Untileable(c plugin.Capability) []string {
 // (MissingInputs), so what reaches this is an entry written by hand, or a
 // profile that stopped setting an input the tile counted on. The code and the
 // sentence stay the host's; only the hint changes, and it never says to write
-// a credential into the entry, which `--set` refuses for the same reason.
+// a credential into the entry, which `--with` refuses for the same reason.
 func tileNeeds(verr *view.Error, c plugin.Capability, values map[string]any) *view.Error {
 	missing := plugin.Missing(c, values, plugin.SurfaceTUI)
 	if verr.Code != "core.input.missing" || len(missing) == 0 {

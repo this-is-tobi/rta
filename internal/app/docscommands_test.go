@@ -239,9 +239,9 @@ func forEachDocumentedCommand(t *testing.T, reg *registry.Registry, visit func(w
 	}
 }
 
-// What a command is given with --set is a name the command resolves against a
-// declaration, and nothing about the line shows whether it does: `rta dashboard
-// add cert.expiry --set host=example.com` parses as well as any line, and is
+// What a command is given with --with or --set is a name the command resolves
+// against a declaration, and nothing about the line shows whether it does: `rta
+// dashboard add cert.expiry --with host=example.com` parses as well as any line, and is
 // refused when run because cert.expiry's input is `targets`, which is the line
 // the dashboard page gave a reader for adding a tile. The same is true of what
 // `rta profile set` is given — `--set` a key the plugin reads, `--secret` an
@@ -262,7 +262,7 @@ func TestEveryInputTheDocsStateWithSetIsOneItsPluginTakes(t *testing.T) {
 	checked := 0
 	forEachDocumentedCommand(t, reg, func(where, text string, words []string, _ *cobra.Command) {
 		// A root of its own for each line: a flag set on a command stays set
-		// on it, and `--set` is an array that would carry the last line's keys
+		// on it, and `--with` and `--set` are arrays that would carry the last line's keys
 		// into this one.
 		cmd, args, err := NewRoot(reg, "test").Find(words)
 		if err != nil || slices.Contains(args, "--help") {
@@ -293,7 +293,7 @@ func TestEveryInputTheDocsStateWithSetIsOneItsPluginTakes(t *testing.T) {
 	}
 }
 
-// tileProblem is what `rta dashboard add <capability> --set k=v ...` refuses
+// tileProblem is what `rta dashboard add <capability> --with k=v ...` refuses
 // about the capability and its inputs, as far as the line alone shows it. The
 // calls are runDashboardAdd's own, in its order, and the parts of it that read
 // the reader's config (a profile that does not exist, a view nobody wrote) are
@@ -307,7 +307,7 @@ func tileProblem(reg *registry.Registry, cmd *cobra.Command) *view.Error {
 	if c.Safety != plugin.Read {
 		return view.Errorf("core.dashboard.notread", "%s is not a read, and a tile re-runs on a timer", id)
 	}
-	pairs, _ := cmd.Flags().GetStringArray("set")
+	pairs, _ := cmd.Flags().GetStringArray("with")
 	with, verr := parseTileInputs(pairs, c)
 	if verr != nil {
 		return verr

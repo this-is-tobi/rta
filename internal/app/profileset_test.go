@@ -511,8 +511,8 @@ func TestSetHintsAValueTheKeyTakesAndNamesTheKeyTyped(t *testing.T) {
 		}
 	}
 	// A tile's key is an input name, which need not be a config key at all.
-	_, errOut, _ := runWith(t, reg, "", "dashboard", "add", "gen.token", "--set", "length=abc", "--dry-run")
-	if !strings.Contains(errOut, "core.dashboard.set.type length is declared int") {
+	_, errOut, _ := runWith(t, reg, "", "dashboard", "add", "gen.token", "--with", "length=abc", "--dry-run")
+	if !strings.Contains(errOut, "core.dashboard.with.type length is declared int") {
 		t.Errorf("dashboard add: %q", errOut)
 	}
 	// Past what an integer holds, on a key with no range and on either side
