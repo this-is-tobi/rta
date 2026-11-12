@@ -1449,8 +1449,16 @@ func showView(sf plugin.Surface, r consent.Request, extra ...view.Pair) view.Vie
 	if hint := roleHint(sf, r); hint != "" {
 		pairs = append(pairs, view.Pair{Key: "role", Value: hint})
 	}
+	// The reason is the refusal the agent was sent, which names the call by the
+	// tool name the agent called (internal/grant's refuseMissing): "no active
+	// grant for note_add", two lines under "capability note.add", on the page
+	// of a person who never types the first spelling. Said here by the ID.
+	why := r.Why
+	if r.Cap != "" {
+		why = strings.ReplaceAll(why, plugin.ToolName(r.Cap), r.Cap)
+	}
 	pairs = append(pairs,
-		view.Pair{Key: "why you are being asked", Value: r.Why},
+		view.Pair{Key: "why you are being asked", Value: why},
 		view.Pair{Key: "asked", Value: format.Ago(r.AskedAt)},
 		view.Pair{Key: "expires in", Value: format.Duration(left)},
 	)

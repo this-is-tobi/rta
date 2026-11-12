@@ -107,6 +107,31 @@ func TestPendingListsWhatIsWaiting(t *testing.T) {
 	}
 }
 
+// **The reason on the consent page names the capability as the operator knows
+// it.** It is the refusal the agent was sent, which names the tool the agent
+// called: "no active grant for note_add", two lines under "capability
+// note.add", for a person who never types the first.
+func TestShowGivesTheReasonInTheOperatorsNames(t *testing.T) {
+	isolate(t)
+	p, err := consent.Ask(consent.Call{
+		Cap: "note.add", Safety: "write", Args: map[string]any{"title": "x"},
+		Why: "no active grant for note_add",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	v, err := run(t, "agent.show", map[string]any{"id": p.Request.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pair := range v.(view.Sections).Items[0].View.(view.KeyValue).Pairs {
+		if pair.Key == "why you are being asked" && pair.Value != "no active grant for note.add" {
+			t.Errorf("why = %q, want it by the capability's ID", pair.Value)
+		}
+	}
+}
+
 func TestShowSaysWhatTheCallWouldDo(t *testing.T) {
 	isolate(t)
 	p, err := consent.Ask(consent.Call{
