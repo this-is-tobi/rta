@@ -636,23 +636,6 @@ func TestPingLocalhost(t *testing.T) {
 	}
 }
 
-func TestMaskProxy(t *testing.T) {
-	tests := []struct{ in, want string }{
-		{"http://user:secret@proxy.corp:3128", "http://***@proxy.corp:3128"},
-		{"http://proxy.corp:3128", "http://proxy.corp:3128"},
-		{"not a url at all", "not a url at all"},
-	}
-	for _, tt := range tests {
-		got := maskProxy(tt.in)
-		if got != tt.want {
-			t.Errorf("maskProxy(%q) = %q, want %q", tt.in, got, tt.want)
-		}
-		if strings.Contains(got, "secret") {
-			t.Errorf("maskProxy(%q) leaked the credential: %q", tt.in, got)
-		}
-	}
-}
-
 func TestProxySummaryMasksCredentials(t *testing.T) {
 	t.Setenv("HTTPS_PROXY", "http://admin:hunter2@proxy.corp:3128")
 	t.Setenv("https_proxy", "")

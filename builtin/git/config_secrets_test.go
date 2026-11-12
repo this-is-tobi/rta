@@ -151,10 +151,10 @@ func TestTheUsernameSurvivesMaskingButThePasswordDoesNot(t *testing.T) {
 
 // The colon-free spelling: there is no way to tell a PAT-as-username apart
 // from an ordinary bare username from the string alone, so the whole
-// userinfo is masked rather than guessed at — the same trade maskProxy
-// already takes. ssh and the SCP-like git@host:path form are left alone:
-// neither is http(s), and both name the conventional SSH user, not a
-// secret.
+// userinfo is masked rather than guessed at — the same trade
+// textclean.Userinfo takes. ssh and the SCP-like git@host:path form are
+// left alone: neither is http(s), and both name the conventional SSH user,
+// not a secret.
 func TestBareUserinfoIsMaskedForHTTPSOnly(t *testing.T) {
 	// A scheme is case-insensitive (RFC 3986 §3.1), and git reads it so: the
 	// credential.<url> keys match HTTPS:// as https://, and on a
