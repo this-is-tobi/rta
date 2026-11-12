@@ -56,12 +56,36 @@ func TestXOnAGrantRowRevokesThatGrantAndNoOther(t *testing.T) {
 	if ran.lastValues["exact"] != true || ran.lastValues["target"] != picked || ran.lastValues["all"] != nil {
 		t.Errorf("revoking with %v, want exactly %s", ran.lastValues, picked)
 	}
+	// The footer names the grant once it has gone, as the command line's
+	// receipt does: "grant.revoke done" said nothing about which, and the row
+	// had left the list.
+	if want := "revoked claude's " + picked; ran.said != want {
+		t.Errorf("the receipt waiting for the footer is %q, want %q", ran.said, want)
+	}
 	_, err := ran.current.Run(context.Background(), plugin.NewRequest(ran.lastValues, false, false).WithSurface(plugin.SurfaceTUI))
 	if err != nil {
 		t.Fatalf("the revoke x ran: %v", err)
 	}
 	if left := standing(t); len(left) != 1 || left[0] == picked {
 		t.Errorf("after x on %s the roster holds %v, want only the other grant", picked, left)
+	}
+}
+
+// **A row's key on a page with no row says so.** The grant page draws the
+// grants in a section of their own, with no row to point at, and x there did
+// nothing a person could see: no revoke, no message.
+func TestARowKeyOnAPageWithNoRowSaysSo(t *testing.T) {
+	twoGrants(t)
+	page := screenOf(t, "grant.list", map[string]any{"detail": true})
+	if page.interactive() {
+		t.Skip("the grant page has a row cursor now; x acts on it")
+	}
+	got := press(t, page, "x")
+	if got.mode == modeRunning || !strings.Contains(got.flashBad, "acts on a highlighted row") {
+		t.Errorf("x on the grant page left mode %v and the footer %q, want it told it has no row", got.mode, got.flashBad)
+	}
+	if left := standing(t); len(left) != 2 {
+		t.Errorf("x on a page with no row revoked something: %v", left)
 	}
 }
 

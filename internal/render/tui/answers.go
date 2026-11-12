@@ -9,6 +9,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/session"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -104,11 +105,30 @@ func (m Model) answer(a capAction, base map[string]any) (tea.Model, tea.Cmd, boo
 	case revokeCapability:
 		if a.from == rosterCapability && a.src == srcRow && base["exact"] == true {
 			a.bare = true
+			m.said = revokedLine(base)
 			nm, cmd := m.runSeeded(a, base)
 			return nm, cmd, true
 		}
 	}
 	return m, nil, false
+}
+
+// revokedLine is what the footer says once x on a roster row has run: which
+// grant, as deniedLine says which call. The capability's own "grant.revoke
+// done" named nothing, and the row had left the list, where the command line's
+// receipt for the same act names the grant.
+func revokedLine(base map[string]any) string {
+	what, _ := base["target"].(string)
+	if scope, _ := base["scope"].(string); scope != "" {
+		what += " " + textclean.Record(scope)
+	}
+	if profile, _ := base["profile"].(string); profile != "" {
+		what += " on " + profile
+	}
+	if agent, _ := base["agent"].(string); agent != "" {
+		return "revoked " + agent + "'s " + what
+	}
+	return "revoked " + what
 }
 
 // armedKeys is the confirming key's turn. enter answers, A opens the form for
