@@ -21,8 +21,9 @@ func osCapability() plugin.Capability {
 		Summary:    "The OS's own pending updates, whether a reboot is owed, and the kernel gap",
 		Safety:     plugin.Read,
 		Idempotent: true,
-		Description: "On macOS, what `softwareupdate --list` offers and whether any of it restarts " +
-			"the machine. On Linux, whether the system says a reboot is required " +
+		Description: "On macOS, what `softwareupdate --list` offers and which of it restarts " +
+			"the machine once installed; macOS keeps no flag for a reboot owed, so there " +
+			"is no reboot line there. On Linux, whether the system says a reboot is required " +
 			"(/var/run/reboot-required on Debian, needs-restarting on RHEL) and the " +
 			"running kernel against the newest installed one — a machine that was " +
 			"upgraded and never rebooted runs the old kernel with the new one on disk, " +
@@ -36,7 +37,19 @@ func osCapability() plugin.Capability {
 
 // osState is what pkg.os and the overview share.
 type osState struct {
-	Updates        []osUpdate
+	Updates []osUpdate
+	// RebootKnown says the reader can tell whether a reboot is owed, which
+	// Linux writes down and macOS does not. RebootRequired means one is owed
+	// now, for something already installed.
+	//
+	// macOS's reading once set RebootRequired for an update softwareupdate
+	// only offered, whose Action is restart: the overview then said "warn —
+	// reboot owed" ahead of everything behind, on a machine where a reboot
+	// would have installed nothing and changed nothing. What restarts is a
+	// fact about the offered update, said on its row and in the count of
+	// them; with no flag to read, macOS has no reboot line at all, since
+	// "ok" there would be a claim nobody looked to make.
+	RebootKnown    bool
 	RebootRequired bool
 	RebootReason   string
 	KernelRunning  string
@@ -101,19 +114,13 @@ func readMacOS(ctx context.Context) osState {
 			}
 		}
 	}
-	for _, u := range st.Updates {
-		if u.Restart {
-			st.RebootRequired, st.RebootReason = true, "an offered update restarts the machine"
-			break
-		}
-	}
 	return st
 }
 
 // readLinux reads the reboot flag the distribution family writes, and the
 // kernel gap from the package database.
 func readLinux(ctx context.Context) osState {
-	var st osState
+	st := osState{RebootKnown: true}
 	if _, err := os.Stat("/var/run/reboot-required"); err == nil {
 		st.RebootRequired, st.RebootReason = true, "/var/run/reboot-required is present"
 	} else if _, err := lookPath("needs-restarting"); err == nil {
@@ -164,26 +171,41 @@ func runOS(ctx context.Context, req plugin.Request) (view.View, error) {
 	p := plugin.NewPage(ctx, req)
 	p.PutAs("state", "state", osStatePairs(st))
 	if len(st.Updates) > 0 {
-		t := view.Table{Columns: []view.Column{
-			{Name: "Update"}, {Name: "Version"}, {Name: "Restarts", Kind: view.KindStatus}, {Name: "Label"},
-		}}
-		for _, u := range st.Updates {
-			restart := "no"
-			if u.Restart {
-				restart = "pending reboot"
-			}
-			t.Add(view.Plain(u.Title), view.Plain(u.Version), view.Plain(restart), view.Plain(u.Label))
-		}
-		t.Total = len(t.Rows)
-		p.PutAs("updates", "updates", t)
+		p.PutAs("updates", "updates", updatesTable(st.Updates, true))
 	}
 	return p.View(), nil
 }
 
+// updatesTable is the updates the OS offers, saying of each whether
+// installing it restarts the machine.
+func updatesTable(updates []osUpdate, labels bool) view.Table {
+	t := view.Table{Columns: []view.Column{{Name: "Update"}, {Name: "Version"}, {Name: "Restarts"}}}
+	if labels {
+		t.Columns = append(t.Columns, view.Column{Name: "Label"})
+	}
+	for _, u := range updates {
+		restarts := "no"
+		if u.Restart {
+			restarts = "yes"
+		}
+		row := []view.Cell{view.Plain(u.Title), view.Plain(u.Version), view.Plain(restarts)}
+		if labels {
+			row = append(row, view.Plain(u.Label))
+		}
+		t.Add(row...)
+	}
+	t.Total = len(t.Rows)
+	return t
+}
+
 // osStatePairs is the OS's lines of a page: what it offers, or the kernel, then
-// whether a reboot is owed.
+// whether a reboot is owed where the OS says.
 func osStatePairs(st osState) view.KeyValue {
-	return view.KeyValue{Pairs: append(osFacts(st), rebootPair(st))}
+	pairs := osFacts(st)
+	if p, ok := rebootPair(st); ok {
+		pairs = append(pairs, p)
+	}
+	return view.KeyValue{Pairs: pairs}
 }
 
 // osFacts are the OS's lines other than the reboot: the updates it offers on
@@ -198,7 +220,7 @@ func osFacts(st osState) []view.Pair {
 	var pairs []view.Pair
 	switch runtime.GOOS {
 	case "darwin":
-		pairs = append(pairs, view.Pair{Key: "os updates", Value: countText(len(st.Updates), "offered")})
+		pairs = append(pairs, view.Pair{Key: "os updates", Value: offered(st.Updates)})
 	case "linux":
 		if st.KernelRunning != "" {
 			pairs = append(pairs, view.Pair{Key: "kernel running", Value: st.KernelRunning})
@@ -220,16 +242,38 @@ func (s osState) quiet() bool {
 	return len(s.Notes) == 0 && len(s.Updates) == 0 && !s.kernelBehind()
 }
 
-// rebootPair is whether a reboot is owed, or that the OS could not be read to
-// say: "ok" is a claim that somebody looked.
-func rebootPair(st osState) view.Pair {
-	switch {
-	case len(st.Notes) > 0:
-		return view.Pair{Key: "reboot", Value: "unknown"}
-	case st.RebootRequired:
-		return view.Pair{Key: "reboot", Value: "pending reboot — " + st.RebootReason}
+// offered is how many updates the OS offers, and how many of them restart
+// the machine once installed.
+func offered(updates []osUpdate) string {
+	restarts := 0
+	for _, u := range updates {
+		if u.Restart {
+			restarts++
+		}
 	}
-	return view.Pair{Key: "reboot", Value: "ok"}
+	text := countText(len(updates), "offered")
+	switch restarts {
+	case 0:
+		return text
+	case 1:
+		return text + ", 1 restarts the machine"
+	}
+	return text + ", " + itoa(restarts) + " restart the machine"
+}
+
+// rebootPair is whether a reboot is owed, or that the OS could not be read to
+// say: "ok" is a claim that somebody looked. An OS that keeps no record of a
+// reboot owed has no line at all (osState.RebootKnown).
+func rebootPair(st osState) (view.Pair, bool) {
+	switch {
+	case !st.RebootKnown:
+		return view.Pair{}, false
+	case len(st.Notes) > 0:
+		return view.Pair{Key: "reboot", Value: "unknown"}, true
+	case st.RebootRequired:
+		return view.Pair{Key: "reboot", Value: "pending reboot — " + st.RebootReason}, true
+	}
+	return view.Pair{Key: "reboot", Value: "ok"}, true
 }
 
 func countText(n int, what string) string {

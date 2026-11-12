@@ -97,7 +97,7 @@ func summaryOn(t *testing.T, sf plugin.Surface) []view.Pair {
 // a dozen lines on the news that nothing was wrong.
 func TestTheOverviewLeadsWithTheVerdictTheTotalAndTheReboot(t *testing.T) {
 	install(t, machine(brewBehind, aptCurrent))
-	readsOS(t, osState{})
+	readsOS(t, osState{RebootKnown: true})
 
 	pairs := compact(t, plugin.SurfaceCLI)
 	want := []string{"status", "total behind", "reboot", "brew", "managers"}
@@ -133,7 +133,7 @@ func TestTheOverviewLeadsWithTheVerdictTheTotalAndTheReboot(t *testing.T) {
 // ones that are fine too, and says what the tools list is for.
 func TestTheDetailPageKeepsEveryRowTheCompactAnswerFolded(t *testing.T) {
 	install(t, machine(brewBehind, aptCurrent))
-	readsOS(t, osState{})
+	readsOS(t, osState{RebootKnown: true})
 
 	summary := summaryOn(t, plugin.SurfaceCLI)
 	// The OS's own line is the machine's: macOS has "os updates" and Linux has
@@ -156,7 +156,7 @@ func TestTheDetailPageKeepsEveryRowTheCompactAnswerFolded(t *testing.T) {
 
 func TestAManagerThatCannotBeReadIsARowAndTheVerdictSaysSo(t *testing.T) {
 	install(t, machine(brewBehind, fakeAnswer{code: 100, stderr: "E: Could not get lock /var/lib/dpkg/lock-frontend\n"}))
-	readsOS(t, osState{})
+	readsOS(t, osState{RebootKnown: true})
 
 	pairs := compact(t, plugin.SurfaceCLI)
 	got := valueOf(t, pairs, "apt")
@@ -180,7 +180,7 @@ func TestAManagerThatCannotBeReadIsARowAndTheVerdictSaysSo(t *testing.T) {
 // were two claims about a machine nobody had looked at.
 func TestWhenTheOSCouldNotBeReadTheRowsDoNotClaimNothingIsOwed(t *testing.T) {
 	install(t, machine(brewCurrent, aptCurrent))
-	readsOS(t, osState{Notes: []string{"softwareupdate did not answer within 25s"}})
+	readsOS(t, osState{RebootKnown: true, Notes: []string{"softwareupdate did not answer within 25s"}})
 
 	pairs := compact(t, plugin.SurfaceCLI)
 	if got := valueOf(t, pairs, "os updates"); got != "unreadable — softwareupdate did not answer within 25s" ||
@@ -203,13 +203,13 @@ func TestWhenTheOSCouldNotBeReadTheRowsDoNotClaimNothingIsOwed(t *testing.T) {
 
 func TestARebootOwedOutranksPackagesBehind(t *testing.T) {
 	install(t, machine(brewBehind, aptCurrent))
-	readsOS(t, osState{RebootRequired: true, RebootReason: "an offered update restarts the machine"})
+	readsOS(t, osState{RebootKnown: true, RebootRequired: true, RebootReason: "/var/run/reboot-required is present"})
 
 	pairs := compact(t, plugin.SurfaceCLI)
 	if got := valueOf(t, pairs, "status"); got != "warn — reboot owed" {
 		t.Errorf("status = %q", got)
 	}
-	if got := valueOf(t, pairs, "reboot"); got != "pending reboot — an offered update restarts the machine" ||
+	if got := valueOf(t, pairs, "reboot"); got != "pending reboot — /var/run/reboot-required is present" ||
 		theme.ClassifyStatus(got) != theme.StatusWarn {
 		t.Errorf("reboot = %q", got)
 	}
@@ -220,7 +220,7 @@ func TestARebootOwedOutranksPackagesBehind(t *testing.T) {
 // seconds.
 func TestTheManagersAreAskedAtTheSameTime(t *testing.T) {
 	install(t, machine(brewCurrent, aptCurrent))
-	readsOS(t, osState{})
+	readsOS(t, osState{RebootKnown: true})
 	base := runCommand
 	started, release := make(chan string, 8), make(chan struct{})
 	runCommand = func(ctx context.Context, name string, args ...string) (string, string, error) {
@@ -257,7 +257,7 @@ func TestTheManagersAreAskedAtTheSameTime(t *testing.T) {
 func TestASlowManagerOnATileIsUnreadableAndTheRestAreAnswered(t *testing.T) {
 	f := machine(brewBehind, aptCurrent)
 	install(t, f)
-	readsOS(t, osState{})
+	readsOS(t, osState{RebootKnown: true})
 	old := tileDeadline
 	tileDeadline = 300 * time.Millisecond
 	t.Cleanup(func() { tileDeadline = old })
@@ -306,7 +306,7 @@ func namesTheDeadline(t *testing.T, msg string, deadline time.Duration) bool {
 // By hand there is no deadline of the tile's, only the minute a command is given.
 func TestOffATileTheManagersAreNotGivenTheTilesDeadline(t *testing.T) {
 	install(t, machine(brewBehind, aptCurrent))
-	readsOS(t, osState{})
+	readsOS(t, osState{RebootKnown: true})
 	old := tileDeadline
 	tileDeadline = time.Nanosecond
 	t.Cleanup(func() { tileDeadline = old })
@@ -355,7 +355,7 @@ func TestToolsAreSaidTheWayManagersAre(t *testing.T) {
 	f.answers["fzf --version"] = fakeAnswer{out: "0.50.0\n"}
 	f.answers["bat --version"] = fakeAnswer{out: "bat 0.24.0\n"}
 	install(t, f)
-	readsOS(t, osState{})
+	readsOS(t, osState{RebootKnown: true})
 	tools := map[string]any{"tools": []string{"fzf=github:junegunn/fzf", "bat=github:sharkdp/bat"}}
 
 	r := req(t, "pkg.overview", tools).WithSurface(plugin.SurfaceCLI)
@@ -396,7 +396,7 @@ func TestToolsAreSaidTheWayManagersAre(t *testing.T) {
 func TestABadToolEntryIsRefusedBeforeAnythingIsAsked(t *testing.T) {
 	f := machine(brewCurrent, aptCurrent)
 	install(t, f)
-	readsOS(t, osState{})
+	readsOS(t, osState{RebootKnown: true})
 	r := req(t, "pkg.overview", map[string]any{"tools": []string{"not a tool"}}).WithSurface(plugin.SurfaceCLI)
 	if _, err := overviewWith(t.Context(), r, newRegistryClient()); err == nil {
 		t.Fatal("a bad entry was accepted")
@@ -410,7 +410,7 @@ func TestABadToolEntryIsRefusedBeforeAnythingIsAsked(t *testing.T) {
 
 func TestAMachineWithNoManagerSaysSo(t *testing.T) {
 	install(t, &fake{})
-	readsOS(t, osState{})
+	readsOS(t, osState{RebootKnown: true})
 	pairs := compact(t, plugin.SurfaceCLI)
 	if got := valueOf(t, pairs, "managers"); got != "none found on $PATH" {
 		t.Errorf("managers = %q", got)

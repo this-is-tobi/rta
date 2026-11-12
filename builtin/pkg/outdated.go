@@ -205,7 +205,7 @@ func overviewCapability() plugin.Capability {
 		Idempotent: true,
 		Detailed:   true,
 		Description: "The glance: a verdict first (ok, or warn with the worst thing it found), the total " +
-			"behind and whether a reboot is owed, then the package managers that have something behind or " +
+			"behind and, on Linux, whether a reboot is owed, then the package managers that have something behind or " +
 			"could not be read, one row each, and the ones that are current as one row; how many of your " +
 			"GitHub-release binaries have a newer release; and whether the OS offers updates and the " +
 			"kernel gap. A read that failed says so in its row, and the verdict with it, instead of " +
@@ -365,10 +365,17 @@ func overviewWith(ctx context.Context, req plugin.Request, c *registryClient) (v
 		}
 		found.Warn(strings.Join(parts, ", ") + " behind")
 	}
+	// An update the OS offers is behind like a package is, and said after
+	// them: a machine whose only news was a Safari update read ok.
+	if len(st.Updates) > 0 {
+		found.Warn(format.CountOf(len(st.Updates), "OS update") + " offered")
+	}
 
 	rows = append(rows, overviewRow{Pair: view.Pair{Key: "total behind",
 		Value: format.CountOf(total, "package") + ", " + format.CountOf(behind, "tool")}})
-	rows = append(rows, overviewRow{Pair: rebootPair(st)})
+	if p, ok := rebootPair(st); ok {
+		rows = append(rows, overviewRow{Pair: p})
+	}
 	for _, p := range osFacts(st) {
 		row := overviewRow{Pair: p}
 		if st.quiet() {
@@ -407,16 +414,7 @@ func overviewWith(ctx context.Context, req plugin.Request, c *registryClient) (v
 		p.PutAs("tools", "tools", toolsTable(tools))
 	}
 	if len(st.Updates) > 0 {
-		t := view.Table{Columns: []view.Column{{Name: "Update"}, {Name: "Version"}, {Name: "Restarts", Kind: view.KindStatus}}}
-		for _, u := range st.Updates {
-			restart := "no"
-			if u.Restart {
-				restart = "pending reboot"
-			}
-			t.Add(view.Plain(u.Title), view.Plain(u.Version), view.Plain(restart))
-		}
-		t.Total = len(t.Rows)
-		p.PutAs("os-updates", "os updates", t)
+		p.PutAs("os-updates", "os updates", updatesTable(st.Updates, false))
 	}
 	return p.View(), nil
 }
