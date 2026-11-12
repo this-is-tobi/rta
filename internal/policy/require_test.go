@@ -42,7 +42,7 @@ func TestARequiredRepoPolicyThatIsMissingIsRefused(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
 	chdir(t, dir)
-	operatorPolicy(t, "requireRepoPolicy: true\n")
+	operatorPolicy(t, "require-repo-policy: true\n")
 
 	_, verr := Load()
 	if verr == nil {
@@ -66,7 +66,7 @@ func TestARequiredRepoPolicyThatConstrainsNothingIsRefused(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
 	chdir(t, dir)
-	operatorPolicy(t, "requireRepoPolicy: true\n")
+	operatorPolicy(t, "require-repo-policy: true\n")
 
 	for _, body := range []string{"{}\n", "", "# nothing but a comment\n"} {
 		write(t, dir, body)
@@ -86,8 +86,8 @@ func TestARequiredRepoPolicyThatConstrainsIsAccepted(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
 	chdir(t, dir)
-	operatorPolicy(t, "requireRepoPolicy: true\n")
-	write(t, dir, "maxTTL: 15m\n")
+	operatorPolicy(t, "require-repo-policy: true\n")
+	write(t, dir, "max-ttl: 15m\n")
 
 	c, verr := Load()
 	if verr != nil {
@@ -106,13 +106,13 @@ func TestARequiredRepoPolicyThatConstrainsIsAccepted(t *testing.T) {
 // **A repository file must not be able to satisfy its own demand.**
 //
 // This is the whole reason the requirement lives elsewhere. If a
-// .rta-policy.yaml could set requireRepoPolicy, deleting it would delete the
+// .rta-policy.yaml could set require-repo-policy, deleting it would delete the
 // demand too, and the check would pass in exactly the case it exists to catch.
 func TestARepositoryFileCannotRequireItself(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
 	chdir(t, dir)
-	write(t, dir, "requireRepoPolicy: true\nmaxTTL: 15m\n")
+	write(t, dir, "require-repo-policy: true\nmax-ttl: 15m\n")
 
 	c, verr := Load()
 	if verr != nil {
@@ -136,7 +136,7 @@ func TestAnExplicitPolicyPathMayCarryTheRequirement(t *testing.T) {
 	isolate(t)
 	chdir(t, t.TempDir())
 	explicit := filepath.Join(t.TempDir(), "managed.yaml")
-	if err := os.WriteFile(explicit, []byte("requireRepoPolicy: true\n"), 0o600); err != nil {
+	if err := os.WriteFile(explicit, []byte("require-repo-policy: true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("RTA_POLICY", explicit)
@@ -218,7 +218,7 @@ func TestTheOperatorPolicySitsBesideTheConfigWhereverThatIs(t *testing.T) {
 
 	// And it is actually read from there.
 	chdir(t, t.TempDir())
-	if err := os.WriteFile(got, []byte("maxTTL: 5m\n"), 0o600); err != nil {
+	if err := os.WriteFile(got, []byte("max-ttl: 5m\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	c, verr := Load()
@@ -226,7 +226,7 @@ func TestTheOperatorPolicySitsBesideTheConfigWhereverThatIs(t *testing.T) {
 		t.Fatal(verr)
 	}
 	if c.MaxTTL.String() != "5m0s" {
-		t.Errorf("maxTTL = %v — the operator policy beside RTA_CONFIG was not read", c.MaxTTL)
+		t.Errorf("max-ttl = %v — the operator policy beside RTA_CONFIG was not read", c.MaxTTL)
 	}
 }
 
@@ -237,15 +237,15 @@ func TestTheOperatorsOwnCeilingSurvivesTheRepositoryFileVanishing(t *testing.T) 
 	isolate(t)
 	dir := t.TempDir()
 	chdir(t, dir)
-	operatorPolicy(t, "maxTTL: 30m\nnever:\n  - vault.snapshot\n")
-	write(t, dir, "maxTTL: 15m\n")
+	operatorPolicy(t, "max-ttl: 30m\nnever:\n  - vault.snapshot\n")
+	write(t, dir, "max-ttl: 15m\n")
 
 	tight, verr := Load()
 	if verr != nil {
 		t.Fatal(verr)
 	}
 	if tight.MaxTTL.String() != "15m0s" {
-		t.Errorf("maxTTL = %v, want the stricter repository value", tight.MaxTTL)
+		t.Errorf("max-ttl = %v, want the stricter repository value", tight.MaxTTL)
 	}
 
 	// Now the repository file goes away, which is the whole scenario.
@@ -260,7 +260,7 @@ func TestTheOperatorsOwnCeilingSurvivesTheRepositoryFileVanishing(t *testing.T) 
 		t.Fatal("deleting the repository file left no ceiling at all")
 	}
 	if after.MaxTTL.String() != "30m0s" {
-		t.Errorf("maxTTL = %v, want the operator's own 30m to still stand", after.MaxTTL)
+		t.Errorf("max-ttl = %v, want the operator's own 30m to still stand", after.MaxTTL)
 	}
 	if len(after.Never) != 1 {
 		t.Errorf("the operator's own prohibitions went with the repository file: %+v", after.Never)

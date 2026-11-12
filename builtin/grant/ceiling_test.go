@@ -47,7 +47,7 @@ func allowing(t *testing.T, values map[string]any) (string, *view.Error) {
 // fifteen minutes.
 func TestATeamCeilingClampsTheTTLAndSaysWhichCeilingBit(t *testing.T) {
 	setup(t)
-	withPolicy(t, "maxTTL: 15m\n")
+	withPolicy(t, "max-ttl: 15m\n")
 
 	body, verr := allowing(t, map[string]any{"target": "kv.get", "scope": "db", "ttl": "4h"})
 	if verr != nil {
@@ -116,13 +116,13 @@ func TestARefusalNamesTheRuleAndTheFile(t *testing.T) {
 
 // A policy ceiling looser than rta's own day never gets a chance to apply:
 // parseTTL already clamps to core.MaxTTL before the policy ceiling is even
-// considered, so when the policy's own maxTTL is above 24h, rta's own
+// considered, so when the policy's own max-ttl is above 24h, rta's own
 // maximum is what actually bit. The message has to agree — re-asking "did
 // the policy bite" against the raw, unclamped ask reaches a different answer
 // than the one that decided what was stored, and blames the wrong file.
 func TestALoosePolicyCeilingIsNotBlamedForRTAsOwnMaximum(t *testing.T) {
 	setup(t)
-	withPolicy(t, "maxTTL: 100h\n")
+	withPolicy(t, "max-ttl: 100h\n")
 
 	body, verr := allowing(t, map[string]any{"target": "kv.get", "scope": "db", "ttl": "200h"})
 	if verr != nil {

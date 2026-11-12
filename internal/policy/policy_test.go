@@ -61,7 +61,7 @@ func TestAFileIsFoundOnTheWayUp(t *testing.T) {
 	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write(t, root, "maxTTL: 15m\nnever: [pg.dump]\n")
+	write(t, root, "max-ttl: 15m\nnever: [pg.dump]\n")
 	chdir(t, deep)
 
 	c, verr := Load()
@@ -87,10 +87,10 @@ func TestNestedFilesTightenAndNeverLoosen(t *testing.T) {
 	if err := os.MkdirAll(inner, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write(t, root, "maxTTL: 15m\nnever: [pg.dump]\n")
+	write(t, root, "max-ttl: 15m\nnever: [pg.dump]\n")
 	// The inner file asks for *more* time and forbids something else. The
 	// extra time must be ignored; the extra prohibition must be honoured.
-	write(t, inner, "maxTTL: 24h\nnever: [vault.snapshot]\n")
+	write(t, inner, "max-ttl: 24h\nnever: [vault.snapshot]\n")
 	chdir(t, inner)
 
 	c, verr := Load()
@@ -112,8 +112,8 @@ func TestNestedFilesTightenAndNeverLoosen(t *testing.T) {
 	// answer and the assertion cannot tell them apart — a probe that replaced
 	// the comparison with "take whatever is set" passed it. Here the *inner*
 	// file is the stricter one, so only the real rule gives 5m.
-	write(t, root, "maxTTL: 1h\n")
-	write(t, inner, "maxTTL: 5m\n")
+	write(t, root, "max-ttl: 1h\n")
+	write(t, inner, "max-ttl: 5m\n")
 	c, verr = Load()
 	if verr != nil {
 		t.Fatal(verr)
@@ -144,7 +144,7 @@ func TestForbidsCoversTheAxesItClaims(t *testing.T) {
 		{"an ordinary capability", "kv.set", "k", "", false},
 		{"a forbidden connection", "pg.query", "", "prod", true},
 		// The ceiling names the environment, and an instance is inside it:
-		// `neverProfile: [prod]` that let `prod/analytics` through would be
+		// `never-profile: [prod]` that let `prod/analytics` through would be
 		// bypassable by one slash.
 		{"an instance of a forbidden connection", "pg.query", "", "prod/analytics", true},
 		{"another connection", "pg.query", "", "staging", false},
@@ -154,7 +154,7 @@ func TestForbidsCoversTheAxesItClaims(t *testing.T) {
 		{"an unscoped grant where a record is required", "kv.get", "", "", true},
 		{"the same grant with a record", "kv.get", "db-password", "", false},
 		{"the same grant with a folder", "kv.get", "prod/", "", false},
-		// The reverse containment for requireScope: an unscoped namespace
+		// The reverse containment for require-scope: an unscoped namespace
 		// grant on "kv" also reaches "kv.get", so it must be refused too.
 		{"a namespace grant containing a scope-required capability", "kv", "", "", true},
 	} {
@@ -247,14 +247,14 @@ func TestAPolicyBombIsRefusedBeforeItIsDecoded(t *testing.T) {
 func TestAMalformedPolicyIsAnErrorAndNotAnAbsentOne(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
-	write(t, dir, "maxTTL: [this is not a duration]\n")
+	write(t, dir, "max-ttl: [this is not a duration]\n")
 	chdir(t, dir)
 	if _, verr := Load(); verr == nil {
 		t.Fatal("a malformed policy file loaded as an empty ceiling, which is the " +
 			"one outcome that must not happen quietly")
 	}
 
-	write(t, dir, "maxTTL: soon\n")
+	write(t, dir, "max-ttl: soon\n")
 	verr := func() error {
 		_, v := Load()
 		if v == nil {
@@ -263,7 +263,7 @@ func TestAMalformedPolicyIsAnErrorAndNotAnAbsentOne(t *testing.T) {
 		return v
 	}()
 	if verr == nil {
-		t.Fatal("maxTTL that is not a duration was accepted")
+		t.Fatal("max-ttl that is not a duration was accepted")
 	}
 }
 
@@ -282,7 +282,7 @@ func TestAnExplicitPathThatIsMissingIsRefused(t *testing.T) {
 func TestMaxTTLTakesADay(t *testing.T) {
 	isolate(t)
 	root := t.TempDir()
-	write(t, root, "maxTTL: 1d\n")
+	write(t, root, "max-ttl: 1d\n")
 	chdir(t, root)
 	c, verr := Load()
 	if verr != nil {
@@ -297,7 +297,7 @@ func TestMaxTTLTakesADay(t *testing.T) {
 // command says a file holds is what the gate will enforce, with the same
 // refusals: a key nothing claims is not dropped on the way.
 func TestParseReadsABufferAsLoadReadsAFile(t *testing.T) {
-	c, verr := Parse("p.yaml", []byte("maxTTL: 5m\nnever: [pg.dump]\n"))
+	c, verr := Parse("p.yaml", []byte("max-ttl: 5m\nnever: [pg.dump]\n"))
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -321,10 +321,10 @@ func TestLoosensNamesEveryAxisThatWouldStopForbidding(t *testing.T) {
 	}
 	got := strings.Join(Loosens(standing, Ceiling{MaxTTL: time.Hour}), "\n")
 	for _, want := range []string{
-		"maxTTL 5m would become 1h",
+		"max-ttl 5m would become 1h",
 		"never: pg.dump, vault.snapshot, kv.get",
-		"neverProfile: production",
-		"requireScope: kv.get",
+		"never-profile: production",
+		"require-scope: kv.get",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("no line says %q:\n%s", want, got)
@@ -333,8 +333,8 @@ func TestLoosensNamesEveryAxisThatWouldStopForbidding(t *testing.T) {
 	if n := len(Loosens(standing, Ceiling{MaxTTL: time.Hour})); n != 4 {
 		t.Errorf("%d loosenings, want one per axis (4):\n%s", n, got)
 	}
-	if got := Loosens(standing, Ceiling{}); len(got) != 4 || !strings.Contains(got[0], "maxTTL 5m would become no limit") {
-		t.Errorf("a ceiling with no cap loosens maxTTL to nothing, got %q", got)
+	if got := Loosens(standing, Ceiling{}); len(got) != 4 || !strings.Contains(got[0], "max-ttl 5m would become no limit") {
+		t.Errorf("a ceiling with no cap loosens max-ttl to nothing, got %q", got)
 	}
 }
 

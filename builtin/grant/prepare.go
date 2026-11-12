@@ -550,7 +550,7 @@ func (s selector) matches(g core.Grant) bool {
 // held. A connection's whole reference names that connection, and an
 // environment's bare name names every connection inside it: a grant on
 // `staging/analytics` is a grant on staging, as the ceiling reads
-// `neverProfile: [staging]` and as deleting a profile revokes every instance
+// `never-profile: [staging]` and as deleting a profile revokes every instance
 // grant in it. Without that, `grant revoke --profile staging` answered "no
 // active grant" beside a roster of `staging/main` and `staging/scratch` rows,
 // and the one command that takes an environment back left every instance of

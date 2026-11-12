@@ -48,8 +48,8 @@ import (
 // meant that line. Here nobody meant any one row: the person asked for
 // "everything staging covers", and the ceiling's answer is a smaller
 // everything, said out loud (internal/grant.CheckCeiling's own sentence, and
-// its own Forbids, not a second reading of never, neverProfile and
-// requireScope). It is refused only when nothing is left to issue.
+// its own Forbids, not a second reading of never, never-profile and
+// require-scope). It is refused only when nothing is left to issue.
 //
 // **No role name on the grants.** The bundle is named by what it is, an
 // agent's grants on an environment, and `grant revoke --profile staging

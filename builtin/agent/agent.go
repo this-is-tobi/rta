@@ -1550,7 +1550,7 @@ func runApprove(ctx context.Context, req plugin.Request, catalog func() []plugin
 	}
 	ttl := strings.TrimSpace(req.String("ttl"))
 	// The team's ceiling binds a live "yes" exactly as it binds `grant allow`:
-	// `never`/`neverProfile` are documented as needing nobody's agreement, not
+	// `never`/`never-profile` are documented as needing nobody's agreement, not
 	// as a default a rushed answer can override. Without this, a capability or
 	// connection the policy forbids outright still reached internal/mcp's
 	// askConsent — Reserve's refusal for "ceiling-suppressed" and "simply
@@ -1755,7 +1755,7 @@ func roleReceipt(issued view.View) (agent, back string) {
 // would be held: record by record, every one it names. It was asked with the
 // call's record when there was one and with none otherwise, so a call naming
 // two — every kv.rename, whose ScopeAlso names where the key goes — was read
-// as a grant naming no record, and `requireScope: [kv.rename]` refused a
+// as a grant naming no record, and `require-scope: [kv.rename]` refused a
 // call that named both of its own.
 func checkCeiling(r consent.Request) *view.Error {
 	for _, scope := range records(r) {

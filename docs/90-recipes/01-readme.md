@@ -61,7 +61,7 @@ rta grant allow kv.get deploy-token --agent claude --ttl 5m --max-uses 1
 
 One key, five minutes, one read. The clearest case in the whole model — and the record shows that `kv.get deploy-token` happened without showing what came back.
 
-To make the broad form impossible for everyone on the team, put `requireScope: [kv.get]` in the repository's `.rta-policy.yaml`, as [A ceiling a repository carries](#a-ceiling-a-repository-carries) does: `rta grant allow kv.get`, which would cover the entire store, is then an error, and only a grant naming one key is accepted.
+To make the broad form impossible for everyone on the team, put `require-scope: [kv.get]` in the repository's `.rta-policy.yaml`, as [A ceiling a repository carries](#a-ceiling-a-repository-carries) does: `rta grant allow kv.get`, which would cover the entire store, is then an error, and only a grant naming one key is accepted.
 
 ## A ceiling a repository carries
 
@@ -69,13 +69,13 @@ Commit this next to your code and every clone inherits it:
 
 ```yaml
 # .rta-policy.yaml
-maxTTL: 15m
+max-ttl: 15m
 never:
   - pg.dump
   - vault.kv.get
-neverProfile:
+never-profile:
   - production
-requireScope:
+require-scope:
   - kv.get
   - s3.object.get
 ```

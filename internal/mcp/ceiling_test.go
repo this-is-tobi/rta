@@ -59,7 +59,7 @@ func TestAPolicyStopsAGrantThatIsAlreadyOnDisk(t *testing.T) {
 // The other half, and the one an implementation that refused everything would
 // fail: a policy narrows and does not black out the surface.
 func TestAPolicyLeavesEverythingItDoesNotName(t *testing.T) {
-	withPolicy(t, "never: [pg.dump]\nneverProfile: [prod]\n")
+	withPolicy(t, "never: [pg.dump]\nnever-profile: [prod]\n")
 	s := connect(t, Options{})
 	if verr := grant.Issue(grant.Grant{
 		Target: "demo.item.reveal", Scope: "prod/db-password",
@@ -74,7 +74,7 @@ func TestAPolicyLeavesEverythingItDoesNotName(t *testing.T) {
 	}
 }
 
-// A maxTTL in the policy has to bite a grant issued for longer, whatever the
+// A max-ttl in the policy has to bite a grant issued for longer, whatever the
 // grant's own Expires says — the same reasoning MaxTTL's own check gives for
 // a hand-written grant claiming to expire in 2099.
 func TestAPolicyMaxTTLExpiresAGrantIssuedForLonger(t *testing.T) {
@@ -93,7 +93,7 @@ func TestAPolicyMaxTTLExpiresAGrantIssuedForLonger(t *testing.T) {
 			res.Content[0].(*sdk.TextContent).Text)
 	}
 
-	withPolicy(t, "maxTTL: 15m\n")
+	withPolicy(t, "max-ttl: 15m\n")
 	if res := callTool(t, s, "demo_item_reveal",
 		map[string]any{"key": "prod/db-password"}); !res.IsError {
 		t.Fatal("a grant issued two hours ago survived a 15m team ceiling")
@@ -120,14 +120,14 @@ func TestRequireScopeRefusesTheEverythingGrantAndKeepsTheScopedOne(t *testing.T)
 		}
 	}
 
-	withPolicy(t, "requireScope: [demo.item.reveal]\n")
+	withPolicy(t, "require-scope: [demo.item.reveal]\n")
 	if res := callTool(t, s, "demo_item_reveal",
 		map[string]any{"key": "anything-at-all"}); !res.IsError {
 		t.Fatal("an unscoped grant authorized a call where the policy requires a record")
 	}
 	if res := callTool(t, s, "demo_item_reveal",
 		map[string]any{"key": "prod/db-password"}); res.IsError {
-		t.Fatalf("requireScope refused a grant that names a record: %s",
+		t.Fatalf("require-scope refused a grant that names a record: %s",
 			res.Content[0].(*sdk.TextContent).Text)
 	}
 
@@ -151,7 +151,7 @@ func TestAMalformedPolicyDoesNotSilentlyBecomeNoCeiling(t *testing.T) {
 	}, true); verr != nil {
 		t.Fatal(verr)
 	}
-	withPolicy(t, "never: \"this should be a list\"\nmaxTTL: {}\n")
+	withPolicy(t, "never: \"this should be a list\"\nmax-ttl: {}\n")
 	if res := callTool(t, s, "demo_item_reveal",
 		map[string]any{"key": "prod/db-password"}); !res.IsError {
 		t.Fatal("a policy file that could not be parsed was treated as no policy, " +

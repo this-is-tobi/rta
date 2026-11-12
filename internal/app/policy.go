@@ -26,14 +26,14 @@ import (
 // agent can reach, and keeping the whole group off that surface is a simpler
 // guarantee than a per-subcommand one.
 //
-// The reason this exists at all is the gap `requireRepoPolicy` closes. A
+// The reason this exists at all is the gap `require-repo-policy` closes. A
 // ceiling nobody can write without hand-editing YAML is a ceiling teams put
 // off adopting, and the file they put off writing is the one thing standing
 // between a hurried grant and production.
 
 // operatorPolicyPath is the operator's own policy file, beside their config.
 //
-// This is the file that matters for requireRepoPolicy, and the reason is its
+// This is the file that matters for require-repo-policy, and the reason is its
 // location rather than its contents: it lives outside every repository, so it
 // survives a branch that never carried .rta-policy.yaml, a bad merge, a
 // `git clean`, and a client that launched rta from somewhere else.
@@ -108,7 +108,7 @@ func policyShowCommand(render func(*cobra.Command, view.View, *view.Error) error
 			}
 
 			pairs = append(pairs, axisPairs(ceiling)...)
-			pairs = append(pairs, view.Pair{Key: "requireRepoPolicy", Value: yesNo(ceiling.RequireRepo)})
+			pairs = append(pairs, view.Pair{Key: "require-repo-policy", Value: yesNo(ceiling.RequireRepo)})
 			if n := grant.Suppressed(); n > 0 {
 				pairs = append(pairs, view.Pair{Key: "grants suppressed", Value: fmt.Sprintf(
 					"%s if this ceiling did not forbid %s",
@@ -126,16 +126,16 @@ func policyShowCommand(render func(*cobra.Command, view.View, *view.Error) error
 func axisPairs(c policy.Ceiling) []view.Pair {
 	var pairs []view.Pair
 	if c.MaxTTL > 0 {
-		pairs = append(pairs, view.Pair{Key: "maxTTL", Value: format.Duration(c.MaxTTL)})
+		pairs = append(pairs, view.Pair{Key: "max-ttl", Value: format.Duration(c.MaxTTL)})
 	}
 	if len(c.Never) > 0 {
 		pairs = append(pairs, view.Pair{Key: "never", Value: strings.Join(c.Never, ", ")})
 	}
 	if len(c.NeverProfile) > 0 {
-		pairs = append(pairs, view.Pair{Key: "neverProfile", Value: strings.Join(c.NeverProfile, ", ")})
+		pairs = append(pairs, view.Pair{Key: "never-profile", Value: strings.Join(c.NeverProfile, ", ")})
 	}
 	if len(c.RequireScope) > 0 {
-		pairs = append(pairs, view.Pair{Key: "requireScope", Value: strings.Join(c.RequireScope, ", ")})
+		pairs = append(pairs, view.Pair{Key: "require-scope", Value: strings.Join(c.RequireScope, ", ")})
 	}
 	return pairs
 }
@@ -178,7 +178,7 @@ const starterPolicy = `# The ceiling no grant in this repository may exceed.
 # A subdirectory may add its own and tighten this further. It cannot loosen it.
 
 # Cap how long any grant may stand, however long somebody asks for.
-maxTTL: ` + starterTTL + `
+max-ttl: ` + starterTTL + `
 
 # Targets no grant may name at all. A capability ID, or a plugin name to cover
 # all of it.
@@ -187,20 +187,20 @@ never: []
 #  - vault.snapshot
 
 # Connections no grant may name. The blunt instrument for "not production".
-neverProfile: []
+never-profile: []
 #  - production
 
 # Targets that may only be granted against one named record, never wholesale.
 # ` + "`rta grant allow kv.get`" + ` covers the entire store; listing it here makes
 # that form an error and only ` + "`rta grant allow kv.get one-key`" + ` is accepted.
-requireScope: []
+require-scope: []
 #  - kv.get
 #  - s3.object.get
 
 # Roles ` + "`rta grant issue <role>`" + ` issues whole, under one passphrase:
 # grant lines in the grammar ` + "`rta grant allow`" + ` takes, and how long the
 # grants last (12h unless said). Every line is capped by the ceiling above —
-# under the 1h maxTTL up there, an 8h role stands for one hour, and
+# under the 1h max-ttl up there, an 8h role stands for one hour, and
 # ` + "`rta grant roles`" + ` says so before you issue it.
 # roles:
 #   dev:
@@ -222,7 +222,7 @@ func policyInitCommand(opts *globalOpts) *cobra.Command {
 			" active, so tightening it later is an edit rather than a trip to the documentation.\n\n" +
 			"Commit it. It needs no seal — it can only subtract.\n\n" +
 			"--force replaces a file that is there, and never with a looser ceiling than the one it" +
-			" holds: a file whose cap, never, neverProfile or requireScope the starter would loosen is" +
+			" holds: a file whose cap, never, never-profile or require-scope the starter would loosen is" +
 			" refused, and loosening one on purpose is an edit of the file. Otherwise it shows what the" +
 			" file holds and asks; with no terminal to ask at, --yes answers for a script.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -263,7 +263,7 @@ func policyInitCommand(opts *globalOpts) *cobra.Command {
 // **A ceiling is replaced by one no looser than it, or not at all.** The
 // starter bounds one axis and leaves the other three empty, and the people
 // who run `--force` are the ones with a ceiling worth keeping: a team that
-// wrote maxTTL 5m and `never: [pg.dump]` and typed the flag because the
+// wrote max-ttl 5m and `never: [pg.dump]` and typed the flag because the
 // refusal offered it lost both, with no question and no word. So the starter
 // is compared with what stands first (policy.Loosens), and a file it would
 // loosen is refused whoever answers, a person at a terminal and a script
@@ -321,7 +321,7 @@ func confirmReplacement(cmd *cobra.Command, opts *globalOpts, path string) error
 	w := cmd.ErrOrStderr()
 	_ = cli.Render(w, view.KeyValue{Pairs: standingPairs(path, standing, unreadable)},
 		renderOptions(cmd, cli.Pretty, opts.noColor))
-	if !askYes(cmd.Context(), w, "Replace it with the starter (maxTTL "+starterTTL+", the other axes empty)? [y/N] ") {
+	if !askYes(cmd.Context(), w, "Replace it with the starter (max-ttl "+starterTTL+", the other axes empty)? [y/N] ") {
 		return declinedConfirmation(w)
 	}
 	return nil
@@ -384,8 +384,8 @@ func policyInitAnswer(path string, replaced, dryRun bool) view.KeyValue {
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: label, Value: path},
-		{Key: "ceiling", Value: "maxTTL " + starterTTL + " — no grant made under this directory " +
-			"stands longer, whatever it asks for; never, neverProfile and requireScope are named and empty"},
+		{Key: "ceiling", Value: "max-ttl " + starterTTL + " — no grant made under this directory " +
+			"stands longer, whatever it asks for; never, never-profile and require-scope are named and empty"},
 		{Key: "next", Value: next},
 	}}
 }
@@ -469,7 +469,7 @@ func policyRequireAnswer(path string, on, changed, dryRun bool) view.KeyValue {
 		pairs = append(pairs, view.Pair{Key: "wrote", Value: path})
 	}
 	// yes or no, as policy show's row of the same name reads.
-	pairs = append(pairs, view.Pair{Key: "requireRepoPolicy", Value: yesNo(on)})
+	pairs = append(pairs, view.Pair{Key: "require-repo-policy", Value: yesNo(on)})
 	next := "`rta policy show` says what ceiling a directory with no " + policy.RepoFile + " runs under"
 	switch {
 	case dryRun && changed:
@@ -508,10 +508,10 @@ func repoPolicyHere() (here, next string) {
 func setRequireRepo(body string, want bool) (string, bool) {
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
-		if !strings.HasPrefix(strings.TrimSpace(line), "requireRepoPolicy:") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "require-repo-policy:") {
 			continue
 		}
-		desired := fmt.Sprintf("requireRepoPolicy: %t", want)
+		desired := fmt.Sprintf("require-repo-policy: %t", want)
 		if strings.TrimSpace(line) == desired {
 			return body, false
 		}
@@ -529,5 +529,5 @@ func setRequireRepo(body string, want bool) (string, bool) {
 	} else {
 		trimmed = "# rta's own policy file. Unlike a repository's, this one is yours alone.\n"
 	}
-	return trimmed + "requireRepoPolicy: true\n", true
+	return trimmed + "require-repo-policy: true\n", true
 }

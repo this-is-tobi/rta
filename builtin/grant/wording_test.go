@@ -61,7 +61,7 @@ func TestTheSuppressedNoteNamesThePolicyOnlyWhenItKnowsOne(t *testing.T) {
 	if got := suppressedNote(plugin.SurfaceCLI, 1); !strings.Contains(got, "suppressed by your team's policy\n") {
 		t.Errorf("with no policy file the note reads %q, want it to end at the word policy", got)
 	}
-	withPolicy(t, "maxTTL: 1h\n")
+	withPolicy(t, "max-ttl: 1h\n")
 	if got := suppressedNote(plugin.SurfaceCLI, 1); !strings.Contains(got, "your team's policy — ") ||
 		!strings.Contains(got, policy.RepoFile+"\n") {
 		t.Errorf("with a policy file the note reads %q, want the file named after the dash", got)

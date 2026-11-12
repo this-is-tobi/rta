@@ -166,7 +166,7 @@ dashboard:
 
 ## Lengths of time
 
-A length of time is written one way wherever it is written: a number and a unit, `30s`, `5m`, `2h`, `1d`, `1w`, or several together, `1h30m` and `1d12h`. The same words work in a profile's `ttl:`, a role's `ttl:` and a policy's `maxTTL:`, in a tile's, a section's or the screen's `refresh:`, in `--ttl` of a grant or a lock, in `--for` of `rta use`, in `--since` of a log, in `rta time at` (`in 2d`), and in a plugin's duration inputs. A day is twenty-four hours and a week seven, not calendar units. A bare number is refused everywhere, since `30` is the one spelling every reader has a different default for. What a place then allows is its own bound and is said in its own words: a grant lasts a day at most, so `3d` is held to `1d`, and a tile waits a day at most.
+A length of time is written one way wherever it is written: a number and a unit, `30s`, `5m`, `2h`, `1d`, `1w`, or several together, `1h30m` and `1d12h`. The same words work in a profile's `ttl:`, a role's `ttl:` and a policy's `max-ttl:`, in a tile's, a section's or the screen's `refresh:`, in `--ttl` of a grant or a lock, in `--for` of `rta use`, in `--since` of a log, in `rta time at` (`in 2d`), and in a plugin's duration inputs. A day is twenty-four hours and a week seven, not calendar units. A bare number is refused everywhere, since `30` is the one spelling every reader has a different default for. What a place then allows is its own bound and is said in its own words: a grant lasts a day at most, so `3d` is held to `1d`, and a tile waits a day at most.
 
 ## A first config that is good
 

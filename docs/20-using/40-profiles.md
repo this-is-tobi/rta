@@ -239,7 +239,7 @@ Profile matching is **exact in both directions**. A grant naming `staging` match
 A [team policy](../30-boundary/50-team-policy.md) can forbid a connection outright, which is the blunt instrument for "not production, ever":
 
 ```yaml
-neverProfile:
+never-profile:
   - production
 ```
 
