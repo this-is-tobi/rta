@@ -205,6 +205,14 @@ func TestTheSweepReportSeparatesMovedHeldBackAndFailed(t *testing.T) {
 			Problem: view.Errorf("plugin.install.index", "no index called gone is attached")},
 	}
 
+	// A dry run held nothing back and upgraded nothing, and its refusal said
+	// both as done.
+	if _, preview := upgradeAllView(outcomes, nil, true); preview == nil ||
+		preview.Message != "1 plugin would be held back (kube), 1 plugin failed (ghost)" ||
+		!strings.Contains(preview.Hint, "would be upgraded") || strings.Contains(preview.Hint, "was upgraded") {
+		t.Errorf("dry-run refusal = %v (%s), want it in the tense of a dry run", preview, preview.Hint)
+	}
+
 	v, verr := upgradeAllView(outcomes, nil, false)
 	if verr == nil {
 		t.Fatal("a sweep that held one back and failed another returned no error; nothing would exit non-zero")
