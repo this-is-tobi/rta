@@ -114,6 +114,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Before anything decides on colour (app.HonourNoColor).
+	app.HonourNoColor()
+
 	reg, err := app.NewRegistry()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "rta: broken built-in registration:", err)

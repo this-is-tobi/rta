@@ -354,6 +354,27 @@ func TestTheBadgeFollowsWhatTheTerminalCanShow(t *testing.T) {
 	}
 }
 
+// NO_COLOR turns colour off when it is "present and not an empty string
+// (regardless of its value)" (no-color.org), and the colour library reads it
+// as a Go boolean: NO_COLOR=yes, =0 and =false kept the colour on, in the
+// result, the help and the TUI alike.
+func TestNoColorSetToAnythingTurnsTheColourOff(t *testing.T) {
+	for _, v := range []string{"1", "yes", "0", "false", "please"} {
+		t.Setenv("NO_COLOR", v)
+		HonourNoColor()
+		var out bytes.Buffer
+		if _, plain := badgeStream(&out, append(os.Environ(), "TTY_FORCE=1", "TERM=xterm-256color")); !plain {
+			t.Errorf("NO_COLOR=%s left the colour on", v)
+		}
+	}
+	// Empty is the standard's "not set", and stays so.
+	t.Setenv("NO_COLOR", "")
+	HonourNoColor()
+	if got, set := os.LookupEnv("NO_COLOR"); !set || got != "" {
+		t.Errorf("an empty NO_COLOR became %q (set %v)", got, set)
+	}
+}
+
 // And through the root command, which is where NO_COLOR is read from.
 func TestTheRootCommandHonoursNoColorForTheBadge(t *testing.T) {
 	saved := stderrIsTerminal
