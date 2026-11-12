@@ -38,7 +38,7 @@ func TestOnATerminalTheRosterIsOneShortLinePerGrant(t *testing.T) {
 	defer compact.Pretend(true)()
 	setup(t)
 	issueRows(t,
-		core.Grant{Target: "kv.get", Scope: "db-password", Agent: "claude", MaxUses: 3, Note: "debugging"},
+		core.Grant{Target: "kv.get", Scope: "db-password", Agent: "claude", MaxUses: 3},
 		core.Grant{Target: "net.dns", Agent: "claude"})
 	tbl := listed(t, run(t, listH, nil))
 	if got, want := names(tbl), []string{"Capability", "Record", "Agent", "Expires In", "Budget Left"}; !slices.Equal(got, want) {
@@ -51,6 +51,30 @@ func TestOnATerminalTheRosterIsOneShortLinePerGrant(t *testing.T) {
 		if w := len(strings.Join(row, "  ")); w > 60 {
 			t.Errorf("row %d is %d cells wide: %q", i, w, row)
 		}
+	}
+}
+
+// **The reason somebody wrote for a grant is on the roster.** `--note` says the
+// roster shows it, and on a terminal it showed nowhere: the compact roster
+// dropped the column whole, so the why behind each grant was in -o json and
+// --detail alone. It is there once a grant has one, and is the column a narrow
+// screen gives up first.
+func TestTheCompactRosterShowsANoteOnceAGrantHasOne(t *testing.T) {
+	defer compact.Pretend(true)()
+	setup(t)
+	issueRows(t,
+		core.Grant{Target: "kv.get", Scope: "db-password", Agent: "claude", Note: "deploy check"},
+		core.Grant{Target: "net.dns", Agent: "claude"})
+	tbl := listed(t, run(t, listH, nil))
+	at := slices.Index(names(tbl), "Note")
+	if at < 0 {
+		t.Fatalf("a grant with a note and no Note column: %v", names(tbl))
+	}
+	if tbl.Rows[0][at] != "deploy check" || tbl.Rows[1][at] != "" {
+		t.Errorf("notes = %q, %q", tbl.Rows[0][at], tbl.Rows[1][at])
+	}
+	if tbl.Columns[at].Priority == 0 {
+		t.Error("the note is never given up on a narrow screen; it goes before the grant's own columns")
 	}
 }
 
