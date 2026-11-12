@@ -382,6 +382,22 @@ func dueCell(due *time.Time, done bool, now time.Time) string {
 	return grade + " · " + due.Format(layout)
 }
 
+// dueSaid is the day a --due was read as, said back by the receipt that set
+// it, and "" when none was set. --due takes "10-20" and "friday" as well as a
+// full date, and each was resolved to a day the person did not see until the
+// list: 10-20 typed in November is next year's, and the receipt said only
+// "added note 4". The list's layout (dueCell), with the weekday.
+func dueSaid(due *time.Time, now time.Time) string {
+	if due == nil {
+		return ""
+	}
+	layout := "Mon Jan 2"
+	if due.Year() != now.Year() {
+		layout = "Mon Jan 2 2006"
+	}
+	return " — due " + due.Format(layout)
+}
+
 // listOrder puts what has a deadline on top, soonest first, and leaves the
 // rest in the order it was written.
 //
@@ -702,14 +718,14 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 		Todo: req.Bool("todo") || due != nil,
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would add note %d: %s", item.ID, title)}, nil
+		return view.Text{Body: fmt.Sprintf("would add note %d: %s%s", item.ID, title, dueSaid(due, item.Created))}, nil
 	}
 	s.Items = append(s.Items, item)
 	s.NextID++
 	if err := save(s); err != nil {
 		return nil, err
 	}
-	return view.Text{Body: fmt.Sprintf("added note %d: %s", item.ID, title)}, nil
+	return view.Text{Body: fmt.Sprintf("added note %d: %s%s", item.ID, title, dueSaid(due, item.Created))}, nil
 }
 
 // prefillEdit hands interactive surfaces the note's current content, so the
@@ -820,7 +836,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 			WithInput("clear")
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would update note %d: %s", id, s.Items[i].Title)}, nil
+		return view.Text{Body: fmt.Sprintf("would update note %d: %s%s", id, s.Items[i].Title, dueSaid(due, time.Now()))}, nil
 	}
 	if title != "" {
 		s.Items[i].Title = title
@@ -850,7 +866,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	if err := save(s); err != nil {
 		return nil, err
 	}
-	return view.Text{Body: fmt.Sprintf("updated note %d: %s", id, s.Items[i].Title)}, nil
+	return view.Text{Body: fmt.Sprintf("updated note %d: %s%s", id, s.Items[i].Title, dueSaid(due, time.Now()))}, nil
 }
 
 // clearedAndSet names the first of the fields to empty (emptied, as `clear`

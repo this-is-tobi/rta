@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -34,6 +35,31 @@ func TestDueCellNamesTheDay(t *testing.T) {
 		if got := dueCell(tc.due, tc.done, now); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// **The day a --due was read as is said back.** "10-20" typed in November is
+// next year's, and the receipt said only "added note 4": the person learned
+// the day from the list. Adding, editing and their dry runs name it.
+func TestADueDateIsSaidBackAsTheDayItWasReadAs(t *testing.T) {
+	setup(t)
+	const want = " — due Tue Jan 15 2030"
+	for _, call := range []struct {
+		h      func(context.Context, plugin.Request) (view.View, error)
+		values map[string]any
+		dryRun bool
+	}{
+		{runAdd, map[string]any{"title": "renew the domain", "due": "2030-01-15"}, true},
+		{runAdd, map[string]any{"title": "renew the domain", "due": "2030-01-15"}, false},
+		{runEdit, map[string]any{"id": 1, "due": "2030-01-15"}, true},
+		{runEdit, map[string]any{"id": 1, "due": "2030-01-15"}, false},
+	} {
+		if got := text(t, call.h, call.values, call.dryRun); !strings.HasSuffix(got, want) {
+			t.Errorf("%v (dry run %v) answered %q, want it to end %q", call.values, call.dryRun, got, want)
+		}
+	}
+	if got := text(t, runEdit, map[string]any{"id": 1, "title": "renew it"}, false); strings.Contains(got, "due") {
+		t.Errorf("an edit that set no date answered %q", got)
 	}
 }
 
