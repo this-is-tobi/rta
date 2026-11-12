@@ -447,7 +447,8 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 // exists for local testing (this package's own tests included), and it
 // covers only the discovery/JWKS fetch: a plaintext round trip either of
 // those took could be tampered with in transit, up to and including handing
-// back a signing key the attacker controls.
+// back a signing key the attacker controls. And so must everything discovery
+// leads to, which checking the issuer alone did not cover (secureFetch).
 //
 // Discovery is bounded by oidcDiscoveryTimeout rather than running on ctx
 // alone: ctx here is the command's own context, cancelled only by
@@ -463,14 +464,33 @@ func OIDCVerifier(ctx context.Context, issuer, audience string, subjects []strin
 			return nil, errors.New("oidc: --oidc-subject cannot be empty")
 		}
 	}
-	if err := requireSecureIssuer(issuer); err != nil {
+	plain, err := requireSecureIssuer(issuer)
+	if err != nil {
 		return nil, err
 	}
+	fetch := secureFetch{next: oidcTransport(), plainLoopback: plain}
 	discoverCtx, cancel := context.WithTimeout(ctx, oidcDiscoveryTimeout)
 	defer cancel()
+	// The provider keeps the client it was discovered with, and every later
+	// fetch of the signing keys goes through it too (go-oidc's remote key set).
+	discoverCtx = oidc.ClientContext(discoverCtx, &http.Client{Transport: fetch})
 	provider, err := oidc.NewProvider(discoverCtx, issuer)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: discovery against %s: %w", issuer, err)
+	}
+	var discovered struct {
+		Keys string `json:"jwks_uri"`
+	}
+	if err := provider.Claims(&discovered); err != nil {
+		return nil, fmt.Errorf("oidc: discovery against %s: %w", issuer, err)
+	}
+	keys, err := url.Parse(discovered.Keys)
+	if err == nil {
+		err = fetch.allows(keys)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("oidc: %s names its signing keys at %q, and they are not fetched from there: %w — "+
+			"the identity provider's discovery document has to name an https address", issuer, discovered.Keys, err)
 	}
 	verify := provider.Verifier(&oidc.Config{ClientID: audience}).Verify
 	allowed := make(map[string]bool, len(subjects))
@@ -500,20 +520,70 @@ func OIDCVerifier(ctx context.Context, issuer, audience string, subjects []strin
 // comment for why this cannot simply be left to the caller's context.
 const oidcDiscoveryTimeout = 15 * time.Second
 
+// secureFetch is the transport discovery and every fetch of the signing keys
+// go through: it refuses any request that is not https, wherever its address
+// came from.
+//
+// **Because an https issuer was the only address anything checked.** The
+// discovery document names where the keys are (jwks_uri), and go-oidc fetched
+// them from there over plain http as readily as over https, and followed a
+// redirect from the issuer's https discovery address to a plain one: a key
+// swapped in transit on either signs any token `rta mcp serve --http` then
+// accepts. The one plain address allowed is a loopback one under an issuer
+// that is itself plain loopback, the local-testing exception
+// requireSecureIssuer makes; under an https issuer nothing is fetched in the
+// clear, loopback included.
+//
+// A transport rather than a redirect policy, since the keys address is not a
+// redirect: every request either fetch makes, each hop of a redirect
+// included, passes through here.
+type secureFetch struct {
+	next          http.RoundTripper
+	plainLoopback bool
+}
+
+func (f secureFetch) RoundTrip(r *http.Request) (*http.Response, error) {
+	if err := f.allows(r.URL); err != nil {
+		if r.Body != nil {
+			_ = r.Body.Close()
+		}
+		return nil, err
+	}
+	return f.next.RoundTrip(r)
+}
+
+func (f secureFetch) allows(u *url.URL) error {
+	switch {
+	case u.Scheme == "https" && u.Host != "":
+		return nil
+	case u.Scheme == "http" && f.plainLoopback && isLoopbackHost(u.Hostname()):
+		return nil
+	}
+	return fmt.Errorf("%s://%s is not https, and discovery and signing keys are fetched only over https", u.Scheme, u.Host)
+}
+
+// oidcTransport is what secureFetch sends through: the default transport's
+// proxy and timeouts, as go-oidc's default client had. A test points it at a
+// server with a certificate of its own.
+var oidcTransport = func() http.RoundTripper {
+	return http.DefaultTransport.(*http.Transport).Clone()
+}
+
 // requireSecureIssuer refuses a plaintext issuer unless it names a loopback
-// address. See the issuer paragraph on OIDCVerifier's doc comment.
-func requireSecureIssuer(issuer string) error {
+// address, and says whether it is that exception. See the issuer paragraph on
+// OIDCVerifier's doc comment.
+func requireSecureIssuer(issuer string) (plainLoopback bool, err error) {
 	u, err := url.Parse(issuer)
 	if err != nil {
-		return fmt.Errorf("oidc: --oidc-issuer: %w", err)
+		return false, fmt.Errorf("oidc: --oidc-issuer: %w", err)
 	}
 	if u.Scheme == "https" {
-		return nil
+		return false, nil
 	}
 	if u.Scheme == "http" && isLoopbackHost(u.Hostname()) {
-		return nil
+		return true, nil
 	}
-	return fmt.Errorf("oidc: --oidc-issuer %q must be https — plain http is only accepted for a "+
+	return false, fmt.Errorf("oidc: --oidc-issuer %q must be https — plain http is only accepted for a "+
 		"loopback address, since discovery and JWKS are fetched from wherever it points", issuer)
 }
 

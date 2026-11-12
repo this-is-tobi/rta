@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -154,6 +155,77 @@ func newOIDCVerifier(t *testing.T, issuer string, subjects []string) auth.TokenV
 		t.Fatalf("OIDCVerifier setup: %v", err)
 	}
 	return v
+}
+
+// Discovery and the signing keys are fetched only over https once the issuer
+// is. The issuer was the one address anything checked: go-oidc fetched the
+// keys from wherever the discovery document named, plain http included, and
+// followed a redirect off the issuer's https address to a plain one, and a key
+// swapped in transit on either signs any token the server then accepts. The
+// plain loopback exception stays a loopback one.
+func TestOIDCNeverFetchesDiscoveryOrKeysInTheClear(t *testing.T) {
+	var plainHits atomic.Int32
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plainHits.Add(1)
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(plain.Close)
+	document := func(issuer, keys string) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer": issuer, "jwks_uri": keys,
+				"id_token_signing_alg_values_supported": []string{"RS256"},
+			})
+		}
+	}
+	for _, tc := range []struct {
+		name      string
+		tls       bool
+		discovery func(issuer string) http.HandlerFunc
+	}{
+		{"an https issuer naming its keys at a plain address", true, func(issuer string) http.HandlerFunc {
+			return document(issuer, plain.URL+"/jwks")
+		}},
+		{"an https issuer redirecting discovery to a plain address", true, func(string) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, plain.URL+"/.well-known/openid-configuration", http.StatusFound)
+			}
+		}},
+		{"a plain loopback issuer naming its keys at a plain address elsewhere", false, func(issuer string) http.HandlerFunc {
+			return document(issuer, "http://keys.example.invalid/jwks")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var issuer string
+			mux := http.NewServeMux()
+			mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+				tc.discovery(issuer)(w, r)
+			})
+			idp := httptest.NewUnstartedServer(mux)
+			if tc.tls {
+				idp.StartTLS()
+			} else {
+				idp.Start()
+			}
+			t.Cleanup(idp.Close)
+			issuer = idp.URL
+			saved := oidcTransport
+			oidcTransport = func() http.RoundTripper { return idp.Client().Transport }
+			t.Cleanup(func() { oidcTransport = saved })
+
+			_, err := OIDCVerifier(context.Background(), issuer, testAudience, []string{testSubject}, nil)
+			if err == nil {
+				t.Fatal("the server started, trusting signing keys it would fetch in the clear")
+			}
+			if !strings.Contains(err.Error(), "only over https") {
+				t.Errorf("err = %v, want it to say why", err)
+			}
+		})
+	}
+	if n := plainHits.Load(); n != 0 {
+		t.Errorf("%d requests went to the plain address", n)
+	}
 }
 
 func TestOIDCVerifierAcceptsAValidToken(t *testing.T) {
