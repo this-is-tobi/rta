@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // linked lays a binary out the way a package store does: the file at
@@ -141,6 +142,36 @@ func TestAStoreVersionIsTakenOnlyFromWhereTheLinkLeads(t *testing.T) {
 	}
 	if got := storeVersion(file, "tool"); got != "" {
 		t.Errorf("a binary that is no link read %q from its path", got)
+	}
+}
+
+// **A first install says when the shell will not find what it placed.** A
+// tool not yet on $PATH goes to ~/.local/bin, which macOS does not put on
+// $PATH: the install said it was done, the shell found no such command, and
+// the next pkg.tools said "not on $PATH" with nothing between to say why.
+func TestAFirstInstallSaysWhenItsDirectoryIsNotOnPath(t *testing.T) {
+	goos, arch := here(t)
+	c := servedRelease(t, "o", "tool", "tool-"+goos+"-"+arch, []byte("#!/bin/sh\necho new\n"))
+	install(t, &fake{bins: map[string]bool{}})
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	bin := filepath.Join(home, ".local", "bin")
+	dryRun := func() string {
+		t.Helper()
+		v, verr := installTool(context.Background(), plugin.SurfaceCLI, c, tool{Bin: "tool", Owner: "o", Repo: "tool"}, false, true)
+		if verr != nil {
+			t.Fatal(verr)
+		}
+		return v.(view.Text).Body
+	}
+
+	t.Setenv("PATH", "/usr/bin:/bin")
+	if body := dryRun(); !strings.Contains(body, bin+" is not on $PATH") {
+		t.Errorf("a first install into a directory off $PATH said:\n%s", body)
+	}
+	t.Setenv("PATH", "/usr/bin:"+bin+"/")
+	if body := dryRun(); strings.Contains(body, "not on $PATH") {
+		t.Errorf("a first install into a directory on $PATH said:\n%s", body)
 	}
 }
 
