@@ -56,7 +56,9 @@ func upgradeCapability() plugin.Capability {
 			"tools:` installs that binary's latest GitHub release in place — fetched, hashed, " +
 			"checked against the digest the release publishes, extracted, and swapped in " +
 			"atomically, the path plugin install walks. Only a .tar.gz or a bare binary " +
-			"is taken, and nothing is placed that is not a program this machine runs.\n\n" +
+			"is taken, and nothing is placed that is not a program this machine runs. " +
+			"A binary that is a link on $PATH, a krew plugin or a Homebrew formula, is " +
+			"refused: what made the link upgrades what it points at.\n\n" +
 			"rta never runs sudo. apt, dnf, apk and pacman need root: as root this runs " +
 			"them; otherwise it prints the exact command and refuses. A release that " +
 			"publishes no digest is refused unless `unverified` says you accept that.\n\n" +

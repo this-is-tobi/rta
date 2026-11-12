@@ -46,7 +46,11 @@ type fakeAnswer struct {
 
 func install(t *testing.T, f *fake) {
 	t.Helper()
-	oldRun, oldLook, oldUp, oldRoot := runCommand, lookPath, runUpgrade, isRoot
+	oldRun, oldLook, oldUp, oldRoot, oldDisk := runCommand, lookPath, runUpgrade, isRoot, versionOnDisk
+	// The paths the fake $PATH hands back name files on the machine running
+	// the test; nothing may read them there. A test of the readers on disk
+	// points lookPath at a directory of its own and puts this seam back.
+	versionOnDisk = func(string, string) string { return "" }
 	runCommand = func(_ context.Context, name string, args ...string) (string, string, error) {
 		key := strings.Join(append([]string{name}, args...), " ")
 		f.mu.Lock()
@@ -77,7 +81,9 @@ func install(t *testing.T, f *fake) {
 		return f.upgradeErr
 	}
 	isRoot = func() bool { return false }
-	t.Cleanup(func() { runCommand, lookPath, runUpgrade, isRoot = oldRun, oldLook, oldUp, oldRoot })
+	t.Cleanup(func() {
+		runCommand, lookPath, runUpgrade, isRoot, versionOnDisk = oldRun, oldLook, oldUp, oldRoot, oldDisk
+	})
 }
 
 // fakeExit builds an *exec.ExitError carrying the code, which is what run()

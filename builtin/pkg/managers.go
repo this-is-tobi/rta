@@ -58,21 +58,22 @@ func managersTable(ctx context.Context) view.Table {
 }
 
 // managerVersion asks the manager for its version and reads the number out of
-// whatever it prints. Every manager here answers `--version` except go, whose
+// what it prints. Every manager here answers `--version` except go, whose
 // spelling is `go version`; the outputs range from a bare "10.8.2" to
 // "Homebrew 4.3.10" to pacman's multi-line banner, and the version is the
-// first thing in the first line that looks like one, whatever the status —
-// installedVersion's reason.
+// first thing in the first line that looks like one. Only an exit of zero is
+// an answer, as for a listed tool's (askedVersion): a failure prints an
+// error, and a number in it is not the manager's version.
 func managerVersion(ctx context.Context, m manager) string {
 	argv := m.version
 	if argv == nil {
 		argv = []string{m.bin, "--version"}
 	}
-	st, verr := runStatus(ctx, argv[0], argv[1:]...)
+	out, verr := run(ctx, argv[0], argv[1:]...)
 	if verr != nil {
 		return "-"
 	}
-	return parseVersion(st.out)
+	return parseVersion(out)
 }
 
 var versionRE = regexp.MustCompile(`\d+\.\d+[0-9A-Za-z.\-+]*`)
