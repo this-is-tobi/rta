@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
@@ -225,16 +226,6 @@ func (g Grant) ArtifactNow(current string, known bool) ArtifactState {
 	return ArtifactCurrent
 }
 
-// ShortDigest is a digest as a listing shows it: its first twelve
-// characters, the prefix rta doctor prints for a plugin and a
-// `plugins.<ns>@<digest>` pin is compared against.
-func ShortDigest(digest string) string {
-	if len(digest) > 12 {
-		return digest[:12]
-	}
-	return digest
-}
-
 // RosterArtifact is a grant's Artifact cell: the short digest of the plugin
 // it was issued against, "built in" for one issued on a namespace the rta
 // binary answers for itself — it has no artifact apart from the rta the
@@ -244,7 +235,7 @@ func ShortDigest(digest string) string {
 func RosterArtifact(digest string, state ArtifactState) string {
 	shown := "built in"
 	if digest != "" {
-		shown = ShortDigest(digest)
+		shown = registry.ShortDigest(digest)
 	}
 	switch state {
 	case ArtifactReplaced:

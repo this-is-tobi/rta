@@ -31,6 +31,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	goplugin "github.com/hashicorp/go-plugin"
 
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -123,12 +124,7 @@ type Untrusted struct {
 }
 
 // Short is the digest as a person quotes it.
-func (u Untrusted) Short() string {
-	if len(u.Digest) > 12 {
-		return u.Digest[:12]
-	}
-	return u.Digest
-}
+func (u Untrusted) Short() string { return registry.ShortDigest(u.Digest) }
 
 // remember records a plugin that was found and not run.
 func (h *Host) remember(u Untrusted) {

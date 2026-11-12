@@ -11,6 +11,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/internal/registry"
 )
 
 // ManagedRun is where a plugin found anywhere but in a store is run from: a
@@ -130,7 +131,7 @@ func stage(id Identity) (string, error) {
 	}
 	if err == nil && hex.EncodeToString(h.Sum(nil)) != id.Digest {
 		err = fmt.Errorf("the plugin at %s changed on disk after it was trusted (%s → %s); restart rta so it is re-read",
-			id.Path, id.Short(), hex.EncodeToString(h.Sum(nil))[:12])
+			id.Path, id.Short(), registry.ShortDigest(hex.EncodeToString(h.Sum(nil))))
 	}
 	if err == nil {
 		err = os.Rename(tmp.Name(), exe)

@@ -1683,10 +1683,7 @@ func doctorManagedPlugins(add func(check, status, detail string)) {
 			"`rta plugin install`, `upgrade`, `remove` and `prune` refuse until it is fixed or removed")
 	}
 	for _, e := range plugindist.ReadLock() {
-		short := e.Digest
-		if len(short) > 12 {
-			short = short[:12]
-		}
+		short := registry.ShortDigest(e.Digest)
 		name, status := "managed "+e.Name, "ok"
 		detail := fmt.Sprintf("%s from index %q (%s)", e.Version, e.Index, short)
 		current, linked := plugindist.CurrentDigest(e.Name)
@@ -1733,10 +1730,7 @@ func doctorManagedPlugins(add func(check, status, detail string)) {
 // says so rather than suggesting a command.
 func doctorSystemPlugins(add func(check, status, detail string)) {
 	for _, e := range plugindist.ReadSystemLock() {
-		short := e.Digest
-		if len(short) > 12 {
-			short = short[:12]
-		}
+		short := registry.ShortDigest(e.Digest)
 		detail := fmt.Sprintf("%s from index %q (%s), installed by the image or the package",
 			e.Version, e.Index, short)
 		bin := filepath.Join(pluginhost.SystemBin(), pluginhost.BinaryName(e.Name))
