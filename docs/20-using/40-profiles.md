@@ -101,7 +101,7 @@ pg:
   secrets-from: homelab/databases
 ```
 
-Two segments, `context/namespace` — a service and a port belong in `kube:`, which also opens a forward. State one or the other: a coordinate already names the namespace its Secrets come from, so both together are refused rather than ranked. The namespace is always the connection's own and never a caller's, which is what keeps one connection's reference from becoming a general-purpose cluster reader — and because moving it changes *which credential authenticates*, a standing grant does not survive the edit.
+Two segments, `context/namespace` — a service and a port belong in `kube:`, which also opens a forward. `rta profile set <name> --plugin pg --secrets-from homelab/databases` writes it, and an empty `--secrets-from` removes it. State one or the other: a coordinate already names the namespace its Secrets come from, so both together are refused rather than ranked. The namespace is always the connection's own and never a caller's, which is what keeps one connection's reference from becoming a general-purpose cluster reader — and because moving it changes *which credential authenticates*, a standing grant does not survive the edit.
 
 You write the mapping; a plugin never does. A plugin that could name the entry it wanted could name *any* entry in your store. All it declares is that it has a secret input.
 

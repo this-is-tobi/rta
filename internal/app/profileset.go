@@ -120,6 +120,11 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 	cmd.Flags().Bool("unfence", false, "remove every `only:` fence from this plugin's entry")
 	cmd.Flags().StringArray("secret", nil,
 		"an `input=kv:entry` reference — never the value itself; repeat for more")
+	// The one connection key that had no writer: a profile reaching its
+	// service directly while its kube: Secrets live in a cluster was a file to
+	// edit by hand.
+	cmd.Flags().String("secrets-from", "", "which cluster `context/namespace` holds the Secrets a kube: --secret "+
+		"reads, when the service is reached directly and not through --kube; empty removes it")
 	cmd.Flags().String("kube", "", "reach it through a port-forward: `context/namespace/kind/name:port`")
 	cmd.Flags().String("ssh", "", "or through an ssh host: `[user@]host[:port]/desthost:destport`")
 	cmd.Flags().Bool("direct", false, "connect directly: remove any `kube:` or `ssh:` forward")
@@ -643,7 +648,7 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	reg *registry.Registry,
 ) (key string, receipts []view.Pair, verr *view.Error) {
 	stated := make([]string, 0, 5)
-	for _, f := range []string{"set", "only", "unfence", "secret", "kube", "ssh", "direct", "tunnel-tls"} {
+	for _, f := range []string{"set", "only", "unfence", "secret", "secrets-from", "kube", "ssh", "direct", "tunnel-tls"} {
 		if cmd.Flags().Changed(f) {
 			stated = append(stated, "--"+f)
 		}
@@ -731,6 +736,9 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	}
 	if cmd.Flags().Changed("tunnel-tls") {
 		conn.TunnelTLS, _ = cmd.Flags().GetBool("tunnel-tls")
+	}
+	if cmd.Flags().Changed("secrets-from") {
+		conn.SecretsFrom = strings.TrimSpace(mustString(cmd, "secrets-from"))
 	}
 
 	// What a restated block leaves behind. Stating the whole block is what

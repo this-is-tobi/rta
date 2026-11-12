@@ -776,6 +776,34 @@ func TestAddingAForwardFreesTheKeysItFills(t *testing.T) {
 	}
 }
 
+// --secrets-from writes where a directly reached connection's kube: Secrets
+// live, the one connection key that had no writer, an empty one removes it,
+// and beside a forward, which already names that namespace, it is refused
+// before anything is written.
+func TestProfileSetWritesWhereAConnectionsSecretsLive(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if _, errOut, err := run("profile", "set", "staging", "--plugin", "db", "--secrets-from", "homelab/databases"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if body := configOf(t); !strings.Contains(body, "secrets-from: homelab/databases") {
+		t.Fatalf("no secrets-from was written:\n%s", body)
+	}
+	if _, errOut, err := run("profile", "set", "staging", "--plugin", "db", "--secrets-from", ""); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if body := configOf(t); strings.Contains(body, "secrets-from") {
+		t.Errorf("an empty --secrets-from left it:\n%s", body)
+	}
+	_, errOut, err := run("profile", "set", "staging", "--plugin", "db", "--secrets-from", "homelab/databases",
+		"--kube", "prod/db/svc/postgres:5432")
+	if err == nil || !strings.Contains(errOut, "states both `kube:` and `secrets-from:`") {
+		t.Errorf("secrets-from beside a forward: %v %q", err, errOut)
+	}
+	if body := configOf(t); strings.Contains(body, "secrets-from") || strings.Contains(body, "kube:") {
+		t.Errorf("a refused run wrote the file:\n%s", body)
+	}
+}
+
 // The TLS switch is one of the keys a forward fills: it turns the mode off
 // itself, so a stated one is removed beside a new forward. The name the
 // certificate is checked for is not — it carries no endpoint role, and a plugin
