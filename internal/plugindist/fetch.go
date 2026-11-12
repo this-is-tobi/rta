@@ -38,11 +38,18 @@ const fetchTimeout = 5 * time.Minute
 // which net/http's default client followed as readily.
 var downloads = redirect.Client()
 
-// fetchArtifact downloads url into dst, hashing as it writes, and returns the
-// hex sha256 of what landed. The hash is computed by rta from the bytes —
+// Fetch downloads an https URL into dst, hashing as it writes, and returns
+// the hex sha256 of what landed. The hash is computed by rta from the bytes —
 // never trusted from anywhere — and the caller compares it against the
 // index's claim.
-func fetchArtifact(ctx context.Context, rawURL string, dst *os.File) (string, *view.Error) {
+//
+// Fetch, ExtractMember and DigestFile are exported for the pkg built-in,
+// whose release-asset installer runs them as plugin install does: a binary
+// somebody's tool installs into ~/.local/bin deserves the same
+// evidence-before-placement path as a plugin rta will launch. Their errors
+// are coded plugin.install.*, and a caller with its own vocabulary re-wraps
+// the message rather than the code.
+func Fetch(ctx context.Context, rawURL string, dst *os.File) (string, *view.Error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return "", view.Errorf("plugin.install.fetch", "%q does not parse as a URL", rawURL)
@@ -115,14 +122,14 @@ func fetchArtifact(ctx context.Context, rawURL string, dst *os.File) (string, *v
 	return sum, nil
 }
 
-// extractMember streams exactly one named member out of a .tar.gz into dst.
+// ExtractMember streams exactly one named member out of a .tar.gz into dst.
 //
 // One member and nothing else is most of the security posture: no directory
 // is ever created, no other file is ever written, no symlink or hardlink is
 // ever followed, so the tar-slip and bomb families have nothing to grab. The
 // member must be a regular file, and the size cap applies to the decompressed
 // stream because gzip is the amplifier in every archive bomb.
-func extractMember(archive io.Reader, member string, dst io.Writer) (int64, *view.Error) {
+func ExtractMember(archive io.Reader, member string, dst io.Writer) (int64, *view.Error) {
 	gz, err := gzip.NewReader(archive)
 	if err != nil {
 		return 0, view.Errorf("plugin.install.archive", "not a gzip archive: %v", err)
@@ -161,9 +168,10 @@ func extractMember(archive io.Reader, member string, dst io.Writer) (int64, *vie
 	}
 }
 
-// digestFile is rta's own hash of a file on disk — the value everything pins
-// to, in the same spelling pluginhost computes on every Open.
-func digestFile(path string) (string, *view.Error) {
+// DigestFile is rta's own hash of a file on disk — the value everything pins
+// to, in the same spelling pluginhost computes on every Open: 64 lowercase
+// hex characters, no prefix.
+func DigestFile(path string) (string, *view.Error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", view.Errorf("plugin.install.digest", "%v", err)

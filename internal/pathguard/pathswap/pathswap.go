@@ -13,7 +13,6 @@ package pathswap
 import (
 	"math/rand/v2"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -221,16 +220,4 @@ func Run(t testing.TB, before string, call func() Outcome, leaked func(Outcome) 
 	if calm == 0 || met == 0 {
 		t.Errorf("the swap never landed on both sides of a call (%d answered as before, %d met it)", calm, met)
 	}
-}
-
-// Outside makes a directory beside root, outside it, holding one file named
-// name with body in it, and returns the directory and the file.
-func Outside(t testing.TB, name, body string) (dir, file string) {
-	t.Helper()
-	dir = t.TempDir()
-	file = filepath.Join(dir, name)
-	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return dir, file
 }

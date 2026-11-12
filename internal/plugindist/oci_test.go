@@ -139,7 +139,7 @@ func TestAnArtifactIsPulledAnonymouslyThroughTheChallenge(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dst.Close()
-	sum, verr := fetchArtifact(context.Background(), reg.ref(), dst)
+	sum, verr := Fetch(context.Background(), reg.ref(), dst)
 	if verr != nil {
 		t.Fatalf("fetch: %v (hint: %s)", verr, verr.Hint)
 	}
@@ -167,7 +167,7 @@ func TestTheRegistryTokenDoesNotFollowTheBlobRedirect(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dst.Close()
-	if _, verr := fetchArtifact(context.Background(), reg.ref(), dst); verr != nil {
+	if _, verr := Fetch(context.Background(), reg.ref(), dst); verr != nil {
 		t.Fatalf("fetch: %v", verr)
 	}
 	if len(reg.authorized) == 0 {
@@ -195,7 +195,7 @@ func TestARegistryServingOtherBytesThanItDescribesIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dst.Close()
-	_, verr := fetchArtifact(context.Background(), reg.ref(), dst)
+	_, verr := Fetch(context.Background(), reg.ref(), dst)
 	if verr == nil || verr.Code != "plugin.install.oci" {
 		t.Fatalf("verr = %v, want a refusal naming the disagreement", verr)
 	}
@@ -227,7 +227,7 @@ func TestAPrivateArtifactSaysSoRatherThanSayingItIsMissing(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer dst.Close()
-			_, verr := fetchArtifact(context.Background(), reg.ref(), dst)
+			_, verr := Fetch(context.Background(), reg.ref(), dst)
 			if verr == nil {
 				t.Fatal("a refused read was reported as a success")
 			}
@@ -254,7 +254,7 @@ func TestAMultiPlatformIndexIsRefusedRatherThanDescendedInto(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dst.Close()
-	_, verr := fetchArtifact(context.Background(), reg.ref(), dst)
+	_, verr := Fetch(context.Background(), reg.ref(), dst)
 	if verr == nil || !strings.Contains(verr.Message, "multi-platform index") {
 		t.Fatalf("verr = %v, want the index refused by name", verr)
 	}

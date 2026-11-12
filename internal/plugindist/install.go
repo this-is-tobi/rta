@@ -137,7 +137,7 @@ func installFrom(ctx context.Context, listed Listed, dryRun bool,
 	if err != nil {
 		return Report{}, view.Errorf("plugin.install.place", "%v", err)
 	}
-	gotSHA, verr := fetchArtifact(ctx, plat.URL, artifact)
+	gotSHA, verr := Fetch(ctx, plat.URL, artifact)
 	if cerr := artifact.Close(); verr == nil && cerr != nil {
 		verr = view.Errorf("plugin.install.fetch", "%v", cerr)
 	}
@@ -170,7 +170,7 @@ func installFrom(ctx context.Context, listed Listed, dryRun bool,
 			_ = archive.Close()
 			return Report{}, view.Errorf("plugin.install.place", "%v", err)
 		}
-		_, verr = extractMember(archive, plat.Bin, out)
+		_, verr = ExtractMember(archive, plat.Bin, out)
 		_ = archive.Close()
 		if cerr := out.Close(); verr == nil && cerr != nil {
 			verr = view.Errorf("plugin.install.place", "%v", cerr)
@@ -187,7 +187,7 @@ func installFrom(ctx context.Context, listed Listed, dryRun bool,
 		}
 	}
 
-	digest, verr := digestFile(staged)
+	digest, verr := DigestFile(staged)
 	if verr != nil {
 		return Report{}, verr
 	}
@@ -734,7 +734,7 @@ func namesLocalFile(rawURL string) bool {
 // case, here, where the index is known.
 //
 // What it stops: an index cloned from anywhere can name
-// file:///home/you/.ssh/id_ed25519 as an artifact, and fetchArtifact opens
+// file:///home/you/.ssh/id_ed25519 as an artifact, and Fetch opens
 // whatever absolute path a manifest gives it, in rta's own unconfined process
 // — while pluginhost's denyset refuses a *plugin* those exact paths. Nothing
 // leaves the machine: the checksum gate returns before anything is launched,
