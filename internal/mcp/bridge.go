@@ -9,6 +9,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -292,8 +293,27 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 			}
 		}()
 		res, err = call(ctx, c, opts, reg, req, &rec)
+		if rec.Outcome == agentlog.Failed && cancelledByClient(ctx, opts) {
+			// The client's own cancel, said as one. The work stopped because
+			// the context it ran under was cancelled, and the capability said
+			// so in its own words — `fs.hash.read: context canceled` — which
+			// the record kept as the capability failing to read its file. A
+			// call the client abandons while parked is recorded apart
+			// already (core.consent.abandoned); one it cancels while running
+			// is now too. The answer goes to a client that has stopped
+			// listening, and says the same.
+			verr := view.Errorf("core.mcp.cancelled", "the client cancelled the call while it ran")
+			failedBy(&rec, verr)
+			res, err = errResult(verr), nil
+		}
 		return res, err
 	}
+}
+
+// cancelledByClient reports whether ctx ended because the client cancelled the
+// call, and not because the server is shutting down, which cancels it too.
+func cancelledByClient(ctx context.Context, opts Options) bool {
+	return errors.Is(ctx.Err(), context.Canceled) && (opts.Shutdown == nil || opts.Shutdown.Err() == nil)
 }
 
 // call is the handler's body, with rec filled in as it goes so that the one
