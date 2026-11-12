@@ -18,6 +18,7 @@ import (
 	probing "github.com/prometheus-community/pro-bing"
 	gnet "github.com/shirou/gopsutil/v4/net"
 
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -1075,7 +1076,7 @@ func proxySummary() string {
 			continue
 		}
 		if name != "no_proxy" {
-			v = maskProxy(v)
+			v = textclean.Userinfo(v)
 		}
 		parts = append(parts, name+"="+v)
 	}
@@ -1083,79 +1084,6 @@ func proxySummary() string {
 		return "none"
 	}
 	return strings.Join(parts, " · ")
-}
-
-// maskProxy hides credentials embedded in a proxy URL. The host stays
-// visible wherever the value lets it — it is the useful part; the secret is
-// the userinfo.
-//
-// **Parsed by hand rather than by url.Parse, because the schemeless form is
-// a working configuration and url.Parse does not read it as one.** Given
-// `bob:s3cret@proxy.corp:3128` — with no scheme, which is what a great many
-// shells actually export — url.Parse takes `bob` for the scheme and the rest
-// for an opaque body, so u.User is nil, the guard above returned raw, and
-// this function printed the password in the clear directly underneath its
-// own published promise that proxy credentials are masked.
-//
-// It is not a form to dismiss as malformed: golang.org/x/net/http/httpproxy
-// re-parses a schemeless value with `http://` prepended, so the credential
-// works, and rta's own http plugin reaches through it via DefaultTransport.
-// A value that authenticates is a value that has to be masked.
-//
-// Scanning for the userinfo covers both spellings with one rule and no
-// dependency on a parser's opinion of what a scheme is.
-func maskProxy(raw string) string {
-	// A `://` is the end of a scheme only when what stands before it is one
-	// (hasScheme). The first one anywhere in the value was taken for it, so
-	// `bob:s3cret@proxy.corp:3128/x://y` — schemeless, and read by net/http
-	// as bob with s3cret, since the path is not its business — was split
-	// after the credential, and printed whole; and `bob:x://s3cret@…`, whose
-	// password holds the `://`, printed the username and the password's
-	// first letter as though they were a scheme.
-	prefix, rest := "", raw
-	if i := strings.Index(raw, "://"); i >= 0 && hasScheme(raw[:i]) {
-		prefix, rest = raw[:i+3], raw[i+3:]
-	}
-	// **The last `@`, not the first**, because that is where url.Parse splits
-	// — and url.Parse is what net/http reads a proxy variable with. A password
-	// holding a raw `@`, `bob:P@ssw0rd@proxy.corp:3128`, is a working
-	// configuration that authenticates as bob with P@ssw0rd; cut at the first
-	// `@`, this printed `***@ssw0rd@proxy.corp:3128`, most of the password,
-	// underneath net.overview's promise that proxy credentials are masked.
-	//
-	// **And the last in the whole value, not in its authority.** The scan
-	// stopped at the authority's end, the first `/`, `?` or `#`, so that an
-	// `@` in a path would not mask the host — and a raw `/`, `?` or `#` in a
-	// password ends the authority just as early. `bob:2024/Secret@proxy.corp`
-	// is, to url.Parse, a proxy at bob:2024 with a path and no userinfo, and
-	// the scan, finding no `@` in that authority, printed the password whole.
-	// `bob:s3/cr3t@…`, which url.Parse refuses for its port, was printed the
-	// same way. Nothing in such a value tells the password from a path, and a
-	// proxy's path, query and fragment are never read — by net/http or by the
-	// SOCKS dialer — so the rare value whose path holds an `@` loses its host
-	// to the mask, and a password never reaches the screen.
-	at := strings.LastIndex(rest, "@")
-	if at < 0 {
-		return raw
-	}
-	// The whole userinfo, username included: this function's stated rule is
-	// that the host is the useful part and the userinfo is the secret.
-	return prefix + "***@" + rest[at+1:]
-}
-
-// hasScheme reports whether s is a URL scheme: a letter, then letters,
-// digits, `+`, `-` or `.` (RFC 3986). No colon, and nothing that could be a
-// userinfo's or a path's.
-func hasScheme(s string) bool {
-	for i, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
-		case i > 0 && (r >= '0' && r <= '9' || r == '+' || r == '-' || r == '.'):
-		default:
-			return false
-		}
-	}
-	return s != ""
 }
 
 // throughputKey names the row for what it counts, which is not every interface

@@ -447,7 +447,7 @@ func dialValidated(ctx context.Context, dialer *stdnet.Dialer, network string, i
 
 // guardedTransport clones stdhttp.DefaultTransport — keeping its proxy
 // support (rta's http plugin reaching through HTTP(S)_PROXY via
-// DefaultTransport is documented behavior; see builtin/net's maskProxy) and
+// DefaultTransport is documented behavior; see textclean.Userinfo) and
 // its connection pooling — and swaps in dialGuarded as the one thing that
 // has to change.
 //

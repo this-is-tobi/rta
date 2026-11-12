@@ -1,6 +1,9 @@
-package net
+package textclean
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // net.overview publishes "Proxy credentials are masked" in its own Description.
 // The first version leaned on url.Parse, which does not read the schemeless
@@ -30,17 +33,21 @@ func TestProxyCredentialsAreMaskedInEveryFormThatWorks(t *testing.T) {
 		// reads this as bob with s3cret, and taking the first `://` for the
 		// scheme's split the value after the credential.
 		{"schemeless, with :// in the path", "bob:s3cret@proxy.corp:3128/x://y", "s3cret"},
+		// url.Parse refuses these, and the URL parsers agents are written with
+		// percent-encode them and send the credential.
+		{"a caret and braces in the password", "https://bob:a^b{c|d}@proxy.corp:3128", "a^b"},
+		{"a space in the password", "https://bob:two words@proxy.corp:3128", "words"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := maskProxy(tc.in)
-			if contains(got, tc.wantGone) {
+			got := Userinfo(tc.in)
+			if strings.Contains(got, tc.wantGone) {
 				t.Fatalf("credential survived: %q -> %q", tc.in, got)
 			}
-			if !contains(got, "***") {
+			if !strings.Contains(got, Masked) {
 				t.Fatalf("nothing marks the value as masked: %q -> %q", tc.in, got)
 			}
 			// The host is the useful half and has to stay.
-			if !contains(got, "proxy.corp") {
+			if !strings.Contains(got, "proxy.corp") {
 				t.Fatalf("the host was masked too: %q -> %q", tc.in, got)
 			}
 		})
@@ -74,11 +81,13 @@ func TestAPasswordHoldingARawSlashQuestionMarkOrHashIsMasked(t *testing.T) {
 		{"a raw @ and a slash in the password", "http://bob:s3@c:r/3t@proxy.corp:3128"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := maskProxy(tc.in)
-			if contains(got, "bob") || contains(got, "s3") || contains(got, "cr3t") || contains(got, "3t@") {
-				t.Fatalf("credential survived: %q -> %q", tc.in, got)
+			got := Userinfo(tc.in)
+			for _, gone := range []string{"bob", "s3", "cr3t", "3t@"} {
+				if strings.Contains(got, gone) {
+					t.Fatalf("credential survived: %q -> %q", tc.in, got)
+				}
 			}
-			if !contains(got, "***@proxy.corp:3128") {
+			if !strings.Contains(got, Masked+"@proxy.corp:3128") {
 				t.Fatalf("not masked up to the host: %q -> %q", tc.in, got)
 			}
 		})
@@ -92,10 +101,18 @@ func TestAProxyWithNoCredentialIsLeftAlone(t *testing.T) {
 		"proxy.corp:3128",
 		"https://proxy.internal",
 		"socks5://127.0.0.1:1080",
+		"not a url at all",
 	} {
-		if got := maskProxy(in); got != in {
+		if got := Userinfo(in); got != in {
 			t.Errorf("%q became %q", in, got)
 		}
+	}
+}
+
+// The scheme and the host as written, and the mask where the userinfo was.
+func TestTheUserinfoIsReplacedWholeAndTheRestKept(t *testing.T) {
+	if got, want := Userinfo("http://user:secret@proxy.corp:3128"), "http://***@proxy.corp:3128"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
@@ -114,21 +131,8 @@ func TestAnAtSignPastTheAuthorityIsMaskedUpTo(t *testing.T) {
 		"proxy.corp:3128/a://b@c":                   "***@c",
 		"http://bob:s3cr@tpass@proxy.corp:3128/a@b": "http://***@b",
 	} {
-		if got := maskProxy(in); got != want {
+		if got := Userinfo(in); got != want {
 			t.Errorf("%q became %q, want %q", in, got, want)
 		}
 	}
-}
-
-func contains(s, sub string) bool {
-	return len(sub) > 0 && len(s) >= len(sub) && indexOf(s, sub) >= 0
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }

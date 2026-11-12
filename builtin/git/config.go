@@ -986,7 +986,7 @@ func maskURLCredentials(s string) string {
 	// — no colon, so urlUserinfo's pattern never matches it, and the token
 	// reached an MCP agent in the clear. There is no way to tell that spelling
 	// apart from an ordinary bare username from the string alone, so — the
-	// same trade maskProxy already takes for a proxy URL — the whole userinfo
+	// same trade textclean.Userinfo takes for a proxy URL — the whole userinfo
 	// is masked rather than guessed at: `https://alice@github.com/...` shows
 	// a masked username too. Runs after urlUserinfo on purpose, over its
 	// output: anything that pass already replaced now carries the colon this
