@@ -874,21 +874,40 @@ func TestTLSWithoutAForwardIsRefused(t *testing.T) {
 
 // Stated beside a forward in the same run, it is written as an ordinary peer
 // of `kube:` — the CLI's half of what internal/profile.endpointValues then
-// acts on.
+// acts on — for a plugin that takes a URL, the one input it fills. For one
+// that takes an address it would change nothing, and is refused.
 func TestAddingATLSForwardWritesIt(t *testing.T) {
-	_, _, err := runWith(t, setRegistry(t), "",
-		"profile", "set", "staging", "--plugin", "db",
-		"--kube", "prod/db/svc/postgres:5432", "--tunnel-tls")
+	reg := setRegistry(t)
+	if err := reg.Register(plugin.Plugin{
+		Name: "web", Summary: "web plugin",
+		Capabilities: []plugin.Capability{{
+			ID: "web.status", Summary: "status", Safety: plugin.Read,
+			Inputs: []plugin.Field{{Name: "url", Type: plugin.String, Config: "url", Local: true,
+				Endpoint: plugin.EndpointURL, Help: "url"}},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "up"}, nil },
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := runWith(t, reg, "",
+		"profile", "set", "staging", "--plugin", "web",
+		"--kube", "prod/web/svc/api:443", "--tunnel-tls")
 	if err != nil {
-		t.Fatalf("kube: with tunnelTLS: true was refused: %v", err)
+		t.Fatalf("kube: with tunnel-tls: true was refused: %v", err)
 	}
 	body := configOf(t)
-	if !strings.Contains(body, "tunnelTLS: true") {
-		t.Errorf("tunnelTLS: true was not written:\n%s", body)
+	if !strings.Contains(body, "tunnel-tls: true") {
+		t.Errorf("tunnel-tls: true was not written:\n%s", body)
+	}
+	_, errOut, err := runWith(t, reg, body,
+		"profile", "set", "staging", "--plugin", "db",
+		"--kube", "prod/db/svc/postgres:5432", "--tunnel-tls")
+	if err == nil || !strings.Contains(errOut, "db takes no URL") {
+		t.Fatalf("tunnel-tls for a plugin that takes no URL: %v, %q", err, errOut)
 	}
 }
 
-// `--direct` removes the forward `tunnelTLS: true` describes, so it has to
+// `--direct` removes the forward `tunnel-tls: true` describes, so it has to
 // remove the statement too — left behind, it is not a stale value sitting
 // quietly, it is a connection CheckConnection now refuses to resolve at
 // all, over a flag that never mentioned it.
@@ -898,7 +917,7 @@ func TestDirectClearsAStoredTLSStatement(t *testing.T) {
     plugins:
       db:
         kube: prod/db/svc/postgres:5432
-        tunnelTLS: true
+        tunnel-tls: true
 `
 	_, _, err := runWith(t, setRegistry(t), before,
 		"profile", "set", "staging", "--plugin", "db", "--direct")
@@ -906,8 +925,8 @@ func TestDirectClearsAStoredTLSStatement(t *testing.T) {
 		t.Fatalf("--direct was refused: %v", err)
 	}
 	body := configOf(t)
-	if strings.Contains(body, "tunnelTLS: true") {
-		t.Errorf("tunnelTLS: true survived --direct, which just removed the forward it describes:\n%s", body)
+	if strings.Contains(body, "tunnel-tls: true") {
+		t.Errorf("tunnel-tls: true survived --direct, which just removed the forward it describes:\n%s", body)
 	}
 }
 

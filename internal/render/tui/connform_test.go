@@ -364,7 +364,7 @@ func TestSavingWithTLSOnAndACoordinateWritesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !cfg.Profiles["staging"].Plugins["db"].TunnelTLS {
-		t.Errorf("tunnelTLS: true was not written, flash: %q", nm.flash)
+		t.Errorf("tunnel-tls: true was not written, flash: %q", nm.flash)
 	}
 }
 
@@ -395,9 +395,9 @@ func TestSavingRepairsATLSToggleLeftOnWithNoCoordinate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.Profiles["staging"].Plugins["db"].TunnelTLS {
-		t.Error("tunnelTLS: true survived clearing the coordinate it describes")
+		t.Error("tunnel-tls: true survived clearing the coordinate it describes")
 	}
-	if !strings.Contains(nm.flash, "tunnelTLS") {
+	if !strings.Contains(nm.flash, "tunnel-tls") {
 		t.Errorf("the repair has no receipt: %q", nm.flash)
 	}
 }
