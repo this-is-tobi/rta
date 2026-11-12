@@ -59,6 +59,17 @@ func tlsServer(t *testing.T, headers map[string]string) *httptest.Server {
 	return srv
 }
 
+// The audit's transport is the default one with the inspection TLS settings,
+// not a bare one: a bare transport has no proxy, so an audit behind
+// HTTPS_PROXY reached nothing, and no handshake timeout short of the call's.
+func TestTheAuditGoesThroughTheProxyTheEnvironmentNames(t *testing.T) {
+	tr := inspectionTransport()
+	if tr.Proxy == nil || tr.TLSHandshakeTimeout == 0 || tr.TLSClientConfig == nil {
+		t.Errorf("transport: proxy %v, handshake timeout %v, tls %v; want the default transport's with inspection TLS",
+			tr.Proxy != nil, tr.TLSHandshakeTimeout, tr.TLSClientConfig != nil)
+	}
+}
+
 func TestAuditGradesHardenedHost(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		h := w.Header()

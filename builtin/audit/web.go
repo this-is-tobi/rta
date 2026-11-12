@@ -164,9 +164,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 		// host would spend the operator's authorization somewhere they never
 		// named — see followSameHost.
 		CheckRedirect: followSameHost(u),
-		Transport: &stdhttp.Transport{
-			TLSClientConfig: auditTLSConfig(),
-		},
+		Transport:     inspectionTransport(),
 	}
 	httpReq, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, target, nil)
 	if err != nil {
@@ -215,6 +213,19 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 // while the client held the host to TLS 1.2. Nothing crosses this connection
 // but a GET, and its body is never read.
 func auditTLSConfig() *tls.Config { return x509check.InspectionTLS("") }
+
+// inspectionTransport is the default transport with the inspection TLS
+// settings in place of its own, not a bare http.Transport: that one has no
+// proxy, so an audit run behind HTTPS_PROXY could reach nothing the proxy is
+// there to reach, and no dial or handshake timeout short of the whole call's.
+// Through a proxy the TLS is still the host's own, end to end, so what the
+// report says of it is unchanged.
+func inspectionTransport() *stdhttp.Transport {
+	t := stdhttp.DefaultTransport.(*stdhttp.Transport).Clone()
+	t.Proxy = stdhttp.ProxyFromEnvironment
+	t.TLSClientConfig = auditTLSConfig()
+	return t
+}
 
 // detailedWeb is the full-page report: the same findings, grouped into the
 // areas a hardening pass actually works through one at a time, plus the
