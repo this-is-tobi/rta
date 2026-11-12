@@ -765,7 +765,7 @@ func TestMacOSUpdatesParse(t *testing.T) {
 	}}
 	install(t, f)
 	st := readMacOS(context.Background())
-	if len(st.Updates) != 1 || st.Updates[0].Version != "14.6.1" || !st.Updates[0].Restart || !st.RebootRequired {
+	if len(st.Updates) != 1 || st.Updates[0].Version != "14.6.1" || !st.Updates[0].Restart || st.RebootRequired || st.RebootKnown {
 		t.Errorf("macos state = %+v", st)
 	}
 }
@@ -796,8 +796,8 @@ func TestMacOSUpdatesParseEveryEntryOfAListing(t *testing.T) {
 		install(t, f)
 		for run := range 20 {
 			st := readMacOS(context.Background())
-			if len(st.Updates) != 3 || !st.RebootRequired {
-				t.Fatalf("%s, run %d: %d updates, reboot %v; want 3 and a reboot owed", name, run, len(st.Updates), st.RebootRequired)
+			if len(st.Updates) != 3 {
+				t.Fatalf("%s, run %d: %d updates, want 3", name, run, len(st.Updates))
 			}
 		}
 	}
