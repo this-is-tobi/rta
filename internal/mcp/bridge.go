@@ -35,6 +35,24 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// statelessRevision is the first MCP protocol revision without the initialize
+// handshake: a client calls server/discover and sends its info on every
+// request instead.
+const statelessRevision = "2026-07-28"
+
+// handshakeRevisions are the protocol revisions the SDK speaks that open with
+// the handshake, the ones NewServer offers. Revisions are dates, so they
+// order as strings.
+func handshakeRevisions() []string {
+	var out []string
+	for _, v := range sdk.SupportedProtocolVersions() {
+		if v < statelessRevision {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // NewServer builds an MCP server exposing the registry's capabilities.
 func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server {
 	// The gate reads provenance from the catalogue it is gating, and this is
@@ -80,6 +98,17 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 		Version: version,
 	}, &sdk.ServerOptions{
 		Instructions: handshakeInstructions(offered, opts),
+		// The revisions that open with the handshake, and only those:
+		// everything that knows a client is there hangs off it
+		// (InitializedHandler, below), and 2026-07-28 has none. The SDK's
+		// own client starts with that revision, and called tools for a whole
+		// session while `agent overview` said nothing was connected, `grant
+		// revoke` dropped its still-connected warning and the TUI's lock form
+		// its agent. Offered these, a client falls back to the handshake.
+		// Adopting the stateless revision is recording the session from the
+		// first request that carries the client's info, on purpose, with
+		// TestADefaultClientIsRecordedAsConnected moved to it.
+		SupportedProtocolVersions: handshakeRevisions(),
 		// The handshake is the moment a client exists: before it there is
 		// a process nobody has spoken to, after it an agent that may call.
 		InitializedHandler: func(_ context.Context, req *sdk.InitializedRequest) {
