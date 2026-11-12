@@ -444,6 +444,15 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 	}
 	base, ok := m.actionSeed(a, tbl)
 	if !ok {
+		// A page with no row has nothing for a row's key to act on, and the
+		// press was dropped without a word: x on the grant page, which draws
+		// the grants in a section of their own, did nothing a person could
+		// see. It says so, and the footer, which leaves a row action off such
+		// a page, agrees with it.
+		if a.src == srcRow && len(tbl.Rows) == 0 {
+			m.refuse(fmt.Sprintf("%s %s acts on a highlighted row of a list, and this page has none — "+
+				"it is on the list's own screen", a.key, a.label))
+		}
 		return m, nil
 	}
 	if nm, cmd, answered := m.answer(a, base); answered {
