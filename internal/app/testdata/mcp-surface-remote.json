@@ -1,7 +1,7 @@
 [
   {
     "name": "audit_kube_eol",
-    "description": "Software past or near its end of life: the control plane, the kubelets, and every image's release\n\nGrades the control plane, every node's kubelet and each running image's release against endoflife.date as `eol_check` does: past end of life fails, within `warn-days` warns, else passes with the date. Images are matched by name through the catalogue's aliases, the tag read as a release. An untracked image, floating tag or tagless digest is a check that could not run, and `detail` lists each. A `namespace` grades only its images and the control plane.\n\nAlso called: kubernetes, outdated, unsupported, upgrade, stale, components.\n\nSafety: read.\n\nRequires a grant.",
+    "description": "Software past or near its end of life: the control plane, the kubelets, and every image's release\n\nGrades the control plane, every node's kubelet and each running image's release against endoflife.date as `eol_check` does: past end of life fails, within `warn-within` warns, else passes with the date. Images are matched by name through the catalogue's aliases, the tag read as a release. An untracked image, floating tag or tagless digest is a check that could not run, and `detail` lists each. A `namespace` grades only its images and the control plane.\n\nAlso called: kubernetes, outdated, unsupported, upgrade, stale, components.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -15,10 +15,11 @@
           "description": "audit one namespace instead of the whole cluster",
           "type": "string"
         },
-        "warn-days": {
-          "default": 90,
-          "description": "warn about a release within this many days of its end-of-life date",
-          "type": "integer"
+        "warn-within": {
+          "default": "90d",
+          "description": "warn about a release whose end of life is within this long, such as 90d (with its unit, e.g. 30s, 5m; from 1d to 730d)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "type": "object"
@@ -193,7 +194,7 @@
   },
   {
     "name": "cert_expiry",
-    "description": "Check certificate expiry for one or more hosts\n\nConnects to each host in `targets` over TLS and reports when its certificate ends: time left, date and a status (ok, WARN within `warn-days`, EXPIRED, INVALID before it begins), with TLS 1.0 and 1.1 flagged. The chain the host sends is graded and the certificate that ends first sets the row, named when it is not the leaf. An unreachable host is its row's ERROR and stops nothing. Rows are most urgent first, each naming its host. A target is never a file here, and each host needs a grant.\n\nSafety: read.\n\nRequires a grant.",
+    "description": "Check certificate expiry for one or more hosts\n\nConnects to each host in `targets` over TLS and reports when its certificate ends: time left, date and a status (ok, WARN within `warn-within`, EXPIRED, INVALID before it begins), with TLS 1.0 and 1.1 flagged. The chain the host sends is graded and the certificate that ends first sets the row, named when it is not the leaf. An unreachable host is its row's ERROR and stops nothing. Rows are most urgent first, each naming its host. A target is never a file here, and each host needs a grant.\n\nSafety: read.\n\nRequires a grant.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -212,10 +213,11 @@
           "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
           "type": "string"
         },
-        "warn-days": {
-          "default": 30,
-          "description": "flag certificates expiring within this many days",
-          "type": "integer"
+        "warn-within": {
+          "default": "30d",
+          "description": "flag a certificate that ends within this long, such as 30d (with its unit, e.g. 30s, 5m; from 1d to 730d)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -467,10 +469,11 @@
           "description": "product name or alias — see https://endoflife.date for the catalogue",
           "type": "string"
         },
-        "warn-days": {
-          "default": 90,
-          "description": "flag a cycle within this many days of its end-of-life date",
-          "type": "integer"
+        "warn-within": {
+          "default": "90d",
+          "description": "flag a cycle whose end of life is within this long, such as 90d (with its unit, e.g. 30s, 5m; from 1d to 730d)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -508,23 +511,24 @@
   },
   {
     "name": "eol_watch",
-    "description": "Grade every product and cycle on a configured watchlist at once\n\nRuns `eol_check` over a list of products, each optionally pinned to one release cycle or a range of them as product@cycle — postgresql@15, postgresql@13..16, nodejs, debian@bookworm. Write the list once as `plugins: eol: products:` in your config or a profile and it is what this grades from then on. A product the API does not know, or a cycle the product does not have, is one row saying so; the rest of the list is still graded.\n\nSafety: read.",
+    "description": "Grade every product and cycle on a configured watchlist at once\n\nRuns `eol_check` over a list of products, each optionally pinned to one release cycle or a range of them as product@cycle — postgresql@15, postgresql@13..16, nodejs, debian@bookworm. Write the list once as `plugins: eol: watch.products:` in your config or a profile and it is what this grades from then on. A product the API does not know, or a cycle the product does not have, is one row saying so; the rest of the list is still graded.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "products": {
-          "description": "product or product@cycle, repeatable — usually from `plugins: eol: products:` in your config",
+          "description": "product or product@cycle, repeatable — usually from `plugins: eol: watch.products:` in your config",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
-        "warn-days": {
-          "default": 90,
-          "description": "flag a cycle within this many days of its end-of-life date",
-          "type": "integer"
+        "warn-within": {
+          "default": "90d",
+          "description": "flag a cycle whose end of life is within this long, such as 90d (with its unit, e.g. 30s, 5m; from 1d to 730d)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "type": "object"

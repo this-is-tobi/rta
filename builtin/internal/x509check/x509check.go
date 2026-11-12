@@ -16,12 +16,12 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
-// DefaultWarnDays is how close to expiry a certificate has to be before
+// DefaultWarnWithin is how close to expiry a certificate has to be before
 // saying so is useful. Thirty days is the window a person can act inside: an
 // ACME client renews at 30 days out, so a certificate still inside the
 // window has had its automation run and visibly not work, which is the
 // finding worth reporting.
-const DefaultWarnDays = 30
+const DefaultWarnWithin = 30 * 24 * time.Hour
 
 // Chain reports why the presented chain does not validate for host, or ""
 // when it does. certs is leaf-first, the order a TLS peer chain arrives in.
@@ -63,10 +63,10 @@ func invalid(certs []*x509.Certificate, err error) string {
 	return reason
 }
 
-// Expiring reports whether notAfter falls inside the last warnDays of a
+// Expiring reports whether notAfter falls inside the last stretch within of a
 // certificate's life. An already-expired certificate is the louder finding
 // and both callers test for that first, so this reports true for one rather
 // than pretending it is a third state nobody asked about.
-func Expiring(notAfter time.Time, warnDays int) bool {
-	return time.Until(notAfter) < time.Duration(warnDays)*24*time.Hour
+func Expiring(notAfter time.Time, within time.Duration) bool {
+	return time.Until(notAfter) < within
 }

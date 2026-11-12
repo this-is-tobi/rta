@@ -162,8 +162,8 @@ func TestChain(t *testing.T) {
 func TestExpiryTable(t *testing.T) {
 	addr, _ := startTLS(t)
 	v, err := runExpiry(context.Background(), req(map[string]any{
-		"targets":   []string{addr, "closed.invalid:1"},
-		"warn-days": 30,
+		"targets":     []string{addr, "closed.invalid:1"},
+		"warn-within": "30d",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +190,7 @@ func TestExpiryTable(t *testing.T) {
 // that answered.
 func TestExpiryFailsAfterItsTableWhenAHostCouldNotBeChecked(t *testing.T) {
 	live, _ := startTLS(t)
-	values := map[string]any{"targets": []string{live, "127.0.0.1:1"}, "warn-days": 30, "timeout": "2s"}
+	values := map[string]any{"targets": []string{live, "127.0.0.1:1"}, "warn-within": "30d", "timeout": "2s"}
 
 	v, err := runExpiry(context.Background(), req(values).WithSurface(plugin.SurfaceCLI))
 	var answered *plugin.AnsweredError
@@ -216,14 +216,14 @@ func TestExpiryFailsAfterItsTableWhenAHostCouldNotBeChecked(t *testing.T) {
 		}
 	}
 
-	ok := map[string]any{"targets": []string{live}, "warn-days": 30, "timeout": "2s"}
+	ok := map[string]any{"targets": []string{live}, "warn-within": "30d", "timeout": "2s"}
 	if _, err := runExpiry(context.Background(), req(ok).WithSurface(plugin.SurfaceCLI)); err != nil {
 		t.Errorf("every host checked: err = %v, want none", err)
 	}
 	// A certificate that has ended is a finding the exit status leaves to the
 	// verdict column, as the recipe says: the host could be checked.
 	expired, key := chainOf(t, -day, 400*day, 400*day)
-	gone := map[string]any{"targets": []string{serveChain(t, expired, key)}, "warn-days": 30, "timeout": "2s"}
+	gone := map[string]any{"targets": []string{serveChain(t, expired, key)}, "warn-within": "30d", "timeout": "2s"}
 	if _, err := runExpiry(context.Background(), req(gone).WithSurface(plugin.SurfaceCLI)); err != nil {
 		t.Errorf("an expired certificate: err = %v, want none", err)
 	}
@@ -471,7 +471,7 @@ func TestExpiryChecksTargetsConcurrentlyAndNamesEveryRow(t *testing.T) {
 
 	start := time.Now()
 	v, err := runExpiry(context.Background(), req(map[string]any{
-		"targets": targets, "warn-days": 30, "timeout": "1s",
+		"targets": targets, "warn-within": "30d", "timeout": "1s",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -505,20 +505,20 @@ func TestExpiryChecksTargetsConcurrentlyAndNamesEveryRow(t *testing.T) {
 // The warn window was written down twice — 30 here, a private 15 inside the
 // audit's cert-expiry check — so the same certificate 20 days from expiry
 // came back "ok" from `rta audit web` and "WARN <30d" from `rta cert expiry`.
-func TestExpiryWarnDaysDefaultsToTheSharedWindow(t *testing.T) {
+func TestExpiryWarnWithinDefaultsToTheSharedWindow(t *testing.T) {
 	for _, c := range Plugin().Capabilities {
 		if c.ID != "cert.expiry" {
 			continue
 		}
 		for _, f := range c.Inputs {
-			if f.Name == "warn-days" {
-				if f.Default != x509check.DefaultWarnDays {
-					t.Errorf("warn-days default = %v, want the shared %d", f.Default, x509check.DefaultWarnDays)
+			if f.Name == "warn-within" {
+				if f.Default != plugin.FormatDuration(x509check.DefaultWarnWithin) || f.Default != "30d" {
+					t.Errorf("warn-within default = %v, want the shared %v, written 30d", f.Default, x509check.DefaultWarnWithin)
 				}
 				return
 			}
 		}
-		t.Fatal("cert.expiry declares no warn-days")
+		t.Fatal("cert.expiry declares no warn-within")
 	}
 	t.Fatal("cert.expiry not registered")
 }

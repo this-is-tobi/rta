@@ -70,7 +70,7 @@ func TestALegacyHostIsInspectedAndItsProtocolNamed(t *testing.T) {
 func TestExpiryGradesALegacyProtocolAsAWeakness(t *testing.T) {
 	legacy := legacyTLS(t)
 	current, _ := startTLS(t)
-	v, err := runExpiry(context.Background(), req(map[string]any{"targets": []string{legacy, current}, "warn-days": 30}))
+	v, err := runExpiry(context.Background(), req(map[string]any{"targets": []string{legacy, current}, "warn-within": "30d"}))
 	if err != nil {
 		t.Fatal(err)
 	}

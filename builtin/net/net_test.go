@@ -470,16 +470,16 @@ func TestARefusalOverMCPNamesArgumentsAndTools(t *testing.T) {
 	}
 }
 
-// The resolver is Local, so an agent is never sent to a server argument its
+// The resolver is Local, so an agent is never sent to a resolver argument its
 // tool does not take — and every surface reads a sentence, where naming the
 // input after "another" read "another the "type" argument".
 func TestANameWithNoRecordsIsAskedAgainInTheCallersTerms(t *testing.T) {
 	types := "(" + strings.Join(dnsTypes, ", ") + ")"
 	for sf, want := range map[plugin.Surface]string{
-		plugin.SurfaceCLI: "try another record type in --type " + types + ", or another resolver in --server",
+		plugin.SurfaceCLI: "try another record type in --type " + types + ", or another resolver in --resolver",
 		plugin.SurfaceMCP: `try another record type in the "type" argument ` + types +
 			" — which resolver answers is the operator's to change",
-		plugin.SurfaceTUI: "try another record type in the type box " + types + ", or another resolver in the server box",
+		plugin.SurfaceTUI: "try another record type in the type box " + types + ", or another resolver in the resolver box",
 	} {
 		if got := anotherQuestion(sf); got != want {
 			t.Errorf("over %q: %q, want %q", sf, got, want)

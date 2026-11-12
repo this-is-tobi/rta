@@ -101,15 +101,15 @@ func runResolverList(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
-	servers := req.StringSlice("server")
+	servers := req.StringSlice("nameserver")
 	if len(servers) == 0 {
 		return nil, view.Errorf("net.resolver.noserver", "no nameserver given").
-			WithHint(req.Surface().ArgumentName("server") + " takes the nameservers' addresses, such as 1.1.1.1 and 9.9.9.9").WithInput("server")
+			WithHint(req.Surface().ArgumentName("nameserver") + " takes the nameservers' addresses, such as 1.1.1.1 and 9.9.9.9").WithInput("nameserver")
 	}
 	for _, s := range servers {
 		if stdnet.ParseIP(s) == nil {
 			return nil, view.Errorf("net.resolver.badserver", "%q is not an IP address", s).
-				WithHint("resolv.conf takes addresses, not names — a name would need a resolver to look up").WithInput("server")
+				WithHint("resolv.conf takes addresses, not names — a name would need a resolver to look up").WithInput("nameserver")
 		}
 	}
 	path := resolverPath(req)
@@ -153,7 +153,7 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	if verr := writeLines(req.Surface(), path, out, callOf(req, "net.resolver.set", []string{"server"}, "force")); verr != nil {
+	if verr := writeLines(req.Surface(), path, out, callOf(req, "net.resolver.set", []string{"nameserver"}, "force")); verr != nil {
 		return nil, verr
 	}
 	body := fmt.Sprintf("%s in %s\nprevious version saved to %s", summary, path, saved)

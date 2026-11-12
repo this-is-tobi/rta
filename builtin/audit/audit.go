@@ -58,6 +58,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 	return plugin.Plugin{
 		Name:    "audit",
 		Summary: "Security hardening checks, each graded against a named OWASP/CWE control",
+		Renamed: map[string]string{"warn-days": "warn-within"},
 		Capabilities: []plugin.Capability{
 			{
 				ID:         "audit.web",
@@ -435,7 +436,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				NoPreview:  true,
 				Description: "The control plane's version, every node's kubelet and the release each running image's " +
 					"tag names, graded against endoflife.date as `eol.check` grades one product: past its end " +
-					"of life fails, within warn-days of it warns, supported passes with the date. An image is " +
+					"of life fails, within warn-within of it warns, supported passes with the date. An image is " +
 					"recognised by its name through the catalogue's aliases and its tag read as a release " +
 					"(15.4 is postgresql 15, bookworm is debian 12). An image endoflife.date does not track, " +
 					"a floating tag and a digest with no tag count in the overall line as checks that " +
@@ -443,13 +444,13 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"namespace it grades that namespace's images and the control plane, and says the " +
 					"nodes were not examined.",
 				Agent: "Grades the control plane, every node's kubelet and each running image's release against " +
-					"endoflife.date as `eol.check` does: past end of life fails, within `warn-days` warns, else " +
+					"endoflife.date as `eol.check` does: past end of life fails, within `warn-within` warns, else " +
 					"passes with the date. Images are matched by name through the catalogue's aliases, the tag read " +
 					"as a release. An untracked image, floating tag or tagless digest is a check that could not " +
 					"run, and `detail` lists each. A `namespace` grades only its images and the control plane.",
 				Scope:   "namespace",
 				Refresh: eolapi.TileRefresh,
-				Inputs:  []plugin.Field{namespaceField(), contextField(), warnDaysField(), imagesField()},
+				Inputs:  []plugin.Field{namespaceField(), contextField(), warnWithinField(), imagesField()},
 				Run:     runKubeEOL,
 			},
 		},

@@ -926,7 +926,7 @@ func TestAPermissionFailureNamesTheCommandForWhoeverRunsIt(t *testing.T) {
 		{"hosts rm", func(t *testing.T) string { return hostsFixture(t, "10.0.0.5 api.test\n") }, runHostsRemove,
 			map[string]any{"hostname": []string{"api.test"}}, "net hosts rm api.test"},
 		{"resolver set", func(t *testing.T) string { return resolvFixture(t, "nameserver 1.1.1.1\n") }, runResolverSet,
-			map[string]any{"server": []string{"9.9.9.9", "1.1.1.1"}, "force": true},
+			map[string]any{"nameserver": []string{"9.9.9.9", "1.1.1.1"}, "force": true},
 			"net resolver set 9.9.9.9 1.1.1.1 --force"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

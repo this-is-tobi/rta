@@ -107,9 +107,9 @@ func TestARefusalOfOneInputNamesIt(t *testing.T) {
 		{"a name parked at two addresses, which is the file's state", "net.hosts.toggle", runHostsToggle,
 			map[string]any{"hostname": "parked.local"}, "net.hosts.ambiguous", ""},
 		{"no nameserver", "net.resolver.set", runResolverSet,
-			map[string]any{"server": []string{}}, "net.resolver.noserver", "server"},
+			map[string]any{"nameserver": []string{}}, "net.resolver.noserver", "nameserver"},
 		{"a nameserver that is a name", "net.resolver.set", runResolverSet,
-			map[string]any{"server": []string{"1.1.1.1", "dns.example"}}, "net.resolver.badserver", "server"},
+			map[string]any{"nameserver": []string{"1.1.1.1", "dns.example"}}, "net.resolver.badserver", "nameserver"},
 
 		{"a file that is not there", "net.hosts.list", runHostsList,
 			map[string]any{"file": absent}, "net.sysfile.unreadable", "file"},
@@ -126,9 +126,9 @@ func TestARefusalOfOneInputNamesIt(t *testing.T) {
 		{"a file that is not there", "net.resolver.list", runResolverList,
 			map[string]any{"file": absent}, "net.sysfile.unreadable", "file"},
 		{"a file that is not there", "net.resolver.set", runResolverSet,
-			map[string]any{"server": []string{"1.1.1.1"}, "file": absent}, "net.sysfile.unreadable", "file"},
+			map[string]any{"nameserver": []string{"1.1.1.1"}, "file": absent}, "net.sysfile.unreadable", "file"},
 		{"a generated file, which force waives", "net.resolver.set", runResolverSet,
-			map[string]any{"server": []string{"1.1.1.1"}, "file": generated}, "net.sysfile.managed", ""},
+			map[string]any{"nameserver": []string{"1.1.1.1"}, "file": generated}, "net.sysfile.managed", ""},
 	} {
 		t.Run(c.id+": "+c.why, func(t *testing.T) {
 			if ve := refusedInput(t, c.id, c.h, c.values, true, c.code); ve.Input != c.input {

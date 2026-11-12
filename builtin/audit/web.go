@@ -341,9 +341,9 @@ func auditTLS(r *findings.Report, state *tls.ConnectionState, host string) {
 		r.Add(grpTransport, "cert-expiry", findings.Fail, "not valid until "+leaf.NotBefore.Format("2006-01-02"), refCertValidation)
 	case time.Now().After(leaf.NotAfter):
 		r.Add(grpTransport, "cert-expiry", findings.Fail, "expired "+leaf.NotAfter.Format("2006-01-02"), refCertValidation)
-	case x509check.Expiring(leaf.NotAfter, x509check.DefaultWarnDays):
+	case x509check.Expiring(leaf.NotAfter, x509check.DefaultWarnWithin):
 		r.Add(grpTransport, "cert-expiry", findings.Warn, fmt.Sprintf("expires %s (<%dd)",
-			leaf.NotAfter.Format("2006-01-02"), x509check.DefaultWarnDays), refCertValidation)
+			leaf.NotAfter.Format("2006-01-02"), int(x509check.DefaultWarnWithin.Hours()/24)), refCertValidation)
 	default:
 		r.Add(grpTransport, "cert-expiry", findings.OK, fmt.Sprintf("valid until %s (%dd)",
 			leaf.NotAfter.Format("2006-01-02"), int(time.Until(leaf.NotAfter).Hours())/24), refCertValidation)

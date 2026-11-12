@@ -114,11 +114,11 @@ profiles:
         set:
           # An entry is `product`, `product@cycle` or a range `product@from..to`. A bare product lists
           # every cycle ever released, so pin what you run.
-          products:
+          watch.products:
             - kubernetes@1.34..1.37
             - postgres@16..18
             - keycloak@26.7
-          # warn-days: 90   # flag a cycle this many days before its end of life
+          # warn-within: 90d   # flag a cycle whose end of life is within this long
       pkg:
         set:
           # <binary on $PATH>=github:<owner>/<repo>: rta asks `<binary> --version`, or reads the version from the

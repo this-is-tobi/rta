@@ -100,12 +100,14 @@ func Plugin() plugin.Plugin {
 		Help: "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only)",
 	}
 	timeoutField := plugin.Field{
-		Name: "timeout", Type: plugin.Duration, Default: plugin.FormatDuration(defaultTimeout), Min: "1s", Max: "2m",
+		Name: "timeout", Type: plugin.Duration, Config: "timeout", Default: plugin.FormatDuration(defaultTimeout),
+		Min: "1s", Max: "2m",
 		Help: "connect timeout",
 	}
 	return plugin.Plugin{
 		Name:    "cert",
 		Summary: "X.509 and TLS inspection: certificates, chains, expiry",
+		Renamed: map[string]string{"warn-days": "warn-within"},
 		Capabilities: []plugin.Capability{
 			{
 				ID:          "cert.inspect",
@@ -179,7 +181,7 @@ func Plugin() plugin.Plugin {
 				NeedsGrant: true,
 				Scope:      "targets",
 				Description: "Connects to each host over TLS and reports when its certificate ends: the date, the " +
-					"time left, and a status: ok, WARN once it ends within `warn-days`, EXPIRED once it has, INVALID " +
+					"time left, and a status: ok, WARN once it ends within `warn-within`, EXPIRED once it has, INVALID " +
 					"before it begins; a host still negotiating TLS 1.0 or 1.1 is flagged beside the date. One row per " +
 					"host, and one that cannot be reached is its row's error and does not stop the rest. The chain the " +
 					"host sends is graded: the certificate that ends first sets the date and status and is named when it " +
@@ -190,7 +192,7 @@ func Plugin() plugin.Plugin {
 					"MCP a target is never a file, and each host listed needs a grant, since a certificate's own words " +
 					"are tool output, as a banner is.",
 				Agent: "Connects to each host in `targets` over TLS and reports when its certificate ends: time " +
-					"left, date and a status (ok, WARN within `warn-days`, EXPIRED, INVALID before it begins), " +
+					"left, date and a status (ok, WARN within `warn-within`, EXPIRED, INVALID before it begins), " +
 					"with TLS 1.0 and 1.1 flagged. The chain the host sends is graded and the certificate that " +
 					"ends first sets the row, named when it is not the leaf. An unreachable host is its row's " +
 					"ERROR and stops nothing. Rows are most urgent first, each naming its host. A target is " +
@@ -198,8 +200,9 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "targets", Type: plugin.StringSlice, Positional: true, Required: true,
 						Help: "hosts to check (host[:port], or an https:// URL)"},
-					{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: x509check.DefaultWarnDays,
-						Help: "flag certificates expiring within this many days"},
+					{Name: "warn-within", Type: plugin.Duration, Config: "warn-within",
+						Default: plugin.FormatDuration(x509check.DefaultWarnWithin), Min: "1d", Max: "730d",
+						Help: "flag a certificate that ends within this long, such as 30d"},
 					timeoutField,
 				},
 				Refresh: expiryRefresh,
@@ -956,7 +959,7 @@ func encodePEM(certs []*x509.Certificate) (string, *view.Error) {
 
 func runExpiry(ctx context.Context, req plugin.Request) (view.View, error) {
 	targets := req.StringSlice("targets")
-	warnDays := req.Int("warn-days")
+	within := req.Duration("warn-within")
 	timeout := dialTimeout(req)
 
 	// One filtered host used to stall every host listed after it: the walk
@@ -979,7 +982,7 @@ func runExpiry(ctx context.Context, req plugin.Request) (view.View, error) {
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				results[i] = expiryRow(ctx, req, targets[i], warnDays, timeout)
+				results[i] = expiryRow(ctx, req, targets[i], within, timeout)
 			}
 		}()
 	}
@@ -1084,12 +1087,12 @@ func unreachableRows(rows [][]string) int {
 
 // expiryRow grades one target. An unreachable host is a row saying so rather
 // than an error that throws away the thirty-nine hosts that did answer.
-func expiryRow(ctx context.Context, req plugin.Request, target string, warnDays int, timeout time.Duration) expiryResult {
+func expiryRow(ctx context.Context, req plugin.Request, target string, within, timeout time.Duration) expiryResult {
 	chain, state, verr := expiryChain(ctx, req, target, timeout)
 	if verr != nil {
 		return expiryResult{cells: []string{target, "-", "-", "ERROR: " + verr.Message}, failing: true}
 	}
-	decider, status := gradeChain(chain, time.Now(), warnDays)
+	decider, status := gradeChain(chain, time.Now(), within)
 	// A retired protocol is the host's weakness, graded beside its
 	// certificate's dates: the handshake takes one so the certificate can be
 	// read at all (x509check.InspectionTLS), and the row says what it took
@@ -1162,7 +1165,7 @@ func expiryChain(ctx context.Context, req plugin.Request, target string, timeout
 // certificate past the leaf is a root the host sent along; whether it is
 // trusted is the client's store and its end is the store's to manage, so it
 // does not grade the host (a self-signed leaf still does: it is the target).
-func gradeChain(chain []*x509.Certificate, now time.Time, warnDays int) (*x509.Certificate, string) {
+func gradeChain(chain []*x509.Certificate, now time.Time, within time.Duration) (*x509.Certificate, string) {
 	graded := []*x509.Certificate{chain[0]}
 	for _, c := range chain[1:] {
 		if !bytes.Equal(c.RawIssuer, c.RawSubject) {
@@ -1188,8 +1191,8 @@ func gradeChain(chain []*x509.Certificate, now time.Time, warnDays int) (*x509.C
 	switch {
 	case now.After(decider.NotAfter):
 		status = "EXPIRED"
-	case x509check.Expiring(decider.NotAfter, warnDays):
-		status = fmt.Sprintf("WARN <%dd", warnDays)
+	case x509check.Expiring(decider.NotAfter, within):
+		status = "WARN <" + plugin.FormatDuration(within)
 	}
 	return decider, namedIn(chain, decider, status)
 }

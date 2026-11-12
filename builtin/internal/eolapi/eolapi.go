@@ -254,7 +254,7 @@ const (
 	// window of it — or with no date announced at all, which the API
 	// reports for a current release whose retirement is not yet scheduled.
 	Supported Verdict = iota
-	// Ending: an end-of-life date is announced and falls within warnDays.
+	// Ending: an end-of-life date is announced and falls within the window.
 	Ending
 	// Ended: the API says the cycle is past its end of life.
 	Ended
@@ -267,7 +267,7 @@ const (
 // a date that may not even be present would be answering a question this
 // API already answered. The warning window is the one judgement made here,
 // against the date the API gives.
-func Grade(r Release, warnDays int, now time.Time) Verdict {
+func Grade(r Release, within time.Duration, now time.Time) Verdict {
 	if r.IsEol {
 		return Ended
 	}
@@ -275,7 +275,7 @@ func Grade(r Release, warnDays int, now time.Time) Verdict {
 	if !ok {
 		return Supported
 	}
-	if eolDate.Before(now.Add(time.Duration(warnDays) * 24 * time.Hour)) {
+	if eolDate.Before(now.Add(within)) {
 		return Ending
 	}
 	return Supported

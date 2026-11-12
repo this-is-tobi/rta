@@ -31,14 +31,14 @@ func TestEolStatusTrustsIsEolOverAFarFutureDate(t *testing.T) {
 	// plugin does not second-guess it (see gradeRow's doc).
 	future := time.Now().AddDate(5, 0, 0).Format("2006-01-02")
 	r := eolapi.Release{IsEol: true, EolFrom: &future}
-	if got := eolStatus(r, 90, time.Now()); got != "EOL" {
+	if got := eolStatus(r, 90*24*time.Hour, time.Now()); got != "EOL" {
 		t.Errorf("isEol:true with a far-future eolFrom graded %q, want EOL", got)
 	}
 }
 
 func TestEolStatusGradesNoAnnouncedDateAsOk(t *testing.T) {
 	r := eolapi.Release{IsEol: false, EolFrom: nil}
-	if got := eolStatus(r, 90, time.Now()); got != "ok" {
+	if got := eolStatus(r, 90*24*time.Hour, time.Now()); got != "ok" {
 		t.Errorf("no eolFrom graded %q, want ok", got)
 	}
 }
@@ -46,23 +46,23 @@ func TestEolStatusGradesNoAnnouncedDateAsOk(t *testing.T) {
 func TestEolStatusIgnoresAnUnparseableDate(t *testing.T) {
 	bad := "not-a-date"
 	r := eolapi.Release{IsEol: false, EolFrom: &bad}
-	if got := eolStatus(r, 90, time.Now()); got != "ok" {
+	if got := eolStatus(r, 90*24*time.Hour, time.Now()); got != "ok" {
 		t.Errorf("unparseable eolFrom graded %q, want the safe fallback ok", got)
 	}
 }
 
 // The boundary itself: eolStatus compares with Before, so a date exactly
-// warnDays out is not yet inside the window and one moment closer is —
+// the window out is not yet inside it and one moment closer is —
 // matching builtin/cert's own "the case the two callers disagreed on" test.
 func TestEolStatusBoundaryIsExclusive(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	exactly := now.AddDate(0, 0, 90).Format("2006-01-02")
 	oneCloser := now.AddDate(0, 0, 89).Format("2006-01-02")
 
-	if got := eolStatus(eolapi.Release{EolFrom: &exactly}, 90, now); got != "ok" {
-		t.Errorf("exactly warnDays out graded %q, want ok", got)
+	if got := eolStatus(eolapi.Release{EolFrom: &exactly}, 90*24*time.Hour, now); got != "ok" {
+		t.Errorf("exactly the window out graded %q, want ok", got)
 	}
-	if got := eolStatus(eolapi.Release{EolFrom: &oneCloser}, 90, now); got != "WARN <90d" {
+	if got := eolStatus(eolapi.Release{EolFrom: &oneCloser}, 90*24*time.Hour, now); got != "WARN <90d" {
 		t.Errorf("one day inside the window graded %q, want WARN <90d", got)
 	}
 }
@@ -70,7 +70,7 @@ func TestEolStatusBoundaryIsExclusive(t *testing.T) {
 func TestEolStatusGradesAFarFutureDateAsOk(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	farOut := now.AddDate(3, 0, 0).Format("2006-01-02")
-	if got := eolStatus(eolapi.Release{EolFrom: &farOut}, 90, now); got != "ok" {
+	if got := eolStatus(eolapi.Release{EolFrom: &farOut}, 90*24*time.Hour, now); got != "ok" {
 		t.Errorf("three years out graded %q, want ok", got)
 	}
 }
@@ -152,7 +152,7 @@ func TestCycleNamesJoinsInOrder(t *testing.T) {
 func TestGradeRowShowsNotAnnouncedWhenThereIsNoEolFromDate(t *testing.T) {
 	r := eolapi.Release{Name: "26", ReleaseDate: "2025-09-15"}
 	r.Latest.Name = "26.6.2"
-	row := gradeRow(r, 90, time.Now())
+	row := gradeRow(r, 90*24*time.Hour, time.Now())
 	want := []string{"26", "2025-09-15", "26.6.2", "-", "not announced", "-", "ok"}
 	for i := range want {
 		if row[i].Text != want[i] {
@@ -173,7 +173,7 @@ func TestGradeRowShowsTheDateAndDurationWhenAnnounced(t *testing.T) {
 	eol := "2027-11-11"
 	r := eolapi.Release{Name: "15", ReleaseDate: "2022-10-13", EolFrom: &eol, IsLts: true}
 	r.Latest.Name = "15.19"
-	row := gradeRow(r, 90, now)
+	row := gradeRow(r, 90*24*time.Hour, now)
 	if row[3].Text != "yes" {
 		t.Errorf("LTS column: got %q, want yes", row[3].Text)
 	}
@@ -367,7 +367,7 @@ func TestRunCheckAtHintsAtTheAvailableCyclesWhenTheNamedOneIsMissing(t *testing.
 	}
 }
 
-// warn-days has to reach eolStatus through the request, not just through a
+// warn-within has to reach eolStatus through the request, not just through a
 // direct call to eolStatus itself — this is the wiring a unit test on
 // eolStatus alone cannot see.
 func TestRunCheckAtPassesWarnDaysThroughToTheStatusColumn(t *testing.T) {
@@ -375,20 +375,20 @@ func TestRunCheckAtPassesWarnDaysThroughToTheStatusColumn(t *testing.T) {
 	srv := newEolServer(t, fmt.Sprintf(
 		`{"name":"1","releaseDate":"2020-01-01","isEol":false,"eolFrom":%q,"latest":{"name":"1.0"}}`, eol))
 
-	narrow, err := runCheckAt(context.Background(), req(t, map[string]any{"product": "demo", "warn-days": 10}), srv.URL)
+	narrow, err := runCheckAt(context.Background(), req(t, map[string]any{"product": "demo", "warn-within": "10d"}), srv.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := narrow.(view.Table).Rows[0][6]; got != "ok" {
-		t.Errorf("warn-days=10 against a 40-day-out release: got %q, want ok", got)
+		t.Errorf("warn-within=10d against a 40-day-out release: got %q, want ok", got)
 	}
 
-	wide, err := runCheckAt(context.Background(), req(t, map[string]any{"product": "demo", "warn-days": 90}), srv.URL)
+	wide, err := runCheckAt(context.Background(), req(t, map[string]any{"product": "demo", "warn-within": "90d"}), srv.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := wide.(view.Table).Rows[0][6]; got != "WARN <90d" {
-		t.Errorf("warn-days=90 against a 40-day-out release: got %q, want WARN <90d", got)
+		t.Errorf("warn-within=90d against a 40-day-out release: got %q, want WARN <90d", got)
 	}
 }
 
@@ -398,7 +398,7 @@ func TestRunCheckAtPassesWarnDaysThroughToTheStatusColumn(t *testing.T) {
 // endoflife.date answers 200 with a valid envelope and an empty releases
 // array for a product it tracks but has no cycles for yet. runCheckAt had
 // no case for it, so the caller got a zero-row table and a nil error — the
-// same shape --warn-days filtering everything out produces, on a command
+// same shape --warn-within filtering everything out produces, on a command
 // whose entire purpose is to say whether something is past its end of life.
 func TestCheckSaysWhenAProductHasNoReleaseData(t *testing.T) {
 	srv := newEolServer(t, "")

@@ -22,16 +22,27 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// defaultWarnDays is further out than cert.expiry's 30 (builtin/cert):
+// defaultWarnWithin is further out than cert.expiry's 30d (builtin/cert):
 // a TLS certificate renews in minutes once somebody notices, a database
 // major-version upgrade does not, so the window to notice in has to be
 // wider for the warning to be useful rather than merely early.
-const defaultWarnDays = 90
+const defaultWarnWithin = "90d"
+
+// warnWithinField is the window eol.check and eol.watch grade a cycle's end
+// of life against: one key both read, declared once so it means the same to
+// both.
+func warnWithinField() plugin.Field {
+	return plugin.Field{Name: "warn-within", Type: plugin.Duration, Config: "warn-within",
+		Default: defaultWarnWithin, Min: "1d", Max: "730d",
+		Help: "flag a cycle whose end of life is within this long, such as 90d"}
+}
 
 func Plugin() plugin.Plugin {
 	return plugin.Plugin{
 		Name:    "eol",
 		Summary: "Support windows and end-of-life dates, via endoflife.date",
+		Renamed: map[string]string{"catalogue.limit": "products.limit", "products": "watch.products",
+			"warn-days": "warn-within"},
 		Capabilities: []plugin.Capability{
 			{
 				ID:         "eol.check",
@@ -67,8 +78,7 @@ func Plugin() plugin.Plugin {
 						Help:    "one release cycle — 15, bookworm, 22.04 — or a version in one, 16.2 — or a range of them: 13..16, 15.., ..16; every cycle when omitted",
 						Live:    true,
 						Suggest: suggestCycles},
-					{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultWarnDays,
-						Help: "flag a cycle within this many days of its end-of-life date"},
+					warnWithinField(),
 					{Name: "all", Type: plugin.Bool, Config: "all",
 						Help: "list every cycle, including those long ended, when none is named"},
 				},
@@ -129,7 +139,7 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 	// worry about.** endoflife.date answers 200 with a valid envelope and an
 	// empty releases array for something it tracks but has no cycles for
 	// yet, and there was no case for it: the caller got a zero-row table and
-	// a nil error, which is the same shape --warn-days filtering everything
+	// a nil error, which is the same shape --warn-within filtering everything
 	// out produces, from a command whose whole purpose is to say whether
 	// something is past its end of life.
 	if len(releases) == 0 {
@@ -138,7 +148,7 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 				req.Surface().CapabilityName("eol.products") + " lists what does")
 	}
 
-	warnDays := req.Int("warn-days")
+	within := req.Duration("warn-within")
 	now := time.Now()
 	t := view.Table{Columns: []view.Column{
 		{Name: "Cycle"},
@@ -151,10 +161,10 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 	}}
 	shown := releases
 	if cycle == "" && !req.Bool("all") {
-		shown = supportedAndLatestEnded(releases, warnDays, now)
+		shown = supportedAndLatestEnded(releases, within, now)
 	}
 	for _, r := range shown {
-		t.Add(gradeRow(r, warnDays, now)...)
+		t.Add(gradeRow(r, within, now)...)
 	}
 	t.Total = len(releases)
 	if left := len(releases) - len(shown); left > 0 {
@@ -178,11 +188,11 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 // The most recent ended is the one with the latest end-of-life date, and the
 // first in the API's own order (newest release first) when none has a date
 // that reads.
-func supportedAndLatestEnded(releases []eolapi.Release, warnDays int, now time.Time) []eolapi.Release {
+func supportedAndLatestEnded(releases []eolapi.Release, within time.Duration, now time.Time) []eolapi.Release {
 	var out []eolapi.Release
 	latest := -1
 	for _, r := range releases {
-		if eolapi.Grade(r, warnDays, now) != eolapi.Ended {
+		if eolapi.Grade(r, within, now) != eolapi.Ended {
 			out = append(out, r)
 			continue
 		}
@@ -299,7 +309,7 @@ func suggestCyclesAt(ctx context.Context, req plugin.Request, base string) []str
 // cycle is past its end of life; the date column shows the API's own text
 // and the duration is computed only from a date that parses. Both dates are
 // days, valued as days: the API gives no time and no zone for either.
-func gradeRow(r eolapi.Release, warnDays int, now time.Time) []view.Cell {
+func gradeRow(r eolapi.Release, within time.Duration, now time.Time) []view.Cell {
 	eol, in := view.Plain("not announced"), view.Plain("-")
 	if r.EolFrom != nil {
 		eol = view.Plain(*r.EolFrom)
@@ -313,7 +323,7 @@ func gradeRow(r eolapi.Release, warnDays int, now time.Time) []view.Cell {
 		released = view.Date(r.ReleaseDate, date)
 	}
 	return []view.Cell{view.Plain(r.Name), released, view.Plain(r.Latest.Name), view.Plain(ltsCell(r)), eol, in,
-		view.Plain(eolStatus(r, warnDays, now))}
+		view.Plain(eolStatus(r, within, now))}
 }
 
 // ltsCell has three states, not two, because LtsFrom means something
@@ -336,18 +346,18 @@ func ltsCell(r eolapi.Release) string {
 // eolStatus is the Status cell for a verdict: the words a table reads at a
 // glance, with the window named on a warning so "WARN <90d" says what it
 // was measured against.
-func eolStatus(r eolapi.Release, warnDays int, now time.Time) string {
-	switch eolapi.Grade(r, warnDays, now) {
+func eolStatus(r eolapi.Release, within time.Duration, now time.Time) string {
+	switch eolapi.Grade(r, within, now) {
 	case eolapi.Ended:
 		return "EOL"
 	case eolapi.Ending:
-		return fmt.Sprintf("WARN <%dd", warnDays)
+		return "WARN <" + plugin.FormatDuration(within)
 	}
 	return "ok"
 }
 
 // humanUntil mirrors builtin/cert's helper of the same job, parameterized on
-// now instead of calling time.Now() itself so a boundary (exactly warnDays
+// now instead of calling time.Now() itself so a boundary (exactly the window
 // out, exactly today) is a fixed input a test can hit instead of a race
 // against the clock. Status already says EOL, so unlike cert's version this
 // never prefixes the past case with the word "expired".

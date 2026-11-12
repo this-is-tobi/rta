@@ -146,7 +146,7 @@ func TestACertificateNotValidYetIsSaidSo(t *testing.T) {
 			Subject:   pkix.Name{CommonName: "ok"},
 			NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(200 * 24 * time.Hour),
 		})},
-		"warn-days": 30, "timeout": "5s",
+		"warn-within": "30d", "timeout": "5s",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 	}
 
 	v, err := runExpiry(context.Background(), req(map[string]any{
-		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-days": 30, "timeout": "2s",
+		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-within": "30d", "timeout": "2s",
 	}).WithSurface(plugin.SurfaceMCP))
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +193,7 @@ func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 	// At a terminal expiry reads files too, so the same mistyped path is a
 	// missing file there, not a host and not a lookup.
 	v, err = runExpiry(context.Background(), req(map[string]any{
-		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-days": 30, "timeout": "2s",
+		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-within": "30d", "timeout": "2s",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +258,7 @@ func TestAnHTTPSURLIsReadAsTheHostItNames(t *testing.T) {
 	}
 
 	v, err := runExpiry(context.Background(), req(map[string]any{
-		"targets": []string{"https://" + addr}, "warn-days": 30, "timeout": "5s",
+		"targets": []string{"https://" + addr}, "warn-within": "30d", "timeout": "5s",
 	}))
 	if err != nil {
 		t.Fatal(err)

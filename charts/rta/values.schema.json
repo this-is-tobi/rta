@@ -460,10 +460,11 @@
                   "description": "walk subdirectories too, for a monorepo with a manifest per package (read by audit.deps, audit.why)",
                   "type": "boolean"
                 },
-                "warn-days": {
-                  "default": 90,
-                  "description": "warn about a release within this many days of its end-of-life date (read by audit.kube.eol)",
-                  "type": "integer"
+                "warn-within": {
+                  "default": "90d",
+                  "description": "warn about a release whose end of life is within this long, such as 90d (a duration with its unit, such as 30s, 5m or 2h; from 1d to 730d) (read by audit.kube.eol)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
                 },
                 "web": {
                   "additionalProperties": false,
@@ -500,10 +501,17 @@
                   ],
                   "type": "string"
                 },
-                "warn-days": {
-                  "default": 30,
-                  "description": "flag certificates expiring within this many days (read by cert.expiry)",
-                  "type": "integer"
+                "timeout": {
+                  "default": "10s",
+                  "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m) (read by cert.chain, cert.expiry, cert.inspect, cert.pem, cert.tls)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
+                },
+                "warn-within": {
+                  "default": "30d",
+                  "description": "flag a certificate that ends within this long, such as 30d (a duration with its unit, such as 30s, 5m or 2h; from 1d to 730d) (read by cert.expiry)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
                 }
               },
               "type": "object"
@@ -516,7 +524,7 @@
                   "description": "list every cycle, including those long ended, when none is named (read by eol.check)",
                   "type": "boolean"
                 },
-                "catalogue": {
+                "products": {
                   "additionalProperties": false,
                   "properties": {
                     "limit": {
@@ -529,24 +537,38 @@
                   },
                   "type": "object"
                 },
-                "catalogue.limit": {
+                "products.limit": {
                   "default": 50,
                   "description": "how many products to list (read by eol.products)",
                   "maximum": 1000,
                   "minimum": 1,
                   "type": "integer"
                 },
-                "products": {
-                  "description": "product or product@cycle, repeatable \u2014 usually from `plugins: eol: products:` in your config (read by eol.watch)",
+                "warn-within": {
+                  "default": "90d",
+                  "description": "flag a cycle whose end of life is within this long, such as 90d (a duration with its unit, such as 30s, 5m or 2h; from 1d to 730d) (read by eol.check, eol.watch)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
+                },
+                "watch": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "products": {
+                      "description": "product or product@cycle, repeatable \u2014 usually from `plugins: eol: watch.products:` in your config (read by eol.watch)",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "watch.products": {
+                  "description": "product or product@cycle, repeatable \u2014 usually from `plugins: eol: watch.products:` in your config (read by eol.watch)",
                   "items": {
                     "type": "string"
                   },
                   "type": "array"
-                },
-                "warn-days": {
-                  "default": 90,
-                  "description": "flag a cycle within this many days of its end-of-life date (read by eol.check, eol.watch)",
-                  "type": "integer"
                 }
               },
               "type": "object"
@@ -800,7 +822,7 @@
                 "dns": {
                   "additionalProperties": false,
                   "properties": {
-                    "server": {
+                    "resolver": {
                       "description": "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver) (read by net.dns)",
                       "type": "string"
                     },
@@ -813,7 +835,7 @@
                   },
                   "type": "object"
                 },
-                "dns.server": {
+                "dns.resolver": {
                   "description": "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver) (read by net.dns)",
                   "type": "string"
                 },

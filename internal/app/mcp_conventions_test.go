@@ -125,7 +125,7 @@ func TestATimeInputSaysItsUnit(t *testing.T) {
 				continue
 			}
 			switch name {
-			case "timeout", "wait", "ttl", "interval", "delay", "duration", "age", "warn-days":
+			case "timeout", "wait", "ttl", "interval", "delay", "duration", "age":
 			default:
 				continue
 			}

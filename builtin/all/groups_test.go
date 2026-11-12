@@ -52,7 +52,7 @@ func TestTheBuiltinsGroupWhatTheFallbackWouldMissOrGetWrong(t *testing.T) {
 		}
 	}
 	for id, want := range map[string]map[string]string{
-		"net.dns":  {"server": "network"},
+		"net.dns":  {"resolver": "network"},
 		"http.get": {"bearer": "credentials", "basic": "credentials", "bearer-file": "credentials", "basic-file": "credentials"},
 		"kv.get":   {"passphrase": "credentials", "identity": "credentials"},
 		"kv.set":   {"passphrase": "credentials", "identity": "credentials"},
