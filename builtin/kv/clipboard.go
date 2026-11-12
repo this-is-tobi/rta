@@ -43,9 +43,9 @@ func copyToClipboard(sf plugin.Surface, value []byte) *view.Error {
 // ago — would be gone. Never a tool means an agent's call never opens the
 // store either, so the passphrase in a server's environment is not spent on
 // a question that was always going to be no.
-func runCopy(_ context.Context, req plugin.Request) (view.View, error) {
+func runCopy(ctx context.Context, req plugin.Request) (view.View, error) {
 	key := req.String("key")
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}

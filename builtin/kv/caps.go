@@ -29,8 +29,8 @@ import (
 
 // runList never touches a value: only key names, kinds, sizes, descriptions
 // and timestamps leave this function, by construction — see the package doc.
-func runList(_ context.Context, req plugin.Request) (view.View, error) {
-	s, verr := load(req)
+func runList(ctx context.Context, req plugin.Request) (view.View, error) {
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -149,9 +149,9 @@ func historyCell(n int) string {
 // runShow describes one entry without revealing it. Size is the closest it
 // comes to the value, and a byte count tells you a token is a token without
 // telling you which one.
-func runShow(_ context.Context, req plugin.Request) (view.View, error) {
+func runShow(ctx context.Context, req plugin.Request) (view.View, error) {
 	key := req.String("key")
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -201,9 +201,9 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.KeyValue{Pairs: pairs}, nil
 }
 
-func runGet(_ context.Context, req plugin.Request) (view.View, error) {
+func runGet(ctx context.Context, req plugin.Request) (view.View, error) {
 	key := req.String("key")
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -283,7 +283,7 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
+func runEnv(ctx context.Context, req plugin.Request) (view.View, error) {
 	syntax := strings.ToLower(strings.TrimSpace(req.String("format")))
 	if syntax == "" {
 		syntax = "export"
@@ -294,7 +294,7 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 
 	keys := req.StringSlice("key")
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -507,12 +507,12 @@ func originOf(req plugin.Request, filename string, piped bool) string {
 // and blocking it would be a regression on a locked store from what this did
 // before there was any prefill at all — opening blank. The passphrase is
 // asked for on submit either way.
-func prefillSet(_ context.Context, req plugin.Request) (map[string]any, error) {
+func prefillSet(ctx context.Context, req plugin.Request) (map[string]any, error) {
 	key := req.String("key")
 	if key == "" {
 		return map[string]any{}, nil
 	}
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return map[string]any{}, nil //nolint:nilerr // Prefill is a convenience: an unreadable store opens an empty form, and the run then refuses with the real message
 	}
@@ -525,7 +525,7 @@ func prefillSet(_ context.Context, req plugin.Request) (map[string]any, error) {
 	return map[string]any{"description": e.Description, "kind": e.Kind}, nil
 }
 
-func runSet(_ context.Context, req plugin.Request) (view.View, error) {
+func runSet(ctx context.Context, req plugin.Request) (view.View, error) {
 	key := req.String("key")
 	if key == "" {
 		return nil, view.Errorf("kv.set.nokey", "key is empty").WithInput("key")
@@ -568,7 +568,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		//
 		// The passphrase is settled first (lockBeforeValue): the secret is
 		// typed once the store is known to open, never before.
-		if verr := lockBeforeValue(req); verr != nil {
+		if verr := lockBeforeValue(ctx, req); verr != nil {
 			return nil, verr
 		}
 		typed, verr := askValue(req, key)
@@ -616,7 +616,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	// store, and that nothing recovers its passphrase, from the first call that
 	// would not open it.
 	madeStore, keyBefore := !fileExists(storePath()), fileExists(defaultIdentity())
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -631,7 +631,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		// the passphrase before it was — and a first store has not asked for its
 		// passphrase yet, which is chosen before the value is typed as it is above.
 		if !fileExists(storePath()) {
-			if verr := lockBeforeValue(req); verr != nil {
+			if verr := lockBeforeValue(ctx, req); verr != nil {
 				return nil, verr
 			}
 		}
@@ -690,7 +690,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 	}
 	s.Entries[key] = e
-	if verr := save(req, s); verr != nil {
+	if verr := save(ctx, req, s); verr != nil {
 		return nil, verr
 	}
 
@@ -849,7 +849,7 @@ func opensBlock(line []byte) bool {
 // a token has been sitting there for fourteen months — a rename that reset it
 // would quietly answer "yesterday" to the only question that column exists
 // to answer.
-func runRename(_ context.Context, req plugin.Request) (view.View, error) {
+func runRename(ctx context.Context, req plugin.Request) (view.View, error) {
 	from, to := req.String("key"), req.String("new-name")
 	if from == "" || to == "" {
 		return nil, view.Errorf("kv.rename.noname", "rename needs a key and a new name").
@@ -870,7 +870,7 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	defer unlock()
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -893,14 +893,14 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	delete(s.Entries, from)
 	s.Entries[to] = e
-	if verr := save(req, s); verr != nil {
+	if verr := save(ctx, req, s); verr != nil {
 		return nil, verr
 	}
 	return view.Text{Body: fmt.Sprintf("renamed %s to %s — anything still asking for %s will not find it",
 		textclean.Record(from), textclean.Record(to), textclean.Record(from))}, nil
 }
 
-func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
+func runRemove(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr := refuseSilentIdentity(req); verr != nil {
 		return nil, verr
 	}
@@ -909,7 +909,7 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	defer unlock()
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -924,7 +924,7 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 				return view.Text{Body: fmt.Sprintf("would purge the removed %s (%s)", textclean.Record(key), r.Kind)}, nil
 			}
 			delete(s.Removed, key)
-			if verr := save(req, s); verr != nil {
+			if verr := save(ctx, req, s); verr != nil {
 				return nil, verr
 			}
 			return view.Text{Body: fmt.Sprintf("purged %s — it was removed %s, and is gone now", textclean.Record(key),
@@ -950,7 +950,7 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 		// name is the whole promise, and the earlier one has had its chance.
 		s.Removed[key] = removedEntry{entry: e, RemovedAt: time.Now()}
 	}
-	if verr := save(req, s); verr != nil {
+	if verr := save(ctx, req, s); verr != nil {
 		return nil, verr
 	}
 	if purge {
@@ -968,7 +968,7 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 // means proving you can — and kv.rekey is that operation. Silently
 // re-initialising would produce a recipients file describing a store none of
 // those recipients can open.
-func runInit(_ context.Context, req plugin.Request) (view.View, error) {
+func runInit(ctx context.Context, req plugin.Request) (view.View, error) {
 	sf := req.Surface()
 	if fileExists(storePath()) {
 		return nil, view.Errorf("kv.init.exists", "a store already exists at %s", storePath()).
@@ -1009,7 +1009,7 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 
 	// Writing the empty store is what commits the choice: save() resolves the
 	// recipients and records them only once the ciphertext is safely on disk.
-	if verr := save(req, store{Entries: map[string]entry{}}); verr != nil {
+	if verr := save(ctx, req, store{Entries: map[string]entry{}}); verr != nil {
 		return nil, verr
 	}
 	body := "the store is locked to keys — " + sf.CapabilityName("kv.recipients") + " lists them\n"
@@ -1034,7 +1034,7 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 // nothing to lose, and this one re-encrypts secrets that are already there.
 // The two irreversible halves — reading it, and keeping a key you hold — are
 // checked before anything is written, in that order.
-func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
+func runRekey(ctx context.Context, req plugin.Request) (view.View, error) {
 	sf := req.Surface()
 	if !fileExists(storePath()) {
 		// Both locks are offered, the key first: whoever reached for a re-key was
@@ -1069,7 +1069,7 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	// what `--identity`-less commands resolve to, so the order matters: a
 	// store you cannot open is a store you cannot re-key, and finding that
 	// out after writing a new key beside the config would be a mess to undo.
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -1160,7 +1160,7 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	// encrypted to — set the embedded record to match what is actually
 	// being committed here, the same as an ordinary write does for itself.
 	s.Recipients = want
-	if verr := saveTo(sf, s, recipients, want); verr != nil {
+	if verr := saveTo(ctx, sf, s, recipients, want); verr != nil {
 		return nil, verr
 	}
 	// What opens the store just changed; a session remembering the old
@@ -1467,7 +1467,7 @@ func runRecipients(_ context.Context, req plugin.Request) (view.View, error) {
 // what keeps a store open. Only a completion looks — a request on any other
 // surface names its passphrase itself or is refused, and an agent's must
 // never be answered from what a person typed into the TUI.
-func suggestKeys(_ context.Context, req plugin.Request) []string {
+func suggestKeys(ctx context.Context, req plugin.Request) []string {
 	mode, _, verr := currentMode()
 	if verr != nil {
 		return nil
@@ -1483,7 +1483,7 @@ func suggestKeys(_ context.Context, req plugin.Request) []string {
 			return nil
 		}
 	}
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil
 	}

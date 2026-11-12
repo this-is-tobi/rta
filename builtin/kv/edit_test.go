@@ -78,7 +78,7 @@ func showPairs(t *testing.T, key string) map[string]string {
 // verbatim.
 func storedEntry(t *testing.T, key string) entry {
 	t.Helper()
-	s, verr := load(req(nil, false))
+	s, verr := load(context.Background(), req(nil, false))
 	if verr != nil {
 		t.Fatal(verr)
 	}

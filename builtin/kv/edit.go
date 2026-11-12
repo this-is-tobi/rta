@@ -144,7 +144,7 @@ func readEdited(path string, original []byte) ([]byte, *view.Error) {
 }
 
 // runEdit opens a value in an editor and stores whatever comes back.
-func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
+func runEdit(ctx context.Context, req plugin.Request) (view.View, error) {
 	// An editor is a person at a keyboard. Checked before anything else, so
 	// a surface that could never finish the operation does not decrypt the
 	// store on the way to finding that out.
@@ -159,7 +159,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	key := req.String("key")
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -260,7 +260,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	defer unlock()
-	fresh, verr := load(req)
+	fresh, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -291,7 +291,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	current.Updated = time.Now()
 	fresh.Entries[key] = current
-	if verr := save(req, fresh); verr != nil {
+	if verr := save(ctx, req, fresh); verr != nil {
 		return nil, verr
 	}
 	e = current

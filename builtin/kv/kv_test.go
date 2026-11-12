@@ -1908,7 +1908,7 @@ func TestRekeyErrorNamesTheStaleRecipientsFileWhenOnlyThatWriteFails(t *testing.
 		t.Fatal(err)
 	}
 
-	verr := saveTo(plugin.SurfaceCLI,
+	verr := saveTo(context.Background(), plugin.SurfaceCLI,
 		store{Entries: map[string]entry{"k": {Value: []byte("v")}}},
 		[]age.Recipient{id.Recipient()},
 		[]string{spec},
@@ -2144,7 +2144,7 @@ func TestNoEmbeddedRecipientsIsNotTreatedAsAMismatch(t *testing.T) {
 
 	// Simulate a pre-fix store: strip the embedded record a real write would
 	// have left, the same shape as ciphertext from before this field existed.
-	s, verr := load(req(map[string]any{"identity": victim}, false))
+	s, verr := load(context.Background(), req(map[string]any{"identity": victim}, false))
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -2153,7 +2153,7 @@ func TestNoEmbeddedRecipientsIsNotTreatedAsAMismatch(t *testing.T) {
 	if verr != nil {
 		t.Fatal(verr)
 	}
-	if verr := saveTo(plugin.SurfaceCLI, s, recipients, nil); verr != nil {
+	if verr := saveTo(context.Background(), plugin.SurfaceCLI, s, recipients, nil); verr != nil {
 		t.Fatal(verr)
 	}
 
@@ -2393,7 +2393,7 @@ func TestALegacyStoreIsStampedOnTheNextWrite(t *testing.T) {
 	setup(t)
 	text(t, runSet, map[string]any{"key": "k", "value": "hunter2"}, false)
 
-	s, verr := load(req(nil, false))
+	s, verr := load(context.Background(), req(nil, false))
 	if verr != nil {
 		t.Fatal(verr)
 	}

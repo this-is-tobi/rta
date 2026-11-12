@@ -582,35 +582,62 @@ var scryptTurn = make(chan struct{}, 1)
 // scavenger came round, and once anything small was placed in it the next
 // derivation was given fresh pages beside it. A few milliseconds against the
 // derivation's few hundred.
-func takeTurn() (release func()) {
-	scryptTurn <- struct{}{}
+//
+// A call whose context ends while it waits gives its place up and returns
+// ctx's error. The wait used to know nothing of the call: an MCP client that
+// sent a burst of kv.list and then cancelled them, or closed its session, left
+// every one queued, and each ran its derivation in turn, a second apiece, for
+// nobody, while the calls behind them waited. A derivation already running
+// cannot be stopped; one that has not started need not start.
+func takeTurn(ctx context.Context) (release func(), err error) {
+	select {
+	case scryptTurn <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	return func() {
 		debug.FreeOSMemory()
 		<-scryptTurn
-	}
+	}, nil
+}
+
+// ended is the refusal for a call that ended while it waited its turn: the store
+// was not opened (or written), and no passphrase was tried. Not wrongKey, which
+// ends the store's session over a passphrase that was never wrong.
+func ended(what string) *view.Error {
+	return view.Errorf("kv.cancelled", "the store was not %s: the call ended while it waited its turn", what)
 }
 
 // decrypt is age.Decrypt, in scryptTurn when one of the identities is a
-// passphrase: the derivation runs as the header is opened.
-func decrypt(ciphertext []byte, identities ...age.Identity) (io.Reader, error) {
+// passphrase: the derivation runs as the header is opened. It fails with ctx's
+// error, and derives nothing, when ctx ends before the turn comes.
+func decrypt(ctx context.Context, ciphertext []byte, identities ...age.Identity) (io.Reader, error) {
 	if slices.ContainsFunc(identities, func(id age.Identity) bool {
 		_, ok := id.(*age.ScryptIdentity)
 		return ok
 	}) {
-		defer takeTurn()()
+		release, err := takeTurn(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
 	}
 	return age.Decrypt(bytes.NewReader(ciphertext), identities...)
 }
 
 // encrypt is age.Encrypt, in scryptTurn when one of the recipients is a
 // passphrase: the derivation runs as the file key is wrapped, before the
-// writer is returned.
-func encrypt(dst io.Writer, recipients ...age.Recipient) (io.WriteCloser, error) {
+// writer is returned. It fails as decrypt does when ctx ends first.
+func encrypt(ctx context.Context, dst io.Writer, recipients ...age.Recipient) (io.WriteCloser, error) {
 	if slices.ContainsFunc(recipients, func(r age.Recipient) bool {
 		_, ok := r.(*age.ScryptRecipient)
 		return ok
 	}) {
-		defer takeTurn()()
+		release, err := takeTurn(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
 	}
 	return age.Encrypt(dst, recipients...)
 }
@@ -644,7 +671,7 @@ func currentMode() (keyMode, []string, *view.Error) {
 //
 // ciphertext is the store's own bytes, needed for the one case below where
 // what to trust cannot be decided from currentMode's say-so alone.
-func readKeys(req plugin.Request, ciphertext []byte) ([]age.Identity, *view.Error) {
+func readKeys(ctx context.Context, req plugin.Request, ciphertext []byte) ([]age.Identity, *view.Error) {
 	mode, specs, verr := currentMode()
 	if verr != nil {
 		return nil, verr
@@ -677,8 +704,11 @@ func readKeys(req plugin.Request, ciphertext []byte) ([]age.Identity, *view.Erro
 			// rekey — falls through to the refusal below exactly as before.
 			if passphrase := lookupPassphrase(req); passphrase != "" {
 				if id, err := age.NewScryptIdentity(passphrase); err == nil {
-					if _, decErr := decrypt(ciphertext, id); decErr == nil {
+					if _, decErr := decrypt(ctx, ciphertext, id); decErr == nil {
 						return []age.Identity{id}, nil
+					}
+					if ctx.Err() != nil {
+						return nil, ended("opened")
 					}
 				}
 			}

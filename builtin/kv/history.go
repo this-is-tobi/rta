@@ -79,9 +79,9 @@ func historyCapability() plugin.Capability {
 	}
 }
 
-func runHistory(_ context.Context, req plugin.Request) (view.View, error) {
+func runHistory(ctx context.Context, req plugin.Request) (view.View, error) {
 	key := req.String("key")
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -135,7 +135,7 @@ func restoreCapability() plugin.Capability {
 	}
 }
 
-func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
+func runRestore(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr := refuseSilentIdentity(req); verr != nil {
 		return nil, verr
 	}
@@ -144,7 +144,7 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	defer unlock()
-	s, verr := load(req)
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -175,7 +175,7 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 		s.Entries[key] = r.entry
 		delete(s.Removed, key)
-		if verr := save(req, s); verr != nil {
+		if verr := save(ctx, req, s); verr != nil {
 			return nil, verr
 		}
 		return view.Text{Body: fmt.Sprintf("restored %s (%s) — as it was when removed, history included", textclean.Record(key), r.Kind)}, nil
@@ -204,7 +204,7 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 		Origin: "revision:" + strconv.Itoa(n), Created: e.Created, Updated: now,
 		Previous: e.retired(now),
 	}
-	if verr := save(req, s); verr != nil {
+	if verr := save(ctx, req, s); verr != nil {
 		return nil, verr
 	}
 	return view.Text{Body: fmt.Sprintf("restored revision %d of %s (%s) — the value it replaced is revision 1 now",
