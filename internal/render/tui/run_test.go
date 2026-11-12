@@ -136,7 +136,7 @@ func TestARefusedPinnedConfigValueNamesThePinnedHeading(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver, problems := pluginconf.Resolve(written, reg.Origin)
+	resolver, problems := pluginconf.Resolve(written, reg)
 	if len(problems) > 0 {
 		t.Fatalf("the section was not honoured: %v", problems)
 	}

@@ -70,7 +70,7 @@ func TestAHandlerCannotRewriteWhatTheNextCallIsHanded(t *testing.T) {
 					t.Fatal(verr)
 				}
 			}
-			resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
+			resolver, _ := pluginconf.Resolve(cfg, reg)
 			server := NewServer(reg, "test", Options{Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: loader.Load})
 			st, ct := sdk.NewInMemoryTransports()
 			if _, err := server.Connect(context.Background(), st, nil); err != nil {

@@ -55,7 +55,7 @@ func requiredServer(t *testing.T, yaml string) (
 	}}}); err != nil {
 		t.Fatal(err)
 	}
-	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
+	resolver, _ := pluginconf.Resolve(cfg, reg)
 	s = connectWith(t, reg, Options{Origin: reg.Origin, Config: resolver.For, Profiles: cfg})
 	return func(args map[string]any) (string, bool) {
 		res := callTool(t, s, "db_query", args)

@@ -209,6 +209,16 @@ func SetInstalled(inst profile.Installed) { installed = inst }
 // two facts meet here, in the one place that already holds both.
 type withTrust struct{ profile.Installed }
 
+// Plugins is the declarations of the registry it pairs, for the renamed keys a
+// profile's report names (profile.Declared); embedding the interface would not
+// carry the method through.
+func (w withTrust) Plugins() []plugin.Plugin {
+	if d, ok := w.Installed.(profile.Declared); ok {
+		return d.Plugins()
+	}
+	return nil
+}
+
 // Untrusted reports whether this namespace names an artifact discovery found
 // and did not run.
 func (w withTrust) Untrusted(namespace string) bool {

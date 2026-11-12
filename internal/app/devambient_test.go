@@ -38,7 +38,7 @@ func TestADevRunSendsTheAmbientCredentialOnlyWhereItIsAimed(t *testing.T) {
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 	resolver, problems := pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"address": "db.internal:5432"},
-	}}), reg.Origin)
+	}}), reg)
 	SetPluginConfig(resolver.Without("pg"), problems)
 
 	out, errOut, err := run(t, reg, "pg", "status")

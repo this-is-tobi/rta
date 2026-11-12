@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -27,6 +28,10 @@ import (
 type tile struct {
 	cap    plugin.Capability
 	values map[string]any
+	// withRefused is what the tile draws in place of a run, decided when it
+	// was read from the config: a `with:` naming an input cap does not take
+	// (pluginconf.TileWith). Nil for one that runs.
+	withRefused *view.Error
 	// profile is the connection this tile is pinned to (config.Tile.Profile),
 	// "" for one that follows the switched-on environment. It is part of the
 	// tile's identity — see key — and what the panel's title says beside the
@@ -904,7 +909,8 @@ func statedTiles(reg *registry.Registry, entries []config.Tile, source tileSourc
 		}
 		t := tile{cap: c, values: ct.With, profile: ct.Profile, source: source, stated: ct,
 			width: ct.Width, widthDemand: ct.Width > 0, height: ct.Height,
-			section: strings.TrimSpace(ct.Section)}
+			section:     strings.TrimSpace(ct.Section),
+			withRefused: pluginconf.TileWith(c, pluginconf.RenamedIn(reg.Plugins(), plugin.Namespace(c.ID)), ct.With)}
 		// A value that cannot be read is the config check's to name; the tile runs
 		// at the pace it would have had without the line.
 		t.refresh, _ = config.ParseRefresh(ct.Refresh)
@@ -1060,6 +1066,11 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 		// not a read of the plugin's default destination.
 		if cfg.withheld != nil {
 			return tileMsg{key: key, idx: idx, err: cfg.withheld}
+		}
+		// And one whose `with:` names an input the capability does not take
+		// shows that, and not a run without the value.
+		if t.withRefused != nil {
+			return tileMsg{key: key, idx: idx, err: t.withRefused}
 		}
 		// A tile is a call too: the fence a profile states is about what is
 		// asked of the connection, whoever wrote the tile, and a refused tile is

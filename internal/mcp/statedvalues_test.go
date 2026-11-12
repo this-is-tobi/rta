@@ -83,7 +83,7 @@ func newStatedFixture(t *testing.T, yaml string) *statedFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
+	resolver, _ := pluginconf.Resolve(cfg, reg)
 	server := NewServer(reg, "test", Options{Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: (&config.Loader{}).Load})
 	st, ct := sdk.NewInMemoryTransports()
 	ctx := context.Background()

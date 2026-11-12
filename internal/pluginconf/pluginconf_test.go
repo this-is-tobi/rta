@@ -10,22 +10,52 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
-// origins builds the lookup Resolve takes, from a map of namespace to origin.
-func origins(m map[string]registry.Origin) Origin {
-	return func(ns string) (registry.Origin, bool) {
-		o, ok := m[ns]
-		return o, ok
+// catalogue is a Catalogue from a map of namespace to origin and the plugins
+// declared under them.
+type catalogue struct {
+	origins map[string]registry.Origin
+	plugins []plugin.Plugin
+}
+
+func (c catalogue) Origin(ns string) (registry.Origin, bool) {
+	o, ok := c.origins[ns]
+	return o, ok
+}
+
+func (c catalogue) Plugins() []plugin.Plugin { return c.plugins }
+
+// origins is a catalogue of m that declares nothing: every key a section
+// states is one nothing reads.
+func origins(m map[string]registry.Origin) catalogue { return catalogue{origins: m} }
+
+// declaring is c with reg's plugins in place of its own, for a test that holds
+// a section to a declaration of its own.
+func (c catalogue) declaring(reg *registry.Registry) catalogue {
+	c.plugins = reg.Plugins()
+	return c
+}
+
+// declares is a plugin of ns reading each of keys, as a text input.
+func declares(ns string, keys ...string) plugin.Plugin {
+	inputs := make([]plugin.Field, len(keys))
+	for i, k := range keys {
+		inputs[i] = plugin.Field{Name: strings.ReplaceAll(k, ".", "-"), Type: plugin.String, Config: k}
 	}
+	return plugin.Plugin{Name: ns, Capabilities: []plugin.Capability{{ID: ns + ".status", Inputs: inputs}}}
 }
 
 const digest = "1a2b3c4d5e6f7890aabbccddeeff00112233445566778899aabbccddeeff0011"
 
-var installed = origins(map[string]registry.Origin{
-	"sys": {},                                                     // built-in: no path, no digest
-	"pg":  {Path: "/usr/local/bin/rta-plugin-pg", Digest: digest}, // on $PATH
-})
+var installed = catalogue{
+	origins: map[string]registry.Origin{
+		"sys": {},                                                     // built-in: no path, no digest
+		"pg":  {Path: "/usr/local/bin/rta-plugin-pg", Digest: digest}, // on $PATH
+	},
+	plugins: []plugin.Plugin{declares("pg", "host", "port"), declares("sys", "top", "sort")},
+}
 
 // trusted returns cfg as it would arrive from a config file somebody named.
 //

@@ -46,8 +46,9 @@ func sysRegistry(t *testing.T) *registry.Registry {
 
 func checkOf(t *testing.T, values map[string]any) []Problem {
 	t.Helper()
-	r, _ := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": values}}), installed)
-	return r.Check(sysRegistry(t))
+	reg := sysRegistry(t)
+	r, _ := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": values}}), installed.declaring(reg))
+	return r.Check(reg)
 }
 
 func TestABaseValueTheHandlerWouldReadAsZeroIsReported(t *testing.T) {
@@ -122,12 +123,10 @@ func TestTheSectionReportDoesNotEchoTheStatedValue(t *testing.T) {
 	}
 }
 
-// A key a plugin declares as a dotted path — `password.symbols` — is read
-// through a nested block. Written as one key with a dot in it nothing reads it,
-// and the report said it had "no value", which sent the operator to fill in a
-// key that already had one. It says what it is, and that without echoing the
-// value that was written.
-func TestADottedKeyWrittenFlatIsToldToNestNotThatItHasNoValue(t *testing.T) {
+// A key a plugin declares as a dotted path is one key written flat or nested,
+// and applied either way. Stated both ways in one section it is refused: the
+// two are the same key, and nothing can tell which value was meant.
+func TestADottedKeyIsAppliedFlatOrNestedAndRefusedStatedTwice(t *testing.T) {
 	reg := registry.New()
 	if err := reg.Register(plugin.Plugin{
 		Name: "sys", Summary: "sys", Capabilities: []plugin.Capability{{
@@ -140,38 +139,88 @@ func TestADottedKeyWrittenFlatIsToldToNestNotThatItHasNoValue(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	flat := config.Config{Plugins: map[string]map[string]any{"sys": {"password.symbols": true}}}
-	r, _ := Resolve(trusted(t, flat), installed)
-	problems := r.Check(reg)
-	if len(problems) != 1 {
-		t.Fatalf("want one problem, got %v", problems)
+	cat := installed.declaring(reg)
+	for name, values := range map[string]map[string]any{
+		"flat":   {"password.symbols": true},
+		"nested": {"password": map[string]any{"symbols": true}},
+	} {
+		r, problems := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": values}}), cat)
+		if len(problems) != 0 || r.For("sys")["password.symbols"] != true {
+			t.Errorf("%s: applied %v, problems %v", name, r.For("sys"), problems)
+		}
+		if problems := r.Check(reg); len(problems) != 0 {
+			t.Errorf("%s: reported %v", name, problems)
+		}
+		// And the handler gets it: the section a call runs with is the
+		// flattened one, read by its dotted key.
+		c, _ := reg.Capability("sys.password")
+		if got := plugin.Resolve(c, plugin.Inputs{Config: r.For("sys")})["symbols"]; got != true {
+			t.Errorf("%s: the handler got symbols = %v", name, got)
+		}
 	}
-	got := problems[0].Reason + " / " + problems[0].Hint
-	if strings.Contains(got, "no value") {
-		t.Errorf("a key that has a value was reported as having none: %s", got)
-	}
-	if !strings.Contains(got, "written as one key") || !strings.Contains(got, "password: {symbols: <value>}") ||
-		!strings.Contains(got, "rta config set plugins.sys.password.symbols") {
-		t.Errorf("the report does not say how to nest it: %s", got)
-	}
-
-	nested := config.Config{Plugins: map[string]map[string]any{"sys": {"password": map[string]any{"symbols": true}}}}
-	r, _ = Resolve(trusted(t, nested), installed)
-	if problems := r.Check(reg); len(problems) != 0 {
-		t.Errorf("the nested spelling was reported: %v", problems)
+	twice := map[string]any{"password.symbols": true, "password": map[string]any{"symbols": false}}
+	r, _ := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": twice}}), cat)
+	p, withheld := r.Withheld("sys")
+	if !withheld || p.Key != "password.symbols" || !strings.Contains(p.Reason, "stated twice") || r.For("sys") != nil {
+		t.Fatalf("withheld %v, %+v, applied %v", withheld, p, r.For("sys"))
 	}
 }
 
-// A key one slip from a declared one is told what it was meant to be.
-func TestAMisspeltSectionKeyIsToldWhatItWasMeantFor(t *testing.T) {
-	problems := checkOf(t, map[string]any{"prot": 80})
-	if len(problems) != 1 || problems[0].Key != "prot" ||
-		!strings.Contains(problems[0].Hint, `did you mean "port"?`) {
-		t.Fatalf("got %+v", problems)
+// A key nothing reads withholds the section, and every call of the plugin is
+// refused, where it used to be reported by `rta doctor` and run on the
+// plugin's default: a typo in a host ran against wherever the plugin points
+// by default. The refusal says what the key was likely meant as.
+func TestAMisspeltSectionKeyWithholdsTheSectionSayingWhatItWasMeantFor(t *testing.T) {
+	withheldOf := func(values map[string]any) (*Resolver, Problem, bool) {
+		r, _ := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": values}}),
+			installed.declaring(sysRegistry(t)))
+		p, withheld := r.Withheld("sys")
+		return r, p, withheld
 	}
-	problems = checkOf(t, map[string]any{"zzzzzzzz": 1})
-	if len(problems) != 1 || !strings.Contains(problems[0].Hint, "rta explain") {
-		t.Fatalf("a key nothing resembles lost the pointer to explain: %+v", problems)
+	r, p, withheld := withheldOf(map[string]any{"prot": 80, "host": "db"})
+	if !withheld || p.Key != "prot" || !strings.Contains(p.Hint, `did you mean "port"?`) || r.For("sys") != nil {
+		t.Fatalf("withheld %v, %+v, applied %v", withheld, p, r.For("sys"))
+	}
+	if verr := p.Refusal(); verr.Code != "core.config.unapplied" || !strings.Contains(verr.Message, `nothing in "sys" reads "prot"`) {
+		t.Errorf("refusal = %v", verr)
+	}
+	if _, p, _ = withheldOf(map[string]any{"zzzzzzzz": 1}); !strings.Contains(p.Hint, "rta explain") {
+		t.Fatalf("a key nothing resembles lost the pointer to explain: %+v", p)
+	}
+}
+
+// A key the plugin renamed is told what replaced it, with that key's help,
+// rather than guessed at: only the plugin knows the old spelling is no typo.
+// An entry whose new key nothing reads is not used.
+func TestARenamedKeyIsToldWhatReplacedIt(t *testing.T) {
+	declare := func(renamed map[string]string) *registry.Registry {
+		reg := registry.New()
+		if err := reg.Register(plugin.Plugin{
+			Name: "sys", Summary: "sys", Renamed: renamed, Capabilities: []plugin.Capability{{
+				ID: "sys.status", Summary: "status", Safety: plugin.Read,
+				Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+				Inputs: []plugin.Field{
+					{Name: "tls", Type: plugin.String, Config: "tls", Help: "TLS mode, verify-full checking the name"},
+					{Name: "host", Type: plugin.String, Config: "host"},
+				},
+			}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return reg
+	}
+	hint := func(renamed map[string]string, values map[string]any) string {
+		r, _ := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": values}}),
+			installed.declaring(declare(renamed)))
+		p, _ := r.Withheld("sys")
+		return p.Hint
+	}
+	got := hint(map[string]string{"sslmode": "tls"}, map[string]any{"sslmode": "verify-full"})
+	if got != `sys reads "tls" in its place: TLS mode, verify-full checking the name` {
+		t.Errorf("hint = %q", got)
+	}
+	if got := hint(map[string]string{"sslmode": "gone"}, map[string]any{"sslmode": "verify-full"}); strings.Contains(got, "gone") {
+		t.Errorf("an entry naming a key nothing reads was used: %q", got)
 	}
 }
 
@@ -191,9 +240,9 @@ func TestAKeyThatIsTheEndOfADottedOneIsToldTheSpelling(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	r, _ := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": {"limit": 5}}}), installed)
-	problems := r.Check(reg)
-	if len(problems) != 1 || !strings.Contains(problems[0].Hint, "tree.limit or usage.limit") {
+	_, problems := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": {"limit": 5}}}),
+		installed.declaring(reg))
+	if len(problems) != 1 || !strings.Contains(problems[0].Hint, `"tree.limit" or "usage.limit"`) {
 		t.Fatalf("problems = %v, want one that names tree.limit and usage.limit", problems)
 	}
 }

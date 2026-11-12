@@ -2,90 +2,97 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
 
-// A plugin declares the key it reads as a dotted path — `password.symbols`,
-// `ping.count` — and a plugins: section holds it nested: `password:` with
-// `symbols:` under it. Written as one key with a dot in it, the value is never
-// read, which is the trap `rta explain` springs by printing the dotted form.
-// What follows is the one place that goes between the two spellings, so a
-// writer cannot put the flat one in a file and a reader cannot look for it.
+// A plugin declares the key it reads as a dotted path, `password.symbols` or
+// `query.limit`, and a plugins: section, a profile's `set:` and its `only:`
+// state it either way: as one key with the dots in it, the way `rta explain`
+// and every writer print it, or nested, one block per segment. Both are the
+// same key. What follows is the one place that goes between the spellings, so
+// no reader looks for one and misses the other.
+//
+// Both, because neither alone carries every key. Nested only, the way a
+// section was read until now, a plugin cannot declare `database` beside
+// `database.list.limit`: `database:` would be a value and a block at once, and
+// the writer, given the second, replaced the first with a block and said only
+// "wrote". Flat only would have refused every section written nested until
+// then. No input takes a map, so a block is never a value, and the two
+// spellings never disagree about what a line means.
 
-// SectionValue is the value stated at a dotted key in a plugins: section, and
-// whether there is one. A nested block is a namespace and not a value, so it
-// answers false.
-func SectionValue(section map[string]any, key string) (any, bool) {
-	cur := any(section)
-	for _, seg := range strings.Split(key, ".") {
-		next, ok := child(cur, seg)
-		if !ok {
-			return nil, false
-		}
-		cur = next
+// FlatSection is every value a settings block states, by the dotted path to
+// it, however each is spelled: `query.limit: 500` and `query: {limit: 500}`
+// are both the key query.limit. twice lists, sorted, each path the block
+// states in more than one spelling. No reader can choose between those, so a
+// caller refuses the block rather than pick one.
+func FlatSection(section map[string]any) (flat map[string]any, twice []string) {
+	flat = map[string]any{}
+	stated := map[string]int{}
+	for _, leaf := range SectionLeaves(section) {
+		stated[leaf.Key]++
+		flat[leaf.Key] = leaf.Value
 	}
-	if asMap(cur) != nil {
+	for key, n := range stated {
+		if n > 1 {
+			twice = append(twice, key)
+		}
+	}
+	sort.Strings(twice)
+	return flat, twice
+}
+
+// SectionValue is the value stated at a dotted key in a settings block, in
+// whichever spelling, and whether there is one. A block is never a value.
+func SectionValue(section map[string]any, key string) (any, bool) {
+	spots := spellings(section, key)
+	if len(spots) == 0 {
 		return nil, false
 	}
-	return cur, true
+	return spots[0].holder()[spots[0].key], true
 }
 
-// SetSectionValue states v at a dotted key, making the blocks on the way.
-// A block on the way that holds a value instead is replaced by the block: the
-// key being written is the one the operator named.
+// SetSectionValue states v at a dotted key. A value the block states once for
+// the key is replaced where it is, so a block written nested stays nested. A
+// key the block does not state is written flat, as one key: a nested write
+// makes a block of a name that may already hold a value, `database: app`
+// beside `database.list.limit`, which is how the value was lost. A key stated
+// in several spellings is left with one, the flat one.
 func SetSectionValue(section map[string]any, key string, v any) {
-	segs := strings.Split(key, ".")
-	cur := section
-	for _, seg := range segs[:len(segs)-1] {
-		next := asMap(cur[seg])
-		if next == nil {
-			next = map[string]any{}
-		}
-		cur[seg] = next
-		cur = next
+	normalize(section)
+	spots := spellings(section, key)
+	if len(spots) == 1 {
+		spots[0].holder()[spots[0].key] = v
+		return
 	}
-	cur[segs[len(segs)-1]] = v
+	for _, s := range spots {
+		s.remove()
+	}
+	section[key] = v
 }
 
-// DeleteSectionValue removes the key at a dotted path, and the blocks it
-// leaves empty on the way up. It reports whether there was anything to remove.
+// DeleteSectionValue removes the key at a dotted path in every spelling the
+// block states it in, and the blocks that leaves empty on the way up. It
+// reports whether there was anything to remove.
 func DeleteSectionValue(section map[string]any, key string) bool {
-	segs := strings.Split(key, ".")
-	chain := []map[string]any{section}
-	for _, seg := range segs[:len(segs)-1] {
-		parent := chain[len(chain)-1]
-		next := asMap(parent[seg])
-		if next == nil {
-			return false
-		}
-		parent[seg] = next
-		chain = append(chain, next)
+	normalize(section)
+	spots := spellings(section, key)
+	for _, s := range spots {
+		s.remove()
 	}
-	last := segs[len(segs)-1]
-	if _, there := chain[len(chain)-1][last]; !there {
-		return false
-	}
-	delete(chain[len(chain)-1], last)
-	for i := len(chain) - 1; i > 0; i-- {
-		if len(chain[i]) > 0 {
-			break
-		}
-		delete(chain[i-1], segs[i-1])
-	}
-	return true
+	return len(spots) > 0
 }
 
-// SectionLeaf is one value of a plugins: section, by the dotted path to it.
+// SectionLeaf is one value of a settings block, by the dotted path to it.
 type SectionLeaf struct {
 	Key   string
 	Value any
 }
 
-// SectionLeaves lists every key of a plugins: section that holds a value,
-// sorted by its dotted path: the leaves, however deep. A key written flat, with
-// a dot in its name, is listed under that name — it is what the file says, even
-// though nothing reads it.
+// SectionLeaves lists every value a settings block states, sorted by its
+// dotted path, however deep and however spelled. A path stated in two
+// spellings is listed twice, as the file says it (FlatSection reports it).
 func SectionLeaves(section map[string]any) []SectionLeaf {
 	var out []SectionLeaf
 	var walk func(m map[string]any, prefix string)
@@ -99,7 +106,7 @@ func SectionLeaves(section map[string]any) []SectionLeaf {
 		}
 	}
 	walk(section, "")
-	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
 }
 
@@ -113,46 +120,71 @@ func SectionKeys(section map[string]any) []string {
 	return out
 }
 
-// NestSection turns a section holding flat dotted keys into one holding the
-// blocks they name: {"ping.count": 7} becomes {"ping": {"count": 7}}. What is
-// already nested is kept, and a flat key that disagrees with a nested one it
-// would merge into loses to the nested one, which is what a reader sees.
-func NestSection(flat map[string]any) map[string]any {
-	out := map[string]any{}
-	keys := make([]string, 0, len(flat))
-	for k := range flat {
-		keys = append(keys, k)
+// spot is one place a settings block states a dotted key: the blocks from the
+// section down to the one holding the value, the key of each in the one
+// before it, and the value's key in the last.
+type spot struct {
+	chain []map[string]any
+	steps []string
+	key   string
+}
+
+// holder is the block the spot's value sits in.
+func (s spot) holder() map[string]any { return s.chain[len(s.chain)-1] }
+
+// remove deletes the spot's value, and each block that leaves empty, from the
+// innermost out.
+func (s spot) remove() {
+	delete(s.holder(), s.key)
+	for i := len(s.chain) - 1; i > 0 && len(s.chain[i]) == 0; i-- {
+		delete(s.chain[i-1], s.steps[i-1])
 	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		if inner := asMap(flat[k]); inner != nil {
-			merged := NestSection(inner)
-			if existing := asMap(out[k]); existing != nil {
-				for ik, iv := range merged {
-					if _, taken := existing[ik]; !taken {
-						existing[ik] = iv
-					}
+}
+
+// spellings is every place section states key: the key split anywhere between
+// its segments into blocks and one key, `query.limit` as itself or as `limit`
+// under `query`. Ordered from the flattest, the order SectionValue prefers.
+//
+// It reads and never writes. A block a decoder handed back as map[any]any is
+// walked as a copy, so a writer normalizes the section first, and its spots
+// are then the section's own blocks.
+func spellings(section map[string]any, key string) []spot {
+	var out []spot
+	var find func(chain []map[string]any, steps, segs []string)
+	find = func(chain []map[string]any, steps, segs []string) {
+		m := chain[len(chain)-1]
+		for i := len(segs); i >= 1; i-- {
+			k := strings.Join(segs[:i], ".")
+			v, ok := m[k]
+			if !ok {
+				continue
+			}
+			inner := asMap(v)
+			if i == len(segs) {
+				if inner == nil {
+					out = append(out, spot{chain: slices.Clone(chain), steps: slices.Clone(steps), key: k})
 				}
 				continue
 			}
-			SetSectionValue(out, k, merged)
-			continue
+			if inner != nil {
+				find(append(slices.Clone(chain), inner), append(slices.Clone(steps), k), segs[i:])
+			}
 		}
-		if _, taken := SectionValue(out, k); taken {
-			continue
-		}
-		SetSectionValue(out, k, flat[k])
 	}
+	find([]map[string]any{section}, nil, strings.Split(key, "."))
 	return out
 }
 
-func child(cur any, seg string) (any, bool) {
-	m := asMap(cur)
-	if m == nil {
-		return nil, false
+// normalize converts every block under section that a decoder handed back as
+// map[any]any into a map[string]any, in place, so a write lands in the
+// section and not in a copy of one of its blocks.
+func normalize(section map[string]any) {
+	for k, v := range section {
+		if inner := asMap(v); inner != nil {
+			section[k] = inner
+			normalize(inner)
+		}
 	}
-	v, ok := m[seg]
-	return v, ok
 }
 
 // asMap reads both map shapes a decoder can hand back, and nil for anything

@@ -571,6 +571,11 @@ func parse(path string, data []byte) (Config, error) {
 			for key, conn := range p.Plugins {
 				fields, _ := nested[key].(map[string]any)
 				conn.unknown = unclaimed(fields, connectionKeys)
+				// `set:` and `only:` take a key as a plugins: section does,
+				// flat or nested, and hold it flat from here on, so every
+				// reader of a connection looks a key up one way.
+				conn.Set, conn.twice = flatBlock(conn.Set, "set", nil)
+				conn.Only, conn.twice = flatBlock(conn.Only, "only", conn.twice)
 				p.Plugins[key] = conn
 			}
 			cfg.Profiles[name] = p

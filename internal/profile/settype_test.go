@@ -416,7 +416,44 @@ func TestASetKeyThatIsTheEndOfADottedOneIsToldTheSpelling(t *testing.T) {
 	}
 	cfg := load(t, "profiles:\n  staging:\n    plugins:\n      db:\n        set:\n          limit: 5\n")
 	problems := Check(cfg, reg)
-	if len(problems) != 1 || !strings.Contains(problems[0].Hint, "tree.limit or usage.limit") {
+	if len(problems) != 1 || !strings.Contains(problems[0].Hint, `"tree.limit" or "usage.limit"`) {
 		t.Fatalf("problems = %v, want one that names tree.limit and usage.limit", problems)
+	}
+}
+
+// A `set:` key the plugin renamed is told what replaced it, as a plugins:
+// section is, since the one ladder words both; and a `set:` that states one
+// key flat and nested is refused, the run and the report in the same words.
+func TestASetKeyThePluginRenamedIsToldWhatReplacedItAndOneStatedTwiceIsRefused(t *testing.T) {
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "db", Summary: "db", Renamed: map[string]string{"sslmode": "tls"},
+		Capabilities: []plugin.Capability{{ID: "db.status", Summary: "status", Safety: plugin.Read, Run: run,
+			Inputs: []plugin.Field{
+				{Name: "host", Type: plugin.String, Config: "host", Local: true},
+				{Name: "tls", Type: plugin.String, Config: "tls", Local: true, Help: "TLS mode"},
+				{Name: "limit", Type: plugin.Int, Config: "query.limit"},
+			}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := load(t, "profiles:\n  staging:\n    plugins:\n      db:\n        set:\n          sslmode: verify-full\n")
+	problems := Check(cfg, reg)
+	if len(problems) != 1 || problems[0].Hint != `db reads "tls" in its place: TLS mode` {
+		t.Fatalf("problems = %v", problems)
+	}
+	cfg = load(t, "profiles:\n  staging:\n    plugins:\n      db:\n        set:\n          query.limit: 5\n          query:\n            limit: 6\n")
+	problems = Check(cfg, reg)
+	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "states `set: query.limit` twice") {
+		t.Fatalf("problems = %v", problems)
+	}
+	c, _ := reg.Capability("db.status")
+	if _, verr := Lookup(cfg, c, "staging", reg); verr == nil || verr.Code != "core.profile.twice" {
+		t.Fatalf("the run took it: %v", verr)
+	}
+	// Nested alone is the same key as flat, and fills the input.
+	cfg = load(t, "profiles:\n  staging:\n    plugins:\n      db:\n        set:\n          query:\n            limit: 6\n")
+	if problems := Check(cfg, reg); len(problems) != 0 {
+		t.Fatalf("problems = %v", problems)
 	}
 }

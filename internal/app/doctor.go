@@ -576,6 +576,10 @@ func doctorDashboardTiles(reg *registry.Registry, add func(check, status, detail
 				add("dashboard", "warn", "tile "+t.ID+inView(name)+" draws nothing: "+e.Message+" — "+e.Hint)
 				continue
 			}
+			// The refusal the tile draws in place of a run, worded once.
+			if verr := pluginconf.TileWith(c, pluginconf.RenamedIn(reg.Plugins(), plugin.Namespace(c.ID)), t.With); verr != nil {
+				add("dashboard", "warn", "tile "+t.Key()+inView(name)+" draws an error: "+verr.Message+" — "+verr.Hint)
+			}
 			// A tile pinned to a profile is drawn through it on every
 			// refresh, and one the profile no longer covers — removed,
 			// renamed, its instance gone — draws that refusal for good. Asked
@@ -746,7 +750,7 @@ func doctorOutput(add func(check, status, detail string)) {
 // the argument a grant's own artifact pin already makes.
 func doctorPluginConfig(reg *registry.Registry, add func(check, status, detail string)) {
 	if cfg, err := config.LoadFile(); err == nil && len(cfg.Plugins) > 0 {
-		resolver, problems := pluginconf.Resolve(cfg, reg.Origin)
+		resolver, problems := pluginconf.Resolve(cfg, reg)
 		problems = append(problems, resolver.Check(reg)...)
 		switch {
 		case len(problems) == 0:

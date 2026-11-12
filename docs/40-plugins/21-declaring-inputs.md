@@ -51,7 +51,12 @@ The operator writes it under your plugin's own section, which is pinned to the b
 plugins:
   weather@1a2b3c4d5e6f:
     host: db.internal
+    query.limit: 500
 ```
+
+A dotted key is one key however it is written: as one key, the way `rta explain` prints it (`query.limit: 500`), or nested a block per segment (`query: {limit: 500}`). `rta config set` and the TUI write it as one key, and a section that states one key both ways is refused, since nothing can tell which value was meant. So a plugin may declare `database` beside `database.list.limit`.
+
+**A key nothing reads stops your plugin.** The section is withheld and every call of your plugin refused until it is fixed, with the key it was likely meant as in the hint: a key that silently did nothing was a setting the operator believed in effect, a mistyped host sent the call to your default destination, and a renamed [TLS](../95-reference/10-glossary.md#acronyms) key turned into your default mode. So when you rename a key, say what it became in `Renamed` on your `plugin.Plugin`, `Renamed: map[string]string{"sslmode": "tls"}`, and a file still stating the old key is told `pg reads "tls" in its place` with the new key's help instead of a guess. It is wording only: the old key does nothing, and an entry is used only while the old key is read by no input and the new one by some. Delete it once nobody holds the old name.
 
 `rta doctor` prints the exact line, digest included, and says so again if you upgrade and the pin goes stale. Until it names the build installed, rta refuses your plugin's calls rather than run them without the section, and `rta config repin --plugin weather` moves it. **`Config` is refused on a `Secret` or `SecretSlice` input** — configuration is a plaintext file read on every invocation, and a `Secret`'s default is published in your MCP tool schema. Use `Local: true` and let the host resolve it from its own environment.
 
