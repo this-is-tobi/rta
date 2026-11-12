@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
@@ -78,14 +79,28 @@ func resolvePluginKey(reg *registry.Registry, rest string) (configKey, *view.Err
 	switch {
 	case origin.External():
 		heading = ns + "@" + origin.Short()
-		if pinned && (len(pin) < 8 || !strings.HasPrefix(origin.Digest, pin)) {
-			hint := origin.Which(ns) + " — or leave the pin off, and rta writes it"
+		if pinned {
+			stale := origin.Which(ns) + " — or leave the pin off, and rta writes it"
+			short := origin.Which(ns) + " — at least " + strconv.Itoa(registry.MinPinLen) +
+				" hex characters, or leave the pin off, and rta writes it"
 			if origin.Dev {
-				hint = origin.Which(ns) + "; a pin is for a build that stays installed"
+				stale = origin.Which(ns) + "; a pin is for a build that stays installed"
+				short = stale
 			}
-			return configKey{}, view.Errorf("core.config.key.pin",
-				"this pin does not match %s", origin.Called(ns)).
-				WithHint(hint)
+			// Short and stale are two refusals, as a profile entry's and a
+			// config section's are. Folded into one, a correct pin under the
+			// floor was told it did not match, and its reader compared two
+			// digests that agree.
+			switch {
+			case len(pin) < registry.MinPinLen:
+				return configKey{}, view.Errorf("core.config.key.shortpin",
+					"this pin for %q is too short to trust", ns).
+					WithHint(short)
+			case !strings.HasPrefix(origin.Digest, pin):
+				return configKey{}, view.Errorf("core.config.key.stalepin",
+					"this pin does not match %s", origin.Called(ns)).
+					WithHint(stale)
+			}
 		}
 	case pinned:
 		return configKey{}, view.Errorf("core.config.key.pin", "%q is built in and has no artifact to pin", ns).
