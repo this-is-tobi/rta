@@ -123,6 +123,24 @@ func TestConfigEditReopensOnAFileThatDoesNotParseAndSavesTheFix(t *testing.T) {
 	}
 }
 
+// A file that does not parse on disk, fixed in the editor, is saved: the fix
+// was held to the broken text it replaces, and the editor reopened under an
+// error about a line the person had already put right, with nothing ever
+// written.
+func TestConfigEditSavesTheFixToAFileThatDoesNotParseOnDisk(t *testing.T) {
+	opened := editing(t, func(string) string { return "output: json\n" }, leave)
+	_, errOut, file, err := configRun(t, configRegistry(t), "output: [unclosed\n", "config", "edit", "-o", "pretty")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, errOut)
+	}
+	if len(*opened) != 1 {
+		t.Errorf("the editor was opened %d times, the second with:\n%s", len(*opened), (*opened)[len(*opened)-1])
+	}
+	if file != "output: json\n" {
+		t.Errorf("the fix was not saved: the file reads %q", file)
+	}
+}
+
 func TestConfigEditNoteCountsLinesFromTheFirstLineAfterIt(t *testing.T) {
 	opened := editing(t,
 		func(shown string) string { return shown + "\n\ndashboard: [unclosed\n" },
