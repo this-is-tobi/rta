@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/config"
@@ -16,6 +15,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/yamlguard"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -441,7 +441,7 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 		// construction — which reads as "nothing changed" for every edit. It
 		// is also the honest question: what is being asked is whether the file
 		// would differ, and this is the file.
-		before, beforeErr := yaml.Marshal(current)
+		before, beforeErr := yamlguard.Marshal(current)
 		p := current
 
 		if cmd.Flags().Changed("note") {
@@ -565,7 +565,7 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 		// byte-identical file tells them they fixed something that was never
 		// wrong. `rta policy` already answers "already off" rather than
 		// reporting a write it did not need to make.
-		after, afterErr := yaml.Marshal(p)
+		after, afterErr := yamlguard.Marshal(p)
 		if existed && beforeErr == nil && afterErr == nil && bytes.Equal(before, after) {
 			unchanged = true
 			return cfg, false

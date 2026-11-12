@@ -568,6 +568,28 @@ func TestSetIsIdempotent(t *testing.T) {
 	}
 }
 
+// **A note YAML would misread is written so the file still loads.** `--note
+// "? why this exists"` was written bare, `note: ? why this exists`, which YAML
+// reads as the start of a complex key: config.yaml stopped parsing, and every
+// rta command after it refused to start until somebody edited the file by
+// hand. A tab in a note came back without it.
+func TestANoteYAMLWouldMisreadIsWrittenSoTheFileStillLoads(t *testing.T) {
+	reg := setRegistry(t)
+	for _, note := range []string{"? why this exists", "tab\tin it"} {
+		if _, errOut, err := runWith(t, reg, "", "profile", "set", "staging", "--note", note,
+			"--plugin", "db", "--set", "host=db.internal"); err != nil {
+			t.Fatalf("%q: %v %q", note, err, errOut)
+		}
+		loaded, err := config.Load()
+		if err != nil {
+			t.Fatalf("%q left a config that does not load: %v\n%s", note, err, configOf(t))
+		}
+		if got := loaded.Profiles["staging"].Note; got != note {
+			t.Errorf("the note %q came back as %q", note, got)
+		}
+	}
+}
+
 // A run that asks for a state the profile is already in says so, rather than
 // reporting a write it did not make.
 //

@@ -10,9 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/goccy/go-yaml"
-
 	"github.com/this-is-tobi/rta/internal/pluginhost"
+	"github.com/this-is-tobi/rta/internal/yamlguard"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -166,7 +165,7 @@ func Generate(ctx context.Context, req GenerateRequest) ([]byte, Manifest, *view
 		return m.Platforms[i].Arch < m.Platforms[j].Arch
 	})
 
-	raw, err := yaml.Marshal(m)
+	raw, err := yamlguard.Marshal(m)
 	if err != nil {
 		return nil, Manifest{}, view.Errorf("plugin.manifest.write", "%v", err)
 	}
