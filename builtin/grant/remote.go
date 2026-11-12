@@ -108,7 +108,7 @@ func remoteSuppressedNote(server string, n int) string {
 // catalogue are the ones that bind; the signature happens here because the
 // key and the human are here — what gets signed is byte-for-byte what the
 // server said it would store, which is the review step made structural.
-func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.View, error) {
+func remoteAllow(ctx context.Context, req plugin.Request, server string, catalog func() []plugin.Capability) (view.View, error) {
 	// Named here, and never filled in for you: the agents this machine knows
 	// are this machine's, and the grant is for one on the server. Refused
 	// locally rather than after the round trip, since the answer would be
@@ -134,6 +134,25 @@ func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.V
 	// reason above: the answer is known before the passphrase is typed.
 	if verr := givenRecord(req.Surface(), spec.Scope); verr != nil {
 		return nil, verr
+	}
+	// The question a grant on a whole plugin asks at a terminal (runApprove's),
+	// asked here too and before the operator's passphrase, so a no costs none. It
+	// was asked only on the local path, and the grant it guards is the same one
+	// on a server, which is usually the one that matters more. The server builds
+	// the grant after the passphrase, so what it reaches is counted from this
+	// machine's catalogue: the built-ins exactly, a plugin as far as this
+	// machine has the same one, and one it has not, not at all. The question
+	// says so, and a dry run shows the server's own draft.
+	if !req.DryRun && !req.Yes && req.CanConfirm() {
+		probe := core.Grant{Target: spec.Target, Scope: spec.Scope, Profile: spec.Profile,
+			Agent: spec.Agent, MaxUses: spec.MaxUses}
+		if reach := wideReach(catalog, probe); len(reach) > 0 {
+			ask := fmt.Sprintf("would let %s on %s %s%s", subject(probe), server, describe(probe), usesSuffix(probe.MaxUses))
+			reach = append(reach, "counted from this machine's catalogue: "+server+"'s plugins may differ")
+			if !req.Confirm(ask + "\n" + strings.Join(reach, "\n")) {
+				return nil, notConfirmed(probe)
+			}
+		}
 	}
 	base, verr := operatorid.ServerURL(server)
 	if verr != nil {

@@ -334,6 +334,85 @@ func TestARemoteDryRunShowsTheBuildAndPinTheServerDrafted(t *testing.T) {
 // remoteLab serves this process's grant store as the server "lab" over
 // real HTTP, running as agent, with the operator key unlocked by "correct
 // horse" enrolled on it, and points remotes.yaml at it.
+// **A grant on a whole plugin is asked about on a server too.** `rta grant allow
+// kv` at a terminal says what the grant covers and waits for a yes; the same
+// command with --server issued it on the server without a word, and a server is
+// usually where it matters more. Asked before the operator's passphrase, so a no
+// costs none, and saying what the count was made from.
+func TestAWholePluginGrantOnAServerIsAskedAboutToo(t *testing.T) {
+	setup(t)
+	operatorid.ScryptWorkFactor = 10
+	if _, verr := operatorid.Init("correct horse"); verr != nil {
+		t.Fatal(verr)
+	}
+	line, verr := operatorid.RosterLine("tobi")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	rosterPath := filepath.Join(t.TempDir(), "operators")
+	if err := os.WriteFile(rosterPath, []byte(line+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	roster, _, err := operatorid.LoadRoster(rosterPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "http://" + ln.Addr().String()
+	if verr := guard.EnableRemote(roster.Entries(), base); verr != nil {
+		t.Fatal(verr)
+	}
+	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{
+		Roster: roster, URL: base, Agent: "lab-agent",
+		Prepare: PrepareRemote("lab-agent", storeCatalog, builtIn),
+		Revoke:  RevokeRemote("lab-agent", storeCatalog),
+	}))
+	srv.Listener.Close()
+	srv.Listener = ln
+	srv.Start()
+	defer srv.Close()
+	confDir := t.TempDir()
+	t.Setenv("RTA_CONFIG", filepath.Join(confDir, "config.yaml"))
+	if err := os.WriteFile(filepath.Join(confDir, "remotes.yaml"),
+		[]byte("servers:\n  lab:\n    url: "+base+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	values := func(extra map[string]any) map[string]any {
+		v := map[string]any{"target": "kv", "agent": "lab-agent", "server": "lab", "passphrase": "correct horse"}
+		for k, x := range extra {
+			v[k] = x
+		}
+		return v
+	}
+
+	var cards []string
+	no := plugin.NewRequest(values(nil), false, false).WithSurface(plugin.SurfaceTUI).WithConfirmer(func(card string) bool {
+		cards = append(cards, card)
+		return false
+	})
+	_, err = runApprove(context.Background(), no, storeCatalog, builtIn)
+	if verr := view.AsError(err, "x"); verr.Code != "core.confirm.required" {
+		t.Errorf("a no answered %v, want core.confirm.required", err)
+	}
+	if len(cards) != 1 || !strings.Contains(cards[0], "on lab") || !strings.Contains(cards[0], "this machine's catalogue") {
+		t.Errorf("asked %d times: %q", len(cards), cards)
+	}
+	if held := standing(t); len(held) != 0 {
+		t.Fatalf("a no left the server holding %d grant(s)", len(held))
+	}
+
+	yes := plugin.NewRequest(values(nil), false, false).WithSurface(plugin.SurfaceTUI).WithConfirmer(func(string) bool { return true })
+	if _, err := runApprove(context.Background(), yes, storeCatalog, builtIn); err != nil {
+		t.Fatalf("a yes: %v", err)
+	}
+	if held := standing(t); len(held) != 1 {
+		t.Errorf("a yes left the server holding %d grant(s), want 1", len(held))
+	}
+}
+
 func remoteLab(t *testing.T, agent string) {
 	t.Helper()
 	remoteLabAs(t, mcp.OperatorConfig{Agent: agent, Revoke: RevokeRemote(agent, catalog)})
