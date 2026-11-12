@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/yamlguard"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -205,7 +206,7 @@ func runConfigGet(reg *registry.Registry, raw string) (view.View, *view.Error) {
 			return nil, view.Errorf("core.config.key.secret", "%s is a credential, so it is not printed", name).
 				WithHint("a config file is plaintext that is read on every call: `rta config edit` takes it out")
 		}
-		out, merr := yaml.Marshal(sub)
+		out, merr := yamlguard.Marshal(sub)
 		if merr != nil {
 			return nil, view.Errorf("core.config.read", "encoding %s: %v", name, merr)
 		}
@@ -305,7 +306,7 @@ func redactCredentials(reg *registry.Registry, name string, tree any) any {
 // parses to. A name that runs through a list is not one: tiles are addressed
 // by `rta dashboard`, not by position.
 func configBlock(cfg config.Config, name string) (any, bool) {
-	data, err := yaml.Marshal(cfg)
+	data, err := yamlguard.Marshal(cfg)
 	if err != nil {
 		return nil, false
 	}

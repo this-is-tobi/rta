@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/config"
@@ -17,6 +16,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/tui"
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/internal/yamlguard"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -493,8 +493,8 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 			// number as the uint64 and a list as the []any YAML decodes, and
 			// the entry the int and []string the flags typed, so a repeat of
 			// either was never equal and was written as an update every time.
-			before, beforeErr := yaml.Marshal(add[at])
-			after, afterErr := yaml.Marshal(entry)
+			before, beforeErr := yamlguard.Marshal(add[at])
+			after, afterErr := yamlguard.Marshal(entry)
 			unchanged = beforeErr == nil && afterErr == nil && bytes.Equal(before, after)
 			if unchanged || dryRun {
 				return cfg, false

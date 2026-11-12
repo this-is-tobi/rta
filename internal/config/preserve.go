@@ -103,7 +103,7 @@ func spliceText(old []byte, cfg Config) ([]byte, error) {
 	if err := yamlguard.RefuseAnchors(old); err != nil {
 		return nil, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).WithHint(parseHint(err))
 	}
-	fresh, err := yaml.Marshal(cfg)
+	fresh, err := yamlguard.Marshal(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +234,7 @@ type splice struct {
 // typedTree is cfg as the generic tree its file form parses to: what the file
 // says, as far as rta reads it, with no comments and no ordering to compare.
 func typedTree(cfg Config) (map[string]any, error) {
-	data, err := yaml.Marshal(cfg)
+	data, err := yamlguard.Marshal(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +276,7 @@ func withComments(old []byte, cfg Config, fresh []byte, edges bool) ([]byte, err
 		return nil, err
 	}
 	kept := remapComments(cm, rawOld, rawNew, edges)
-	out, err := yaml.MarshalWithOptions(cfg, yaml.WithComment(kept))
+	out, err := yamlguard.Marshal(cfg, yaml.WithComment(kept))
 	if err != nil {
 		//nolint:nilerr // the same: comments that cannot be placed cost the comments, not the write
 		return append([]byte(configHeader), fresh...), nil
