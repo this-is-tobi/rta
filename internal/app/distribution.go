@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -445,28 +446,7 @@ func shortAll(digests []string) string {
 // the one with forty profile entries to find the command in the docs after
 // each of them refused at its next --profile.
 func stalePinPairs(name, from, to string, dryRun bool, move string) []view.Pair {
-	cfg, err := config.Load()
-	if err != nil {
-		return nil
-	}
-	pinsOld := func(key string) bool {
-		ns, _, pin := config.SplitKey(key)
-		return ns == name && pin != "" && strings.HasPrefix(from, pin)
-	}
-	var profiles []string
-	for pname, p := range cfg.Profiles {
-		for key := range p.Plugins {
-			if pinsOld(key) {
-				profiles = append(profiles, pname)
-				break
-			}
-		}
-	}
-	sort.Strings(profiles)
-	section := false
-	for key := range cfg.Plugins {
-		section = section || pinsOld(key)
-	}
+	profiles, section := pinnedTo(name, from)
 	newPin := name + "@" + shortDigest(to)
 	var pairs []view.Pair
 	if n := len(profiles); n > 0 {
@@ -494,6 +474,110 @@ func stalePinPairs(name, from, to string, dryRun bool, move string) []view.Pair 
 			note = pin + " still applies — after the " + move + " " + name + "'s calls are refused until " + repin
 		}
 		pairs = append(pairs, view.Pair{Key: "your pin", Value: note})
+	}
+	return pairs
+}
+
+// pinnedTo is which profiles, sorted, and whether the plugins: section pin the
+// build with this digest. Nothing when the config does not read.
+func pinnedTo(name, digest string) (profiles []string, section bool) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, false
+	}
+	pins := func(key string) bool {
+		ns, _, pin := config.SplitKey(key)
+		return ns == name && pin != "" && strings.HasPrefix(digest, pin)
+	}
+	for pname, p := range cfg.Profiles {
+		for key := range p.Plugins {
+			if pins(key) {
+				profiles = append(profiles, pname)
+				break
+			}
+		}
+	}
+	sort.Strings(profiles)
+	for key := range cfg.Plugins {
+		section = section || pins(key)
+	}
+	return profiles, section
+}
+
+// regainedPairs says what applies again when a move lands on a build that ran
+// here before: what it was given to read, the grants issued against it that
+// are still inside their window, and the profiles and the plugins: section
+// that pin it. Nothing when nothing does, which is every build that never ran
+// here.
+//
+// **Because each is bound to the digest, and a move back lands on one.** Trust,
+// access and grants name the bytes they were decided about (plugintrust,
+// grant.Grant's Digest), and a build moved off keeps them, so an index that
+// moves a plugin back to a build that was given the kubeconfig hands it the
+// kubeconfig again, and a grant issued against it that has not run out
+// authorizes again — all without a word, while the receipt said only what the
+// build moved off left behind. Each line names the command that takes it back.
+func regainedPairs(up plugindist.Upgraded, dryRun bool) []view.Pair {
+	if up.Digest == "" || up.Digest == up.FromDigest {
+		return nil
+	}
+	to := up.Name + "@" + shortDigest(up.Digest)
+	will := func(now, later string) string {
+		if dryRun {
+			return later
+		}
+		return now
+	}
+	var pairs []view.Pair
+	trust := plugintrust.Load()
+	if given := trust.Allowed(up.Digest); len(given) > 0 {
+		lines := make([]string, len(given))
+		for i, n := range given {
+			lines[i] = needLine(plugin.Need(n))
+		}
+		pairs = append(pairs, view.Pair{Key: "your access", Value: to + " was given " + strings.Join(lines, ", ") +
+			" when it ran here before, and " + will("has it again", "will have it again") +
+			" — `rta plugin access rm " + up.Name + " " + strings.Join(given, " ") + "` takes it back"})
+	}
+	if paths := trust.Paths(up.Digest); len(paths) > 0 {
+		command := "rta plugin access rm " + up.Name
+		for _, p := range paths {
+			command += " --path " + shellquote.Arg(p)
+		}
+		pairs = append(pairs, view.Pair{Key: "your paths", Value: to + " was given " + strings.Join(paths, ", ") +
+			" under confine: strict when it ran here before, and " + will("has them again", "will have them again") +
+			" — `" + command + "` takes them back"})
+	}
+	if grants, verr := grant.Load(); verr == nil {
+		now := time.Now()
+		var named []string
+		n := 0
+		for _, g := range grants {
+			if grant.Namespace(g.Target) != up.Name || g.Digest != up.Digest || !g.Active(now) {
+				continue
+			}
+			n++
+			if !slices.Contains(named, g.Named()) {
+				named = append(named, g.Named())
+			}
+		}
+		if n > 0 {
+			pairs = append(pairs, view.Pair{Key: "your grants", Value: format.Count(n, "grant", "grants") +
+				" issued against " + to + " " + will(format.Plural(n, "authorizes", "authorize")+" again",
+				"will authorize again") + ": " + strings.Join(named, ", ") + " — `rta grant revoke " + up.Name +
+				"` takes back every grant on " + up.Name})
+		}
+	}
+	if profiles, section := pinnedTo(up.Name, up.Digest); len(profiles) > 0 || section {
+		if n := len(profiles); n > 0 {
+			pairs = append(pairs, view.Pair{Key: "your profiles", Value: format.Count(n, "profile", "profiles") +
+				" (" + strings.Join(profiles, ", ") + ") " + format.Plural(n, "pins", "pin") + " " + to + " and " +
+				will(format.Plural(n, "applies", "apply")+" again", "will apply again")})
+		}
+		if section {
+			pairs = append(pairs, view.Pair{Key: "your pin", Value: "plugins." + to + " " +
+				will("applies again", "will apply again")})
+		}
 	}
 	return pairs
 }
@@ -756,6 +840,7 @@ func upgradeAnswer(up plugindist.Upgraded, dryRun bool) view.KeyValue {
 		pairs = append(pairs, view.Pair{Key: "declaration", Value: line})
 	}
 	pairs = append(pairs, leftBehind(up, dryRun)...)
+	pairs = append(pairs, regainedPairs(up, dryRun)...)
 	if up.Older && dryRun {
 		pairs = append(pairs, view.Pair{Key: "to move it back",
 			Value: "run it without --dry-run and answer yes, or pass --yes — an older version is never taken unasked"})

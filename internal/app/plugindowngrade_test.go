@@ -3,11 +3,18 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/plugindist"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -209,6 +216,72 @@ func TestTheSweepSaysAPluginWasHeldBackForBeingOlder(t *testing.T) {
 			!strings.Contains(verr.Hint, want.hint) {
 			t.Errorf("dry run %v: refusal = %v (%s)", dryRun, verr, verr.Hint)
 		}
+	}
+}
+
+// A move onto a build that ran here before says what applies again: what it
+// was given to read, the grants on it still inside their window (not one that
+// ran out), and the profiles and the section that pin it — each with what
+// takes it back. A build that never ran here brings nothing back.
+func TestAMoveBackToABuildThatRanHereSaysWhatAppliesAgain(t *testing.T) {
+	_, configDir := isolate(t)
+	back, current := "6db7eaeebf84"+strings.Repeat("0", 52), "099d72c38cfc"+strings.Repeat("1", 52)
+	for digest, at := range map[string]string{back: "/store/kube/back", current: "/store/kube/now"} {
+		if verr := plugintrust.Add(digest, "kube", at); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	if verr := plugintrust.Allow(back, []string{string(plugin.NeedKubeconfig)}); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := plugintrust.AllowPaths(back, []string{"/srv/lab certs"}); verr != nil {
+		t.Fatal(verr)
+	}
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{
+		{Target: "kube.pod.list", Agent: "claude", Digest: back, Issued: now, Expires: now.Add(15 * time.Minute)},
+		{Target: "kube.node.drain", Agent: "claude", Digest: back, Issued: now.Add(-2 * time.Hour), Expires: now.Add(-time.Hour)},
+		{Target: "kube.pod.list", Agent: "codex", Digest: current, Issued: now, Expires: now.Add(15 * time.Minute)},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
+	pin := "kube@" + back[:12]
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte("plugins:\n  "+pin+":\n    namespace: lab\n"+
+		"profiles:\n  staging:\n    plugins:\n      "+pin+":\n        kube: lab/default/svc/api:443\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	moved := plugindist.Upgraded{Report: plugindist.Report{Name: "kube", Digest: back},
+		FromDigest: current, Older: true}
+	got := map[string]string{}
+	for _, p := range regainedPairs(moved, false) {
+		got[p.Key] = p.Value
+	}
+	receipt := upgradeAnswer(moved, false)
+	if !slices.ContainsFunc(receipt.Pairs, func(p view.Pair) bool { return strings.Contains(p.Value, "has it again") }) {
+		t.Errorf("the receipt does not say what applies again: %+v", receipt.Pairs)
+	}
+	for key, want := range map[string][]string{
+		"your access":   {"kube@6db7eaeebf84 was given kubeconfig", "has it again", "`rta plugin access rm kube kubeconfig`"},
+		"your paths":    {"/srv/lab certs under confine: strict", "`rta plugin access rm kube --path '/srv/lab certs'`"},
+		"your grants":   {"1 grant issued against kube@6db7eaeebf84 authorizes again: kube.pod.list", "`rta grant revoke kube`"},
+		"your profiles": {"1 profile (staging) pins kube@6db7eaeebf84 and applies again"},
+		"your pin":      {"plugins.kube@6db7eaeebf84 applies again"},
+	} {
+		for _, w := range want {
+			if !strings.Contains(got[key], w) {
+				t.Errorf("%s = %q, want it to say %q", key, got[key], w)
+			}
+		}
+	}
+	if strings.Contains(got["your grants"], "drain") {
+		t.Errorf("a grant that ran out is said to authorize again: %q", got["your grants"])
+	}
+
+	elsewhere := "abcdef012345" + strings.Repeat("2", 52)
+	if pairs := regainedPairs(plugindist.Upgraded{Report: plugindist.Report{Name: "kube", Digest: elsewhere},
+		FromDigest: current}, false); len(pairs) != 0 {
+		t.Errorf("a build that never ran here brought back %v", pairs)
 	}
 }
 
