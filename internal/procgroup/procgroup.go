@@ -1,15 +1,37 @@
-// Package procgroup starts a command in a process group of its own and signals
-// that group, for the programs rta starts that may fork: a plugin, a clipboard
-// program, kubectl and ssh. Each of those packages carried its own copy of both
-// functions, three of them hash-identical, with comments recording that the
-// rule below had already been got wrong once; one copy is the one place to get
-// it right.
+// Package procgroup holds the rules for the programs rta starts that may fork
+// (a plugin, a clipboard program, kubectl, ssh, a package manager): a process
+// group of the command's own, a signal that reaches the whole group, and a
+// bound on how long the command may hold rta's pipes once it is gone. Each of
+// those packages carried its own copy of these, three of them hash-identical,
+// with comments recording that a rule had already been got wrong once; one
+// copy is the one place to get it right.
 package procgroup
 
 import (
 	"os/exec"
 	"syscall"
+	"time"
 )
+
+// WaitDelay bounds how long a program rta started may hold its pipes once it
+// has exited or been killed. Every command that may fork sets it
+// (cmd.WaitDelay = procgroup.WaitDelay).
+//
+// A program that forks and exits leaves the child holding rta's end of its
+// stdout or stderr: a kubeconfig's exec credential helper (kubelogin shelling
+// out to a browser for an OIDC device flow is the concrete one), a package
+// manager's background auto-update, a version manager's shim. Cmd.Wait with
+// WaitDelay unset ends in an unguarded receive on the copier's channel, so it
+// blocks until every pipe sees EOF, which that child is holding: not slow,
+// *forever*, and past every deadline the caller set, because it is os/exec's
+// copying goroutines that are stuck rather than the process.
+// exec.CommandContext does not save it: cancelling kills the program and
+// does not close the pipes.
+//
+// It cannot cut a healthy child short, since it only starts counting once the
+// process has exited or the context has killed it. A run that meets it
+// returns exec.ErrWaitDelay, which means the program itself finished.
+const WaitDelay = 2 * time.Second
 
 // Harden sets what must be set at spawn time, because none of it can be applied
 // to a process that is already running: a process group of the command's own,

@@ -5,9 +5,9 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/this-is-tobi/rta/internal/kubeerr"
+	"github.com/this-is-tobi/rta/internal/procgroup"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -212,24 +212,6 @@ func offerable(name string) bool {
 	return name != "" && !textclean.Deceives(name)
 }
 
-// waitDelay bounds how long a finished-or-killed kubectl may hold its pipes.
-//
-// A kubeconfig's exec credential helper is handed kubectl's own stderr, so a
-// helper that outlives the kubectl rta started — kubelogin shelling out to a
-// browser for an OIDC device flow is the concrete one — keeps that write end
-// open after kubectl is gone. Cmd.Wait with WaitDelay unset ends in an
-// unguarded receive on the copier's channel, so it blocks until every pipe
-// sees EOF, which that helper is holding: not slow, *forever*, and past every
-// deadline the caller set, because it is os/exec's copying goroutines that
-// are stuck rather than the process. exec.CommandContext does not save it —
-// cancelling kills kubectl and does not close the pipes.
-//
-// This applies to every kubectl rta starts, which is why it is not named
-// after the listing that needed it first. It cannot cut a healthy child
-// short: WaitDelay only starts counting once the process has exited or the
-// context has killed it.
-const waitDelay = 2 * time.Second
-
 // kubeLines runs one read-only kubectl and returns its stdout lines.
 //
 // No harden/reap: those exist for the long-lived forward, whose kubectl must
@@ -243,7 +225,7 @@ func kubeLines(ctx context.Context, what string, args ...string) ([]string, *vie
 			WithHint("the field still takes typing — completion is an assist, not a gate")
 	}
 	cmd := exec.CommandContext(ctx, kubectl, args...)
-	cmd.WaitDelay = waitDelay
+	cmd.WaitDelay = procgroup.WaitDelay
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

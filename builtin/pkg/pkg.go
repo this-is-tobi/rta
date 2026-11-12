@@ -62,6 +62,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/procgroup"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -78,7 +79,7 @@ func runQuery(ctx context.Context, name string, args ...string) (stdout, stderr 
 	cmd.Stderr = &errBuf
 	cmd.Stdin = nil
 	cmd.Dir = workDir()
-	cmd.WaitDelay = pipeDelay
+	cmd.WaitDelay = procgroup.WaitDelay
 	err = cmd.Run()
 	return out.String(), errBuf.String(), err
 }
@@ -102,18 +103,6 @@ func workDir() string {
 	}
 	return "/"
 }
-
-// pipeDelay bounds how long a finished-or-killed manager may hold its pipes.
-//
-// A manager that forks something and exits — a background auto-update, a
-// version manager's shim — leaves the child holding this process's end of
-// stdout, and Wait blocks until it sees EOF: not slow, forever, and past
-// listTimeout, because what is stuck is os/exec's copying goroutines rather
-// than the process the deadline killed. The same bound internal/tunnel and
-// builtin/audit put on every kubectl they start. It only starts counting
-// once the process has exited or been killed, so a healthy run never meets
-// it.
-const pipeDelay = 2 * time.Second
 
 // lookPath is the seam for detection. exec.LookPath is the right call for
 // "which managers are here": the question is about $PATH itself.
