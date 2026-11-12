@@ -255,7 +255,7 @@ func Plugin() plugin.Plugin {
 					// against the system's roots. And a CA set for every send
 					// would replace those roots for every host a send reaches,
 					// public ones included, and turn TLS on for plain sends.
-					{Name: "ca-file", Type: plugin.String, Local: true,
+					{Name: "ca-file", Type: plugin.String, Local: true, Suggest: plugin.SuggestPath("ca-file"),
 						Help: "PEM bundle of the CA the host's certificate is checked against, in place of the " +
 							"system's roots — a self-signed host's own certificate is its CA; turns TLS on"},
 					{Name: "tls-server-name", Type: plugin.String, Local: true,

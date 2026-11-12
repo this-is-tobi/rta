@@ -219,7 +219,12 @@ var endpointRoles = []EndpointRole{
 // the host's: `pg` says `disable` because libpq does, and another library says
 // `off` or `none`. The host has to produce a word the plugin will accept, and
 // the only honest way to know which is to read what the author enumerated.
-var tlsOff = []string{"disable", "off", "false", "none", "insecure"}
+//
+// Not `insecure`: in curl, kubectl and redis-cli it means TLS without the
+// certificate checked, not no TLS at all, so a plugin offering it as its off
+// word read to an operator as the opposite of what the host fills in over a
+// forward. No first-party plugin offered it.
+var tlsOff = []string{"disable", "off", "false", "none"}
 
 // TLSOffValue is the value the host fills into f to turn transport security
 // off, and "" if f declares no way to say it.

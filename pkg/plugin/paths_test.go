@@ -1,8 +1,10 @@
 package plugin
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"syscall"
 	"testing"
 )
@@ -95,5 +97,33 @@ func TestPathInputNamesTheBoxOnlyWhenThePathIsWrong(t *testing.T) {
 		if got := PathInput("file", c.err); got != c.want {
 			t.Errorf("PathInput(file, %v) = %q, want %q", c.err, got, c.want)
 		}
+	}
+}
+
+// A path is completed from the directory typed so far, a directory with its
+// slash, a dotfile only once its dot is typed, and ~ kept as it was typed.
+func TestSuggestPathCompletesTheDirectoryBeingTyped(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, name := range []string{"ca.pem", "client.key", ".hidden"} {
+		if err := os.WriteFile(filepath.Join(home, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(home, "certs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	suggest := SuggestPath("ca-file")
+	typed := func(v string) []string {
+		return suggest(context.Background(), NewRequest(map[string]any{"ca-file": v}, false, false))
+	}
+	if got := typed("~/c"); !reflect.DeepEqual(got, []string{"~/ca.pem", "~/certs/", "~/client.key"}) {
+		t.Errorf("~/c: %v", got)
+	}
+	if got := typed(home + "/."); !reflect.DeepEqual(got, []string{home + "/.hidden"}) {
+		t.Errorf("a typed dot: %v", got)
+	}
+	if got := typed(home + "/missing/x"); got != nil {
+		t.Errorf("a directory that is not there: %v", got)
 	}
 }
