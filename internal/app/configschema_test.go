@@ -2,11 +2,15 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The command's whole contract is bytes an editor can parse: raw JSON on
@@ -84,6 +88,34 @@ func TestConfigSchemaDescribesEachPluginsKeys(t *testing.T) {
 	// A plugin this machine has not got stays an open object.
 	if plugins["additionalProperties"].(map[string]any)["type"] != "object" {
 		t.Error("an unknown plugin's section is no longer accepted")
+	}
+}
+
+// A key that is also the first part of another is described as a value or the
+// block the longer key nests in: the walk to the longer one went into the
+// value as if it were a block and panicked, taking `rta config schema` and
+// `rta config edit` down with it.
+func TestTheSchemaDescribesAKeyThatIsAlsoTheStartOfAnother(t *testing.T) {
+	reg := registry.New()
+	p := plugin.Plugin{Name: "zz", Summary: "zz", Capabilities: []plugin.Capability{{
+		ID: "zz.database.list", Summary: "s", Safety: plugin.Read,
+		Inputs: []plugin.Field{
+			{Name: "database", Type: plugin.String, Config: "database"},
+			{Name: "limit", Type: plugin.Int, Default: 50, Min: 1, Max: 500, Config: "database.list.limit"},
+		},
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
+	}}}
+	if err := reg.Register(p); err != nil {
+		t.Fatal(err)
+	}
+	database := pluginSchema(reg, p)["properties"].(map[string]any)["database"].(map[string]any)
+	either, _ := database["anyOf"].([]any)
+	if len(either) != 2 || either[0].(map[string]any)["type"] != "string" {
+		t.Fatalf("database = %v, want a string or a block", database)
+	}
+	limit := either[1].(map[string]any)["properties"].(map[string]any)["list"].(map[string]any)["properties"].(map[string]any)["limit"].(map[string]any)
+	if limit["type"] != "integer" || fmt.Sprint(limit["maximum"]) != "500" {
+		t.Errorf("database.list.limit = %v", limit)
 	}
 }
 
