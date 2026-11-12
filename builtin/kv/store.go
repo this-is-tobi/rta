@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,6 +22,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/filelock"
+	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/passkey"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/paths"
@@ -685,7 +687,16 @@ func notFound(sf plugin.Surface, s store, key string) *view.Error {
 	if hint := folderHint(sf, s, key); hint != "" {
 		return verr.WithHint(hint)
 	}
-	return verr.WithHint(sf.CapabilityName("kv.list") + " lists every key")
+	// The nearest name first, as a mistyped command is answered: `kv get
+	// prod/db/pasword` was told only that kv.list lists every key. The names
+	// are the ones kv.list hands any caller, so naming one is no new reach.
+	hint := sf.CapabilityName("kv.list") + " lists every key"
+	// Sorted: near.Word keeps the first of equally near names, and a map's order
+	// would make the suggestion change between two identical calls.
+	if nearest := near.Word(key, slices.Sorted(maps.Keys(s.Entries))); nearest != "" {
+		hint = "did you mean " + textclean.Record(nearest) + "? " + hint
+	}
+	return verr.WithHint(hint)
 }
 
 // maxFolderNames is how many of a folder's keys a hint spells out. A folder of
