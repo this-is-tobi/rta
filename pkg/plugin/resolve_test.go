@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -498,5 +499,51 @@ func TestARequestCarriesTheProfileItCameThrough(t *testing.T) {
 	}
 	if direct := NewRequest(nil, false, false).WithProfile("direct", TunnelNone); direct.Profile() != "direct" {
 		t.Errorf("WithProfile stamped %q", direct.Profile())
+	}
+}
+
+// A handler that writes into a list it was handed reaches no later call,
+// whichever layer the list came from: the base section and a profile's set:
+// are memory a server keeps across calls, a default is the declaration's own,
+// and a caller's list can be a tile's with:, which the TUI keeps.
+func TestARequestOwnsEveryListItHolds(t *testing.T) {
+	c := Capability{ID: "pg.query", Summary: "s", Safety: Read, Inputs: []Field{
+		{Name: "tags", Type: StringSlice, Config: "tags"},
+		{Name: "hosts", Type: StringSlice, Config: "hosts"},
+		{Name: "levels", Type: StringSlice, Default: []string{"warn", "error"}},
+		{Name: "labels", Type: StringSlice},
+	}}
+	in := Inputs{
+		Config:      map[string]any{"tags": []any{"a", "b"}},
+		Profile:     map[string]any{"hosts": []any{"h1", []any{"nested"}}},
+		ProfileName: "staging",
+		Caller:      map[string]any{"labels": []any{"x"}},
+	}
+	for _, v := range ResolveRequest(c, in, false, false).Values() {
+		switch l := v.(type) {
+		case []any:
+			if inner, ok := l[len(l)-1].([]any); ok {
+				inner[0] = "SCRIBBLED"
+			}
+			l[0] = "SCRIBBLED"
+		case []string:
+			l[0] = "SCRIBBLED"
+		}
+	}
+	for name, got := range map[string]any{
+		"the base section":     in.Config["tags"],
+		"a profile's set:":     in.Profile["hosts"],
+		"a declared default":   c.Inputs[2].Default,
+		"what the caller sent": in.Caller["labels"],
+	} {
+		want := map[string]any{
+			"the base section":     []any{"a", "b"},
+			"a profile's set:":     []any{"h1", []any{"nested"}},
+			"a declared default":   []string{"warn", "error"},
+			"what the caller sent": []any{"x"},
+		}[name]
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("a handler's write reached %s: %v, want %v", name, got, want)
+		}
 	}
 }
