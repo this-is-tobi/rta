@@ -1098,3 +1098,28 @@ func TestTheRefusalToGuessTheAgentNamesThoseTheLogHasSeen(t *testing.T) {
 		t.Errorf("a named agent = %q, %v", got, verr)
 	}
 }
+
+// **A grant naming no agent is a question when the record has seen another.**
+// claude was refused, and codex, named once on a grant and never connected,
+// held the only grant: `grant allow kv.get prod/db/password` with no --agent
+// issued the password to codex, one line after rta had said this machine knows
+// claude. With another agent in the record the guess is a question naming both;
+// with none, the one agent holding a grant is still the answer.
+func TestAGrantNamingNoAgentIsAQuestionWhenTheRecordHasSeenAnother(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	now := time.Now()
+	if verr := core.Issue(core.Grant{Target: "note.add", Agent: "codex", Issued: now, Expires: now.Add(time.Hour)}, true); verr != nil {
+		t.Fatal(verr)
+	}
+	if got, verr := resolveAgent(plugin.SurfaceCLI, ""); verr != nil || got != "codex" {
+		t.Fatalf("one agent holding a grant and none other seen = %q, %v, want codex", got, verr)
+	}
+
+	if err := agentlog.Append(agentlog.Entry{Cap: "kv.get", Agent: "claude", Outcome: agentlog.Refused}); err != nil {
+		t.Fatal(err)
+	}
+	got, verr := resolveAgent(plugin.SurfaceCLI, "")
+	if verr == nil || verr.Code != "grant.whichagent" || !strings.Contains(verr.Message, "claude, codex") {
+		t.Errorf("with claude refused in the record = %q, %+v, want grant.whichagent naming claude and codex", got, verr)
+	}
+}
