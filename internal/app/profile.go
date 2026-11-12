@@ -28,6 +28,9 @@ type boundProfile struct {
 	name   string
 	filled map[string]any
 	tunnel plugin.Tunnel
+	// coordinate is the one the forward was opened on (profile.Coordinate),
+	// which only the host reads.
+	coordinate string
 	// fence is the allowlist the connection states, which the run resolves
 	// with: the check made here is about what the values are, and a one-entry
 	// list is also the value of an input nobody filled.
@@ -185,7 +188,8 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	for input, v := range dialled {
 		filled[input] = v
 	}
-	return boundProfile{name: name, filled: filled, tunnel: via, fence: profile.FenceOf(conn)}, closeTunnel, nil
+	return boundProfile{name: name, filled: filled, tunnel: via, coordinate: profile.Coordinate(conn, via),
+		fence: profile.FenceOf(conn)}, closeTunnel, nil
 }
 
 // installed is what this machine has registered, for profile resolution.

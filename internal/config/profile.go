@@ -317,10 +317,13 @@ type Connection struct {
 	//
 	// Verifies the certificate rta actually receives — this is not
 	// InsecureSkipVerify, and does not become it. A self-signed or
-	// cluster-internal CA the client does not already trust still refuses,
-	// with the same `*.tls.untrusted` a direct connection would get; a plugin
-	// that reads a CA bundle of its own (vault's `ca-file`, following etcd's)
-	// is how that gets resolved, not this flag.
+	// cluster-internal CA the client does not already trust is a certificate
+	// nothing here vouches for: one a plugin built on plugin.Service trusts on
+	// first use through a `kube:` forward, the path there being kubectl's own
+	// tunnel (internal/tlstrust), and one any other refuses with the same
+	// `*.tls.untrusted` a direct connection would get. A CA bundle the plugin
+	// reads (vault's `ca-file`, following etcd's) is the other way through, and
+	// the only one where nobody is at a terminal; this flag is neither.
 	//
 	// The name is verified as well, and through a forward the address dialled
 	// is 127.0.0.1, which a certificate issued for the service does not name:

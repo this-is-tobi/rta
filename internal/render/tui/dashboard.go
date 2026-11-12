@@ -1107,7 +1107,7 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 		}
 		req := plugin.ResolveRequest(t.cap, cfg.inputs(plugin.Inputs{
 			Caller: t.values, Profile: filled, ProfileName: profileName, Tunnel: via,
-			Fence: profile.FenceOf(conn),
+			Coordinate: profile.Coordinate(conn, via), Fence: profile.FenceOf(conn),
 		}), false, false).WithSurface(plugin.SurfaceTUI)
 		v, err := t.cap.Run(ctx, req)
 		if err != nil {

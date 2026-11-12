@@ -792,6 +792,7 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"kv.copy":     {"key": "absent"},
 		"lock.add":    {"kind": "agent", "name": "nobody"},
 		"lock.rm":     {"kind": "agent", "name": "nobody"},
+		"cert.forget": {"server": "absent.internal:443"},
 		"kv.edit":     {"key": "absent"},
 		"kv.get":      {"key": "absent"},
 		"kv.rename":   {"key": "absent", "new-name": "absent-renamed"},

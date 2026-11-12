@@ -489,7 +489,7 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 		// a caller who supplies one value must not lose the other defaults.
 		req := plugin.ResolveRequest(c, cfg.inputs(plugin.Inputs{
 			Caller: values, Profile: filled, ProfileName: profileName, Tunnel: via,
-			Fence: profile.FenceOf(conn),
+			Coordinate: profile.Coordinate(conn, via), Fence: profile.FenceOf(conn),
 		}), dryRun, yes).WithSurface(plugin.SurfaceTUI)
 		// A default, not an override. Forcing detail on unconditionally made
 		// the D toggle on kv.list dead: toggleView set detail=false, this put

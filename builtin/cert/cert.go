@@ -1,6 +1,7 @@
 // Package cert is the built-in x509/TLS inspection plugin: certificate
 // details, chain walk, expiry checks and TLS handshake reports — all stdlib,
-// zero configuration.
+// zero configuration — and the person's half of trusting a server on first
+// use (trust.go).
 package cert
 
 import (
@@ -106,9 +107,9 @@ func Plugin() plugin.Plugin {
 	}
 	return plugin.Plugin{
 		Name:    "cert",
-		Summary: "X.509 and TLS inspection: certificates, chains, expiry",
+		Summary: "X.509 and TLS inspection: certificates, chains, expiry, and the servers trusted on first use",
 		Renamed: map[string]string{"warn-days": "warn-within"},
-		Capabilities: []plugin.Capability{
+		Capabilities: append([]plugin.Capability{
 			{
 				ID:          "cert.inspect",
 				Summary:     "Show certificate details for a host or PEM file",
@@ -224,7 +225,7 @@ func Plugin() plugin.Plugin {
 				Refresh: handshakeRefresh,
 				Run:     runTLS,
 			},
-		},
+		}, trustCapabilities()...),
 	}
 }
 

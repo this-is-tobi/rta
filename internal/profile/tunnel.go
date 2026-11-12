@@ -78,6 +78,21 @@ func endpointValues(c plugin.Capability, ep tunnel.Endpoint, tunnelTLS bool) map
 	return out
 }
 
+// Coordinate is the coordinate a forward of kind was opened on for conn,
+// scheme and all — `kube:homelab/vault/svc/vault:8200` — and "" when none was
+// (plugin.Inputs.Coordinate): the host's name for the server such a call
+// reaches, which its address on 127.0.0.1 cannot be, and which a plugin is
+// never told.
+func Coordinate(conn config.Connection, kind plugin.Tunnel) string {
+	switch kind {
+	case plugin.TunnelKube:
+		return "kube:" + conn.Kube
+	case plugin.TunnelSSH:
+		return "ssh:" + conn.SSH
+	}
+	return ""
+}
+
 // target is the tunnel a connection states — either scheme — in the shape
 // internal/tunnel takes.
 //
