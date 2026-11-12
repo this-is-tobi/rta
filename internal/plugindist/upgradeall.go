@@ -7,17 +7,19 @@ import (
 )
 
 // UpgradeOutcome is what a sweep did about one plugin. Exactly one of the
-// three shapes is true of it: Problem is set and nothing was attempted past
-// the failure, Widenings is set and it was refused before anything landed, or
-// the embedded Upgraded says what happened — UpToDate, or moved with a Diff.
+// four shapes is true of it: Problem is set and nothing was attempted past
+// the failure, Widenings is set and it was refused before anything landed,
+// Older is set and it was held before anything was fetched, or the embedded
+// Upgraded says what happened — UpToDate, or moved with a Diff.
 type UpgradeOutcome struct {
 	Upgraded
 	Problem *view.Error
 }
 
-// Skipped reports whether the plugin was held back because upgrading it would
-// widen what it may do.
-func (o UpgradeOutcome) Skipped() bool { return len(o.Widenings) > 0 }
+// Skipped reports whether the plugin was held back: upgrading it would widen
+// what it may do, or move it back. A sweep agrees to no older version, so an
+// Older outcome of one is always a hold.
+func (o UpgradeOutcome) Skipped() bool { return len(o.Widenings) > 0 || o.Older }
 
 // UpgradeAll upgrades every plugin rta has a record of, or every one that came
 // from index when index is not empty, and reports one outcome per plugin in
@@ -33,7 +35,9 @@ func (o UpgradeOutcome) Skipped() bool { return len(o.Widenings) > 0 }
 // Every upgrade is guarded: one that would hand a plugin more than the
 // operator last agreed to is refused before its bytes land, and reported. A
 // sweep is the one place nobody is reading the declaration diff as it goes,
-// which is exactly why the diff has to be able to stop it.
+// which is exactly why the diff has to be able to stop it. Nor does a sweep
+// move a plugin back: an index claiming an older version is held, and naming
+// the plugin is how somebody agrees to it.
 //
 // One plugin's failure never ends the run — the rule Manifests and LoadInto
 // already follow, applied to an action rather than a listing. An index
@@ -56,8 +60,8 @@ func upgradeAll(ctx context.Context, index string, dryRun bool) []UpgradeOutcome
 		if index != "" && e.Index != index {
 			continue
 		}
-		up, verr := upgrade(ctx, e.Name, dryRun, true)
-		if verr != nil && len(up.Widenings) > 0 {
+		up, verr := upgrade(ctx, e.Name, dryRun, true, "")
+		if verr != nil && (len(up.Widenings) > 0 || up.Older) {
 			// A refusal by the guard, not a failure: the run did what it was
 			// asked to and the answer was no. Carrying the *view.Error along
 			// too would put it in the failure column of every report that

@@ -103,7 +103,19 @@ Only then does it land: the managed store, the trust entry, and `rta.lock`, whic
 rta plugin outdated
 ```
 
-Lists what changed without upgrading anything: for each installed plugin, the version recorded at install time against what its index claims now. Cheap like search — nothing is fetched — so it is a hint worth a look, never a verdict. `rta plugin upgrade <name>` is what actually re-verifies against the bytes; a plugin respun under an unchanged version number is invisible to `outdated` for the same reason it would be invisible to a signature.
+Lists what changed without upgrading anything: for each installed plugin, the version recorded at install time against what its index claims now, with `(older)` beside a claim below the installed version. Cheap like search — nothing is fetched — so it is a hint worth a look, never a verdict. `rta plugin upgrade <name>` is what actually re-verifies against the bytes; a plugin respun under an unchanged version number is invisible to `outdated` for the same reason it would be invisible to a signature.
+
+### When an index moves a plugin back
+
+```bash
+rta plugin upgrade pg            # at a terminal: says both versions and asks
+rta plugin upgrade pg --dry-run  # what moving back would change, without asking
+rta plugin upgrade pg --yes      # moves it back, for a script
+```
+
+An index whose claim is now older than the version installed — a maintainer's revert, or an index pointed back at an earlier release — is not followed unasked. `rta plugin upgrade <name>` stops before fetching anything, says which two versions, and asks `Move pg back to 1.3.2? [y/N]`; `--yes` answers, and with nobody to ask it exits 3 (`core.confirm.required`) with nothing changed. The yes is to the version shown: an index that moves again before the move is refused. A move taken is reported as `downgraded`. A sweep never moves a plugin back, `--yes` or not: it holds it, as it holds one that would gain authority.
+
+The versions are the index's claims, read by their first three numbers — `1.4.0` and `v1.4.0` are the same, `1.10.0` is newer than `1.9.9`. Anything after them, a pre-release or `git describe`'s `-3-gabc1234`, is shown and never ordered, and neither is a version that does not begin with three numbers: those move as before. This catches an index rolled back honestly. One that lies about a version is not stopped by it, and nothing is trusted because of a version — what you approve is still the digest.
 
 ### Upgrading everything at once
 
@@ -117,7 +129,7 @@ rta plugin rm --all --yes          # uninstall every managed plugin
 
 A sweep visits every plugin in `rta.lock`, not the ones `outdated` lists — a respin under an unchanged version number is invisible to a manifest comparison, and skipping it would skip the one event upgrading re-verifies for. `--index` narrows the sweep to plugins installed from one index, so the supply chain you trust most can be upgraded without pulling from the one you trust least.
 
-**A sweep holds back any plugin whose new declaration would hand it more than you last approved** — a capability appearing that is not an ungated read, a safety class rising, a capability that stops needing a grant (dropping the flag, or falling from a class above read to a read without it), a capability offered to agents that was the person's alone (`HumanOnly` dropped), a gated capability offered to remote callers that was this machine's alone (`HostSpecific` dropped), a capability that starts or stops declaring that its answer is a value a masked view withholds, a new credential location asked for. Those plugins keep their pin, their bytes are never placed, and the report names the change that stopped each one. Everything else upgrades, one unreachable index does not cost you the rest of the run, and the command exits non-zero if anything was held back or failed.
+**A sweep holds back any plugin whose new declaration would hand it more than you last approved** — a capability appearing that is not an ungated read, a safety class rising, a capability that stops needing a grant (dropping the flag, or falling from a class above read to a read without it), a capability offered to agents that was the person's alone (`HumanOnly` dropped), a gated capability offered to remote callers that was this machine's alone (`HostSpecific` dropped), a capability that starts or stops declaring that its answer is a value a masked view withholds, a new credential location asked for. Those plugins keep their pin, their bytes are never placed, and the report names the change that stopped each one. So does a plugin whose index now claims an older version than the one installed, held before anything is fetched. Everything else upgrades, one unreachable index does not cost you the rest of the run, and the command exits non-zero if anything was held back or failed.
 
 This is the point of the guard rather than an obstacle to route around: nobody reads a declaration diff scrolling past in a sweep, so the diff stops the sweep instead. Naming the plugin — `rta plugin upgrade pg` — upgrades it once you have read what changed, which is the same command you would have run anyway.
 
@@ -128,7 +140,7 @@ rta plugin prune --dry-run             # the stored versions nothing runs
 rta plugin prune --yes                 # drop them, and the trust on each
 ```
 
-Every upgrade keeps the previous artifact in the store, so a rollback is a re-install rather than a re-download — and nothing took the older ones out, so a plugin followed through ten releases held ten copies. `prune` removes every stored version that is neither the one `bin/` points at nor the one `rta.lock` records, withdrawing trust from each the way `remove` does: the approval was for those bytes, and the bytes are going. A plugin whose store names no current version at all is left alone, and its row says so.
+Every upgrade keeps the previous artifact in the store with your approval of it, so an index that moves back to it lands on bytes already approved, fetched again — and nothing took the older ones out, so a plugin followed through ten releases held ten copies. `prune` removes every stored version that is neither the one `bin/` points at nor the one `rta.lock` records, withdrawing trust from each the way `remove` does: the approval was for those bytes, and the bytes are going. A plugin whose store names no current version at all is left alone, and its row says so.
 
 An upgrade also leaves the grants standing on the plugin covering nothing: each is bound to the build it was issued against, and the new build is another artifact. `rta grant list` marks every such grant `(replaced)` and `rta doctor` warns of them; `rta grant allow` issues each again for the build installed now.
 

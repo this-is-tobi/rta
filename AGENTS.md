@@ -34,7 +34,7 @@ Breaking changes are welcome when they buy security, performance, binary size or
 
 - Read the relevant existing code first. Design rationale lives in the comments, not in the diff that produced them, and this codebase has a lot of it.
 - `.local/` holds working notes and ADRs and is untracked. Never cite one from a shipped code comment or doc — it won't exist for whoever reads that comment later.
-- Plugin trust binds to a digest, never to a name or a version (`rta plugin trust`, `rta plugin install`). A manifest's `version` field is the index's claim, recorded for display, and nothing resolves through it — don't build a feature that treats it as an enforced guarantee without calling that out as the design change it would be.
+- Plugin trust binds to a digest, never to a name or a version (`rta plugin trust`, `rta plugin install`). A manifest's `version` field is the index's claim, recorded for display and to notice a claim that went down — `rta plugin upgrade` asks before it moves a plugin back, and a sweep holds it — which is a reason to ask and never a reason to trust; nothing resolves through it. Don't build a feature that treats it as an enforced guarantee without calling that out as the design change it would be.
 
 ## Verifying changes
 

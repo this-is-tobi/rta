@@ -17,8 +17,10 @@ import (
 //	<data>/plugins/store/pg/<digest>/rta-plugin-pg   # by name, then by digest
 //	<data>/plugins/bin/rta-plugin-pg -> ../store/pg/<digest>/rta-plugin-pg
 //
-// Keeping a previous digest's directory makes rollback a rename rather than
-// a re-download; the bin/ symlink is the one place "current" is stated, and
+// A previous digest's directory is kept, and its trust entry with it, so an
+// index that moves back to it lands on bytes already approved, with what they
+// were given; the move fetches them again, since nothing records where they
+// came from. The bin/ symlink is the one place "current" is stated, and
 // swapping it is the upgrade. Bare $PATH discovery keeps working unchanged —
 // the store is discovered *after* $PATH, so an operator's own copy earlier on
 // $PATH shadows the managed one the ordinary way and `rta doctor` reports it,
@@ -170,7 +172,7 @@ func CurrentDigest(name string) (string, bool) {
 }
 
 // StoredDigests lists the digests the store holds for one plugin, sorted —
-// the current one and any kept for rollback.
+// the current one and any kept from before an upgrade.
 func StoredDigests(name string) []string {
 	entries, err := os.ReadDir(filepath.Join(StoreDir(), name))
 	if err != nil {

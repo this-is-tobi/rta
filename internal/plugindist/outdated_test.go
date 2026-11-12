@@ -2,6 +2,7 @@ package plugindist
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,6 +44,68 @@ func TestOutdatedComparesRecordedAgainstClaimed(t *testing.T) {
 		rows[0].InstalledVersion != "0.1.0" || rows[0].AvailableVersion != "0.2.0" ||
 		rows[0].Problem != "" {
 		t.Fatalf("row = %+v", rows[0])
+	}
+}
+
+// A claim below the installed version by its first three numbers is marked as
+// one; a claim above it, and a version that does not begin with three numbers,
+// are not.
+func TestOutdatedMarksAClaimOlderThanWhatIsInstalled(t *testing.T) {
+	testData(t)
+	repo := gitFixture(t, map[string]string{"pg": goodManifest, "redis": named(goodManifest, "redis"),
+		"etcd": named(goodManifest, "etcd")})
+	if verr := AddIndex(context.Background(), "lab", repo); verr != nil {
+		t.Fatal(verr)
+	}
+	for name, installed := range map[string]string{"pg": "0.2.0", "redis": "0.0.9", "etcd": "dev"} {
+		if verr := recordInstall(LockEntry{Name: name, Digest: "d", Version: installed,
+			Index: "lab", InstalledAt: time.Now()}, nil); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	older := map[string]bool{}
+	for _, r := range Outdated() {
+		older[r.Name] = r.Older
+	}
+	if want := map[string]bool{"pg": true, "redis": false, "etcd": false}; fmt.Sprint(older) != fmt.Sprint(want) {
+		t.Errorf("older = %v, want %v", older, want)
+	}
+}
+
+// Two claims are ordered by the three numbers they begin with, a "v" before
+// them allowed, and a suffix is never ordered: the same three numbers with one
+// on either side, and a claim that does not begin with three numbers, are ones
+// rta cannot order. Mirrored, every pair orders the other way.
+func TestAVersionClaimIsOrderedByItsFirstThreeNumbers(t *testing.T) {
+	for _, tc := range []struct {
+		a, b  string
+		order int
+		ok    bool
+	}{
+		{"1.3.2", "1.4.0", -1, true},
+		{"v1.4.0", "1.4.0", 0, true},
+		{"1.10.0", "1.9.9", 1, true},
+		{"0.16.3-2-gabc1234-dirty", "0.16.4", -1, true},
+		{"2026.11.1", "2026.10.30", 1, true},
+		{"01.2.3", "1.2.3", 0, true},
+		{strings.Repeat("9", 40) + ".0.0", strings.Repeat("9", 39) + ".0.0", 1, true},
+		{"v1.2.0-3-gabc1234", "v1.2.0", 0, false},
+		{"v1.2.0-9-gaaaaaaa", "v1.2.0-10-gbbbbbbb", 0, false},
+		{"1.4.0-rc.1", "1.4.0", 0, false},
+		{"1.4.0+build.5", "1.4.0", 0, false},
+		{"dev", "1.0.0", 0, false},
+		{"", "1.0.0", 0, false},
+		{"1.2", "1.0.0", 0, false},
+		{"V1.2.3", "1.0.0", 0, false},
+		{"nightly-2026-11-01", "1.0.0", 0, false},
+	} {
+		order, ok := compareClaims(tc.a, tc.b)
+		if order != tc.order || ok != tc.ok {
+			t.Errorf("compareClaims(%q, %q) = %d, %v; want %d, %v", tc.a, tc.b, order, ok, tc.order, tc.ok)
+		}
+		if back, backOK := compareClaims(tc.b, tc.a); back != -order || backOK != ok {
+			t.Errorf("compareClaims(%q, %q) = %d, %v; want the mirror of %d, %v", tc.b, tc.a, back, backOK, order, ok)
+		}
 	}
 }
 
