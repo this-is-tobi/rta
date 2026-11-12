@@ -71,11 +71,31 @@ func (o Origin) Which(namespace string) string {
 
 // Short is the digest abbreviated for display, and for the prefix match an
 // operator's `plugins.<ns>@<digest>` pin is compared against.
-func (o Origin) Short() string {
-	if len(o.Digest) > 12 {
-		return o.Digest[:12]
+func (o Origin) Short() string { return ShortDigest(o.Digest) }
+
+// ShortLen is how much of a digest a person is shown, and so how much they
+// copy into a `plugins.<ns>@<digest>` pin, a profile entry or `rta plugin
+// trust`. One length for every listing, since a pin is matched against what
+// was shown.
+const ShortLen = 12
+
+// MinPinLen is the shortest digest prefix any match accepts as naming an
+// artifact: a config section's pin, a profile entry's, a trust entry named
+// for removal. Short enough to type, long enough that grinding a second
+// artifact to answer to it is not something to plan around; below it, a pin
+// turns "survives a rebuild without silently re-trusting a different
+// artifact", pinning's whole point, back into trusting whatever answers to
+// the name.
+const MinPinLen = 8
+
+// ShortDigest is a digest as a person is shown it (ShortLen), or all of it
+// when it is shorter: a refusal that panicked while formatting its own
+// message would be worse than what it was refusing.
+func ShortDigest(digest string) string {
+	if len(digest) > ShortLen {
+		return digest[:ShortLen]
 	}
-	return o.Digest
+	return digest
 }
 
 // Artifact is the digest of the binary behind a namespace, empty for a

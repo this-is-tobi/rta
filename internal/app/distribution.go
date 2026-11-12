@@ -16,6 +16,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -100,11 +101,11 @@ func newPluginInstallCommand(opts *globalOpts) *cobra.Command {
 // installView renders the install sequence as a KeyValue page: what was
 // claimed, what was fetched, what it hashed to, and what it declared.
 func installView(rep plugindist.Report, dryRun bool) view.View {
-	pin := rep.Name + "@" + shortDigest(rep.Digest)
+	pin := rep.Name + "@" + registry.ShortDigest(rep.Digest)
 	pairs := []view.Pair{
 		{Key: "from", Value: rep.Index + " → " + rep.URL},
 		{Key: "version", Value: rep.Version + " (the index's claim)"},
-		{Key: "digest", Value: shortDigest(rep.Digest) + " (computed by rta from the bytes)"},
+		{Key: "digest", Value: registry.ShortDigest(rep.Digest) + " (computed by rta from the bytes)"},
 		{Key: "declares", Value: declaresLine(rep.Declared)},
 	}
 	// Named here and not only at `rta plugin search`, because this is the
@@ -144,11 +145,11 @@ func installView(rep plugindist.Report, dryRun bool) view.View {
 	// says a plugin runs once its artifact is approved with `rta plugin trust`:
 	// nothing on the page said whether that was still owed, or that a binary had
 	// just been approved to run.
-	trustNote := "approved to run at digest " + shortDigest(rep.Digest) +
+	trustNote := "approved to run at digest " + registry.ShortDigest(rep.Digest) +
 		" — installing is that decision, and `rta plugin untrust " + rep.Name + "` takes it back"
 	if dryRun {
 		installedLabel = "would install to"
-		trustNote = "installing would approve it to run at digest " + shortDigest(rep.Digest) +
+		trustNote = "installing would approve it to run at digest " + registry.ShortDigest(rep.Digest) +
 			" — `rta plugin untrust " + rep.Name + "` takes it back"
 		// A step to take, not a condition: "once installed" over this sentence
 		// read as the state of a plugin that was not.
@@ -172,13 +173,6 @@ func installView(rep plugindist.Report, dryRun bool) view.View {
 				" — from the environment or a profile's `secrets:`, never the config file"})
 	}
 	return view.KeyValue{Pairs: pairs}
-}
-
-func shortDigest(d string) string {
-	if len(d) < 12 {
-		return d
-	}
-	return d[:12]
 }
 
 func declaresLine(p plugin.Plugin) string {
@@ -430,7 +424,7 @@ func newPluginPruneCommand(opts *globalOpts) *cobra.Command {
 func shortAll(digests []string) string {
 	out := make([]string, 0, len(digests))
 	for _, d := range digests {
-		out = append(out, shortDigest(d))
+		out = append(out, registry.ShortDigest(d))
 	}
 	return strings.Join(out, ", ")
 }
@@ -447,12 +441,12 @@ func shortAll(digests []string) string {
 // each of them refused at its next --profile.
 func stalePinPairs(name, from, to string, dryRun bool, move string) []view.Pair {
 	profiles, section := pinnedTo(name, from)
-	newPin := name + "@" + shortDigest(to)
+	newPin := name + "@" + registry.ShortDigest(to)
 	var pairs []view.Pair
 	if n := len(profiles); n > 0 {
 		them := format.Plural(n, "it", "them")
 		note := format.Count(n, "profile", "profiles") + " (" + strings.Join(profiles, ", ") + ") " +
-			format.Plural(n, "pins", "pin") + " " + name + "@" + shortDigest(from)
+			format.Plural(n, "pins", "pin") + " " + name + "@" + registry.ShortDigest(from)
 		if dryRun {
 			note += ", and will refuse after the " + move + " until `rta profile repin --all --plugin " + name +
 				"` points " + them + " at " + newPin
@@ -467,7 +461,7 @@ func stalePinPairs(name, from, to string, dryRun bool, move string) []view.Pair 
 		// rather than run without the section (pluginconf.Resolver.Withheld), and
 		// with the one command that moves it, as the profiles' line above names
 		// theirs.
-		pin := "plugins." + name + "@" + shortDigest(from)
+		pin := "plugins." + name + "@" + registry.ShortDigest(from)
 		repin := "`rta config repin --plugin " + name + "` points it at " + newPin
 		note := pin + " no longer applies, and " + name + "'s calls are refused until " + repin
 		if dryRun {
@@ -521,7 +515,7 @@ func regainedPairs(up plugindist.Upgraded, dryRun bool) []view.Pair {
 	if up.Digest == "" || up.Digest == up.FromDigest {
 		return nil
 	}
-	to := up.Name + "@" + shortDigest(up.Digest)
+	to := up.Name + "@" + registry.ShortDigest(up.Digest)
 	will := func(now, later string) string {
 		if dryRun {
 			return later
@@ -631,7 +625,7 @@ func lostAccessPairs(up plugindist.Upgraded, dryRun bool, move string) []view.Pa
 			paths = append(paths, p)
 		}
 	}
-	from, to := up.Name+"@"+shortDigest(up.FromDigest), up.Name+"@"+shortDigest(up.Digest)
+	from, to := up.Name+"@"+registry.ShortDigest(up.FromDigest), up.Name+"@"+registry.ShortDigest(up.Digest)
 	said := func(what, command string) string {
 		if dryRun {
 			return from + " can read " + what + ", and after the " + move + " " + to + " cannot until `" + command + "`"
@@ -686,14 +680,14 @@ func replacedGrantPairs(name, from, to string, dryRun bool, move string) []view.
 	if n == 0 {
 		return nil
 	}
-	note := format.Count(n, "grant", "grants") + " issued against " + name + "@" + shortDigest(from)
+	note := format.Count(n, "grant", "grants") + " issued against " + name + "@" + registry.ShortDigest(from)
 	if dryRun {
 		note += " will authorize nothing after the " + move + ": "
 	} else {
 		note += " " + format.Plural(n, "authorizes", "authorize") + " nothing now: "
 	}
 	note += strings.Join(named, ", ") + " — `rta grant allow` issues " + format.Plural(n, "it", "each") +
-		" again for " + name + "@" + shortDigest(to)
+		" again for " + name + "@" + registry.ShortDigest(to)
 	return []view.Pair{{Key: "your grants", Value: note}}
 }
 
@@ -757,7 +751,7 @@ func completeIndexes(_ *cobra.Command, args []string, _ string) ([]cobra.Complet
 // whose maintainer had just tagged a release had no way to learn that
 // `rta plugin index update` was the step left.
 func upToDateValue(up plugindist.Upgraded) string {
-	return up.Name + " " + up.Version + " (" + shortDigest(up.FromDigest) + ") by its index as last updated — " +
+	return up.Name + " " + up.Version + " (" + registry.ShortDigest(up.FromDigest) + ") by its index as last updated — " +
 		"`rta plugin index update` fetches newer claims"
 }
 
@@ -831,7 +825,7 @@ func upgradeAnswer(up plugindist.Upgraded, dryRun bool) view.KeyValue {
 	}
 	pairs := []view.Pair{
 		{Key: label, Value: fmt.Sprintf("%s %s → %s", up.Name, up.FromVersion, up.Version)},
-		{Key: "digest", Value: shortDigest(up.FromDigest) + " → " + shortDigest(up.Digest)},
+		{Key: "digest", Value: registry.ShortDigest(up.FromDigest) + " → " + registry.ShortDigest(up.Digest)},
 	}
 	if len(up.Diff) == 0 {
 		pairs = append(pairs, view.Pair{Key: "declaration", Value: "unchanged"})

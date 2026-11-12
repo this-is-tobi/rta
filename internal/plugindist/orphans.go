@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -79,8 +80,8 @@ func Search(term, safety string) ([]SearchRow, []*view.Error) {
 			}
 			row := SearchRow{Name: m.Name, Index: l.Index, Version: m.Version,
 				Summary: m.Summary, Safety: m.SafetyLine()}
-			if e, ok := LockedFor(m.Name); ok && len(e.Digest) >= 12 {
-				row.Installed = e.Digest[:12]
+			if e, ok := LockedFor(m.Name); ok {
+				row.Installed = registry.ShortDigest(e.Digest)
 			}
 			rows = append(rows, row)
 		}

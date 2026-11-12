@@ -69,6 +69,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/filelock"
 	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -134,12 +135,7 @@ type Entry struct {
 }
 
 // Short is the digest as a person quotes it.
-func (e Entry) Short() string {
-	if len(e.Digest) > 12 {
-		return e.Digest[:12]
-	}
-	return e.Digest
-}
+func (e Entry) Short() string { return registry.ShortDigest(e.Digest) }
 
 // Label is the name to show for this artifact: the one it was most recently
 // trusted under, which is the one an operator has in mind — and the one Path
@@ -506,12 +502,6 @@ func update(digest string, change func(*Entry)) *view.Error {
 	return write(file{Trusted: out})
 }
 
-// minDigestPrefix is the shortest prefix Remove accepts as naming a digest,
-// matching the pin-length floor internal/mcp, internal/profile and
-// internal/pluginconf all use for the same reason: short enough to type,
-// long enough that a collision is not something to plan around.
-const minDigestPrefix = 8
-
 // fullDigestLen is a sha256 hex digest's length. A string this long can
 // only equal one artifact's digest — cryptographic collision aside — so
 // only a shorter string is a prefix Remove has to check for ambiguity.
@@ -638,7 +628,7 @@ func PreviewRemove(which string) (int, *view.Error) {
 // matchRemove is Remove's matching rule, shared with PreviewRemove so the
 // two can never drift into disagreeing about what "removed" would mean.
 func matchRemove(f file, which string) (kept []Entry, removed int, verr *view.Error) {
-	if len(which) >= minDigestPrefix && len(which) < fullDigestLen {
+	if len(which) >= registry.MinPinLen && len(which) < fullDigestLen {
 		var matches []string
 		for _, e := range f.Trusted {
 			if strings.HasPrefix(e.Digest, which) {
@@ -668,7 +658,7 @@ func matchRemove(f file, which string) (kept []Entry, removed int, verr *view.Er
 // to mean one artifact.
 func (e Entry) matchedBy(which string) bool {
 	return e.normalize().Knows(which) ||
-		(len(which) >= minDigestPrefix && strings.HasPrefix(e.Digest, which))
+		(len(which) >= registry.MinPinLen && strings.HasPrefix(e.Digest, which))
 }
 
 // read loads the file for a read-modify-write.

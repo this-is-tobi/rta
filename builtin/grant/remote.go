@@ -9,6 +9,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/internal/compact"
 	core "github.com/this-is-tobi/rta/internal/grant"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -215,7 +216,7 @@ func draftBody(server string, p operatorid.Prepared) string {
 		subject(g), server, describe(g), format.Duration(g.Expires.Sub(g.Issued)), usesSuffix(g.MaxUses), rateSuffix(g))
 	msg += "\nplugin build: " + core.RosterArtifact(g.Digest, core.ArtifactCurrent)
 	if g.Profile != "" {
-		msg += "\nconnection pin: " + core.ShortDigest(g.ProfilePin)
+		msg += "\nconnection pin: " + registry.ShortDigest(g.ProfilePin)
 	}
 	for _, n := range p.Notes {
 		msg += "\n" + n

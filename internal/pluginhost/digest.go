@@ -27,12 +27,7 @@ type Identity struct {
 }
 
 // Short is the digest as a person would quote it in a config or a log line.
-func (i Identity) Short() string {
-	if len(i.Digest) < 12 {
-		return i.Digest
-	}
-	return i.Digest[:12]
-}
+func (i Identity) Short() string { return registry.ShortDigest(i.Digest) }
 
 // Identify resolves a plugin command to a path and hashes it.
 //

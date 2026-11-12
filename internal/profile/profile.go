@@ -306,11 +306,6 @@ func migrationOr(name string, p config.Profile, generic *view.Error) *view.Error
 			"the environment beside it")
 }
 
-// minPinLen matches internal/plugintrust's and internal/mcp's own
-// digest-prefix floor: short enough to type, long enough that grinding a
-// second artifact to collide with it is not a realistic attack.
-const minPinLen = 8
-
 // repinHint is the command that writes the installed pin into every entry
 // that names the plugin. The refusals of a pin say which pin is the installed
 // one, which is the half to type by hand into one file; this is the half that
@@ -383,19 +378,18 @@ func checkPin(key string, inst Installed) *view.Error {
 		return view.Errorf("core.profile.unpinned",
 			"%q is an installed plugin, so a profile entry for it must name the artifact", ns).
 			WithHint(hint)
-	case len(pin) < minPinLen:
-		// Below the floor every other digest-prefix match in the codebase
-		// shares (internal/plugintrust): short enough to be cheap to grind,
-		// which turns "survives a
-		// rebuild without silently re-trusting a different artifact" —
-		// pinning's whole point — back into trusting whatever currently
-		// answers to the name. Every writer of a profile entry
+	case len(pin) < registry.MinPinLen:
+		// Below the floor every digest-prefix match shares
+		// (registry.MinPinLen): short enough to be cheap to grind, which
+		// turns "survives a rebuild without silently re-trusting a different
+		// artifact" — pinning's whole point — back into trusting whatever
+		// currently answers to the name. Every writer of a profile entry
 		// (profileset.go, the TUI, explain.go) already always emits the
-		// full 12-char short digest; this only closes a hand-written or
-		// copy-truncated one.
+		// whole short digest (registry.ShortLen); this only closes a
+		// hand-written or copy-truncated one.
 		return view.Errorf("core.profile.shortpin",
 			"this profile's pin for %q is too short to trust", ns).
-			WithHint(o.Which(ns) + " — at least " + strconv.Itoa(minPinLen) + " hex characters" + repinTail(ns, o))
+			WithHint(o.Which(ns) + " — at least " + strconv.Itoa(registry.MinPinLen) + " hex characters" + repinTail(ns, o))
 	case !strings.HasPrefix(o.Digest, pin):
 		return view.Errorf("core.profile.stalepin",
 			"this profile's pin does not match %s", o.Called(ns)).

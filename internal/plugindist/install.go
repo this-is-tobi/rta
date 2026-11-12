@@ -18,6 +18,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -150,7 +151,7 @@ func installFrom(ctx context.Context, listed Listed, dryRun bool,
 	if gotSHA != plat.SHA256 {
 		return Report{}, view.Errorf("plugin.install.checksum",
 			"the artifact's sha256 is %s and index %q claims %s — refusing the bytes",
-			gotSHA[:12], listed.Index, plat.SHA256[:12]).
+			registry.ShortDigest(gotSHA), listed.Index, registry.ShortDigest(plat.SHA256)).
 			WithHint("the index lied, or something between it and you rewrote the artifact; " +
 				"`rta plugin index update " + listed.Index + "` may resolve a stale claim")
 	}
@@ -356,14 +357,14 @@ func describeStored(ctx context.Context, name, want string) (plugin.Plugin, *vie
 	if id.Digest != want {
 		return plugin.Plugin{}, view.Errorf("plugin.upgrade.drift",
 			"the installed %s hashes to %s and rta.lock records %s — refusing to run it",
-			name, short(id.Digest), short(want)).
+			name, registry.ShortDigest(id.Digest), registry.ShortDigest(want)).
 			WithHint("something rewrote the store after rta placed it there; `rta plugin rm " +
 				name + "` and a fresh install replace it")
 	}
 	if !plugintrust.Load().Trusts(id.Digest) {
 		return plugin.Plugin{}, view.Errorf("plugin.upgrade.untrusted",
 			"%s (%s) is installed and not trusted — refusing to run it to read its declaration",
-			name, short(id.Digest)).
+			name, registry.ShortDigest(id.Digest)).
 			WithHint("`rta plugin trust " + name + "` restores the approval, or `rta plugin rm " +
 				name + "` takes the artifact out")
 	}
@@ -379,16 +380,6 @@ func describeStored(ctx context.Context, name, want string) (plugin.Plugin, *vie
 			WithHint("`rta plugin rm " + name + "` and a fresh install replace it")
 	}
 	return client.Declared, nil
-}
-
-// short is the first twelve characters of a digest, or all of it if somebody
-// handed us fewer — a refusal that panics while formatting its own message is
-// worse than the thing it was refusing.
-func short(digest string) string {
-	if len(digest) > 12 {
-		return digest[:12]
-	}
-	return digest
 }
 
 // verifyClaims is the check no opaque-executable manager can perform:

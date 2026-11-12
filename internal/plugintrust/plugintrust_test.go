@@ -7,6 +7,8 @@ import (
 	"slices"
 	"sync"
 	"testing"
+
+	"github.com/this-is-tobi/rta/internal/registry"
 )
 
 const (
@@ -158,7 +160,7 @@ func TestUntrustByDigestPrefixTakesExactlyOne(t *testing.T) {
 	}
 }
 
-// A prefix long enough to pass the minDigestPrefix floor can still name more
+// A prefix long enough to pass the registry.MinPinLen floor can still name more
 // than one real, distinct artifact once the trust store holds enough of
 // them — the doc comment's "one artifact and nothing else" promise is about
 // the outcome, not about the length typed. Removing both silently would be
@@ -171,8 +173,8 @@ func TestUntrustByAnAmbiguousPrefixIsRefused(t *testing.T) {
 			t.Fatal(verr)
 		}
 	}
-	prefix := digestC[:minDigestPrefix] // "cafe0000" — where digestC and digestD diverge
-	if digestD[:minDigestPrefix] != prefix {
+	prefix := digestC[:registry.MinPinLen] // "cafe0000" — where digestC and digestD diverge
+	if digestD[:registry.MinPinLen] != prefix {
 		t.Fatalf("test fixture bug: digestC and digestD do not share %q", prefix)
 	}
 

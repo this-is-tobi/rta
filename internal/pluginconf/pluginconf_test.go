@@ -151,7 +151,7 @@ func TestAnEmptyPinMatchesNothing(t *testing.T) {
 	}
 }
 
-// A pin below minPinLen is cheap enough to grind that a hand-written or
+// A pin below registry.MinPinLen is cheap enough to grind that a hand-written or
 // copy-truncated one degrades pinning back into trusting whatever currently
 // answers to the name — even though, unlike a stale pin, this one is a
 // genuine prefix of the real digest.

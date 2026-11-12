@@ -42,11 +42,6 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// minPinLen matches internal/profile's, internal/plugintrust's and
-// internal/mcp's own digest-prefix floor: short enough to type, long enough
-// that grinding a second artifact to collide with it is not realistic.
-const minPinLen = 8
-
 // Resolver holds the sections that survived the pin check, by namespace, and
 // the heading each was written under.
 type Resolver struct {
@@ -182,17 +177,16 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 			refuse(ns, Problem{Section: section,
 				Reason: fmt.Sprintf("%q is an installed plugin, so its config must name the artifact it is for", ns),
 				Hint:   hint})
-		case len(pin) < minPinLen:
-			// Below the floor internal/profile, internal/plugintrust and
-			// internal/mcp's own digest-prefix matches all share: short
-			// enough to be cheap to grind, which turns "survives a rebuild
-			// without silently re-trusting a different artifact" — pinning's
-			// whole point — back into trusting whatever currently answers to
-			// the name. An empty pin is the extreme case of this, not a
-			// separate one.
+		case len(pin) < registry.MinPinLen:
+			// Below the floor every digest-prefix match shares
+			// (registry.MinPinLen): short enough to be cheap to grind, which
+			// turns "survives a rebuild without silently re-trusting a
+			// different artifact" — pinning's whole point — back into
+			// trusting whatever currently answers to the name. An empty pin
+			// is the extreme case of this, not a separate one.
 			refuse(ns, Problem{Section: section,
 				Reason: fmt.Sprintf("this pin for %q is too short to trust", ns),
-				Hint:   o.Which(ns) + " — at least " + strconv.Itoa(minPinLen) + " hex characters" + repinTail(ns, o)})
+				Hint:   o.Which(ns) + " — at least " + strconv.Itoa(registry.MinPinLen) + " hex characters" + repinTail(ns, o)})
 		case !strings.HasPrefix(o.Digest, pin):
 			// A stale pin is the ordinary case after an upgrade, and saying
 			// which digest is installed is the whole point.

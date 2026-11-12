@@ -9,6 +9,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -93,7 +94,7 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, left []view.Pair, dryR
 			heldNames = append(heldNames, o.Name)
 			t.Rows = append(t.Rows, []string{o.Name,
 				o.FromVersion + " → " + o.Version,
-				shortDigest(o.FromDigest) + " (kept)", back})
+				registry.ShortDigest(o.FromDigest) + " (kept)", back})
 			warnings = append(warnings, *view.Errorf(plugindist.CodeDowngrade,
 				"%s was not moved back: index %s now claims %s, older than the %s installed",
 				o.Name, o.Index, o.Version, o.FromVersion).
@@ -103,18 +104,18 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, left []view.Pair, dryR
 			heldNames = append(heldNames, o.Name)
 			t.Rows = append(t.Rows, []string{o.Name,
 				o.FromVersion + " → " + o.Version,
-				shortDigest(o.FromDigest) + " (kept)", held})
+				registry.ShortDigest(o.FromDigest) + " (kept)", held})
 			warnings = append(warnings, *view.Errorf("plugin.upgrade.authority",
 				"%s was not upgraded: %s", o.Name, strings.Join(o.Widenings, "; ")).
 				WithHint("`rta plugin upgrade " + o.Name + " --dry-run` shows the whole declaration " +
 					"diff; the same command without it upgrades once you have read the change"))
 		case o.UpToDate:
 			t.Rows = append(t.Rows, []string{o.Name, o.Version,
-				shortDigest(o.Digest), "up to date"})
+				registry.ShortDigest(o.Digest), "up to date"})
 		default:
 			t.Rows = append(t.Rows, []string{o.Name,
 				o.FromVersion + " → " + o.Version,
-				shortDigest(o.FromDigest) + " → " + shortDigest(o.Digest), moved})
+				registry.ShortDigest(o.FromDigest) + " → " + registry.ShortDigest(o.Digest), moved})
 		}
 	}
 
