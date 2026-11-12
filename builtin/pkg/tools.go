@@ -625,12 +625,22 @@ func installTool(ctx context.Context, sf plugin.Surface, c *registryClient, t to
 			WithHint("the release has neither an API digest nor a checksums file; " + sf.InputName("unverified") +
 				" installs it on your word alone")
 	}
+	// A first install goes to ~/.local/bin, which is said when the shell
+	// would not find it there (offPath).
+	note := ""
+	if _, err := lookPath(t.Bin); err != nil {
+		note = offPath(dest)
+	}
 	if dryRun {
 		how := "verified against " + want[:min(12, len(want))]
 		if want == "" {
 			how = "UNVERIFIED — the release publishes no digest"
 		}
-		return view.Text{Body: fmt.Sprintf("would install %s %s (%s, %d bytes, %s) into %s", t.Bin, rel.Tag, assetName, size, how, dest)}, nil
+		body := fmt.Sprintf("would install %s %s (%s, %d bytes, %s) into %s", t.Bin, rel.Tag, assetName, size, how, dest)
+		if note != "" {
+			body += "\n" + note
+		}
+		return view.Text{Body: body}, nil
 	}
 
 	// The download into staging is not held off a forced exit (the hold is
@@ -719,12 +729,33 @@ func installTool(ctx context.Context, sf plugin.Surface, c *registryClient, t to
 	if want == "" {
 		verified = "UNVERIFIED"
 	}
-	return view.KeyValue{Pairs: []view.Pair{
+	pairs := []view.Pair{
 		{Key: "installed", Value: t.Bin + " " + rel.Tag},
 		{Key: "from", Value: assetURL},
 		{Key: "into", Value: dest},
 		{Key: "digest", Value: placed + " (" + verified + ")"},
-	}}, nil
+	}
+	if note != "" {
+		pairs = append(pairs, view.Pair{Key: "note", Value: note})
+	}
+	return view.KeyValue{Pairs: pairs}, nil
+}
+
+// offPath is what to say when dest's directory is not on $PATH, and "" when
+// it is.
+//
+// A first install goes to ~/.local/bin, and macOS puts no such directory on
+// $PATH: the install said it was done, the shell then found no such command,
+// and the next pkg.tools said "not on $PATH" with nothing in between to say
+// why.
+func offPath(dest string) string {
+	dir := filepath.Clean(filepath.Dir(dest))
+	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
+		if d != "" && filepath.Clean(d) == dir {
+			return ""
+		}
+	}
+	return dir + " is not on $PATH: add it, or the shell will not find " + filepath.Base(dest)
 }
 
 // toolDestination is where the binary already lives, so the upgrade replaces
