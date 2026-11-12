@@ -1561,11 +1561,14 @@ func rolesInForce(grants []core.Grant) string {
 // somebody opens to see, at a glance, what they have allowed and for how
 // long. terse is what a terminal gets instead (compact.For): the capability,
 // the record, the agent, the time left and the budget, in a row of its own.
-// What it drops is what is constant or what is a note — the connection when
-// no grant names one, where the grant came from when a person typed every
-// one, the note — and it keeps, whatever the width, the columns whose
-// arrival is the finding: a grant on a connection, one issued with nobody at
-// the terminal, one whose plugin has been replaced.
+// What it drops is what is constant — the connection when no grant names one,
+// where the grant came from when a person typed every one, the note when no
+// grant has one — and it keeps, whatever the width, the columns whose arrival
+// is the finding: a grant on a connection, one issued with nobody at the
+// terminal, one whose plugin has been replaced. A note was dropped whole once,
+// and `--note`'s help says the roster shows it: the reason somebody wrote for a
+// grant is what a person reviewing grants reads beside it, and it showed only
+// in -o json and --detail.
 func grantsTable(grants []core.Grant, stale func(core.Grant) bool, states []core.ArtifactState,
 	detail, terse bool,
 ) view.Table {
@@ -1665,7 +1668,14 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool, states []core
 		return g.Expires.UTC().Format(time.RFC3339)
 	})
 	add(true, view.Column{Name: "Budget Left"}, func(_ int, g core.Grant, now time.Time) string { return budgetLeft(g, now) })
-	add(!terse, view.Column{Name: "Note"}, func(_ int, g core.Grant, _ time.Time) string { return g.Note })
+	// On a terminal the note is the column given up first when the row does not
+	// fit (Column.Priority): it is the reason beside the grant, not the grant.
+	noted := has(func(g core.Grant) bool { return g.Note != "" })
+	note := view.Column{Name: "Note"}
+	if terse {
+		note.Priority = 1
+	}
+	add(!terse || noted, note, func(_ int, g core.Grant, _ time.Time) string { return g.Note })
 
 	t := view.Table{Columns: make([]view.Column, len(cols))}
 	for i, c := range cols {
