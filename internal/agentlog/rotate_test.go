@@ -106,6 +106,50 @@ func TestVerifyDoesNotRaceARotation(t *testing.T) {
 	}
 }
 
+// Verify held the lock for its whole walk, so every MCP call waited for it:
+// half a second each on a record at its retention ceiling, every time agent
+// metrics, a /metrics scrape or the doctor ran. It holds it for a snapshot
+// now, and appends made while it walks, the ones that rotate a segment and
+// the ones that retire one, neither wait for it nor read to it as entries
+// removed from the end.
+func TestAnAppendDoesNotWaitForAVerification(t *testing.T) {
+	isolate(t)
+	small(t, 1<<10, 2) // ~3 entries a segment, two kept: the appends below rotate and retire
+	fill(t, 4)
+	saved := verifyWalk
+	t.Cleanup(func() { verifyWalk = saved })
+	verifyWalk = func() {
+		done := make(chan error, 1)
+		go func() {
+			for i := 0; i < 12; i++ {
+				if err := Append(Entry{Cap: "sys.cpu", Outcome: Ran, Auth: Open,
+					Args: map[string]any{"pad": strings.Repeat("x", 200)}}); err != nil {
+					done <- err
+					return
+				}
+			}
+			done <- nil
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("an append beside the walk failed: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Error("the appends waited for the verification's walk")
+		}
+	}
+	rep, err := Verify()
+	if err != nil || rep.Broken != 0 {
+		t.Fatalf("the record appended to during the walk verified as %+v (%v)", rep, err)
+	}
+	verifyWalk = saved
+	after, err := Verify()
+	if err != nil || after.Broken != 0 || after.Last != rep.Last+12 {
+		t.Fatalf("the next verification read %+v (%v), want the 12 entries the walk did not see", after, err)
+	}
+}
+
 func TestTheChainRunsThroughARotation(t *testing.T) {
 	isolate(t)
 	small(t, 1<<10, 40) // ~3 entries a segment, and keep enough that none retires
