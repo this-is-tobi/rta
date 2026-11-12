@@ -140,6 +140,10 @@ func callRequest(id string, req plugin.Request) *rtav1.CallRequest {
 		// secret, and nothing else about the profile (Request.Profile).
 		Profile: req.Profile(),
 		Tunnel:  wire.TunnelToProto(req.Tunnel()),
+		// What the operator trusted for the server the call reaches, which the
+		// host filled (trusting); never the coordinate that says which server
+		// that is, which stays the host's (Request.Coordinate).
+		Trusted: req.Trusted(),
 	}
 }
 
@@ -151,6 +155,7 @@ func (c *Client) prefill(ctx context.Context, id string, req plugin.Request) (ma
 	resp, err := stub.Prefill(ctx, &rtav1.PrefillRequest{
 		CapabilityId: id,
 		Values:       wire.ValuesToProto(req.Values()),
+		Trusted:      req.Trusted(),
 	})
 	if err != nil {
 		return nil, c.transportError(ctx, id, err)
@@ -197,6 +202,7 @@ func (c *Client) suggest(ctx context.Context, id, field string, req plugin.Reque
 		// boundary — and the rule that anything which would prompt or take a
 		// visible moment must not run on this path had no way to be obeyed.
 		Surface: wire.SurfaceToProto(req.Surface()),
+		Trusted: req.Trusted(),
 	})
 	if err != nil {
 		return nil

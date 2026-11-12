@@ -73,13 +73,17 @@ type Request struct {
 	surface Surface
 	profile string
 	tunnel  Tunnel
-	confine func(field, path string) (string, *view.Error)
-	links   map[string]link
-	targets func(dir, target string) string
-	bounds  Bounds
-	limit   int
-	DryRun  bool
-	Yes     bool
+	// coordinate is the host's alone (Coordinate), and trusted what the host
+	// hands a plugin of what it remembers (Trusted).
+	coordinate string
+	trusted    [][]byte
+	confine    func(field, path string) (string, *view.Error)
+	links      map[string]link
+	targets    func(dir, target string) string
+	bounds     Bounds
+	limit      int
+	DryRun     bool
+	Yes        bool
 
 	pipedPrimary bool
 	confirm      func(card string) bool
@@ -151,6 +155,37 @@ func (r Request) WithProfile(name string, t Tunnel) Request {
 		t = TunnelNone
 	}
 	r.profile, r.tunnel = name, t
+	return r
+}
+
+// Coordinate is the `kube:` or `ssh:` coordinate the host opened Tunnel's
+// forward on, scheme and all, as the profile states it — `kube:homelab/vault/
+// svc/vault:8200` — and "" for a call that went through none.
+//
+// **The host's own, never a plugin's.** The plugin is told the profile's name
+// and the kind of forward, and never the coordinate (Profile): no field of
+// the wire carries it, so in a plugin's process this is always "". The host
+// reads it for the one thing the forward's address cannot say: which server
+// the call reached, which through a forward is the coordinate and not
+// 127.0.0.1 and a port that changes every call — the server a certificate
+// trusted on first use is remembered for (internal/tlstrust).
+func (r Request) Coordinate() string { return r.coordinate }
+
+// Trusted is the certificates the operator trusted for the server this call
+// reaches, DER, as it presented them on first use; nil for a server nothing
+// was trusted for. Service.TLS reads it into the tls.Config it plans, and
+// Service.Refusal into the refusal of a server presenting anything else.
+//
+// Filled by the host from what it remembers, never from a value a caller or
+// a configuration file states: no input names it, so nothing a call carries
+// can widen what it trusts.
+func (r Request) Trusted() [][]byte { return r.trusted }
+
+// WithTrusted stamps the certificates trusted for the server this call
+// reaches (Trusted): the host does, per call, from what it remembers, and a
+// plugin process's server does from what the host sent.
+func (r Request) WithTrusted(chain [][]byte) Request {
+	r.trusted = chain
 	return r
 }
 

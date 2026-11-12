@@ -58,9 +58,27 @@ type Error struct {
 	// what it says is a gap. It changes how a surface heads the answer, not
 	// whether the warning is shown: every format still carries it, coded.
 	Advisory bool `json:"advisory,omitempty"`
+	// Presented is the chain a server presented, leaf first and DER, when
+	// this error is its TLS check failing with no CA the operator named as the
+	// judge: what the host remembers, so the operator can trust that server on
+	// first use (internal/tlstrust). Set by plugin.Service's Refusal, which
+	// alone holds the handshake, and empty on every other error.
+	//
+	// Never in any output: a certificate is no secret, but it is the host's
+	// to read, and a page of base64 under an agent's refusal is an answer
+	// nobody asked for, in the one channel that costs a model its context.
+	Presented [][]byte `json:"-"`
 }
 
 func (e *Error) Error() string { return e.Message }
+
+// WithPresented returns a copy of the error carrying the chain a server
+// presented (Presented).
+func (e *Error) WithPresented(chain [][]byte) *Error {
+	c := *e
+	c.Presented = chain
+	return &c
+}
 
 // CredentialRefused reports whether the service understood the call and refused
 // the credential that came with it, which is the one failure a dashboard is

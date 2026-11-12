@@ -256,7 +256,7 @@ func everyViewType() map[string]view.View {
 		// would head a complete answer as partial. Input, so a plugin's
 		// refusal of one input still reopens the form on that box.
 		"error": &view.Error{Code: "x.y.z", Message: "it failed", Hint: "do this", Retryable: true, Refusal: true,
-			Advisory: true, Input: "city"},
+			Advisory: true, Input: "city", Presented: [][]byte{[]byte("leaf"), []byte("issuer")}},
 	}
 }
 
