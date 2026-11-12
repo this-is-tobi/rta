@@ -1142,6 +1142,10 @@
       "type": "string",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$"
     },
+    "rtaDuration": {
+      "type": "string",
+      "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$"
+    },
     "identityLabel": {
       "description": "An identity written into the record: an agent name, a token label, a roster label.",
       "type": "string",
@@ -1309,7 +1313,7 @@
             "wait": {
               "oneOf": [
                 {
-                  "$ref": "#/$defs/duration"
+                  "$ref": "#/$defs/rtaDuration"
                 },
                 {
                   "type": "string",

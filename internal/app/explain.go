@@ -455,7 +455,7 @@ func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
 	if missing := tui.MissingInputs(c, nil, plugin.Profilable(c)); len(missing) > 0 {
 		add = "`rta dashboard add " + c.ID
 		for _, name := range missing {
-			add += " --set " + name + "=…"
+			add += " --with " + name + "=…"
 		}
 		add += "`"
 	}

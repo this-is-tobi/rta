@@ -345,7 +345,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				HumanOnly: true,
 				Safety:    plugin.Write, Idempotent: true,
 				Description: "The guard for a server whose humans are elsewhere: enrolls the public " +
-					"keys from an operators roster file (the same file `rta mcp serve --operators` " +
+					"keys from an operators roster file (the same file `rta mcp serve --operators-file` " +
 					"reads), after which a grant is honoured only if signed by one of them — issued " +
 					"from an enrolled operator's own machine over the operator channel, never from a " +
 					"shell here. No key material lives on this machine at all: nothing to steal, " +

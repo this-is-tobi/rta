@@ -50,7 +50,7 @@ import (
 // A capability that is not a read: a tile runs on load and again on a
 // timer, with no form and no confirmation, and buildTiles already drops
 // such an entry from the file — this refuses it before it is written,
-// where the person can still see the answer. A `--set` naming a credential,
+// where the person can still see the answer. A `--with` naming a credential,
 // for the reason `rta profile set` gives: the file is plaintext. A required
 // input nothing fills: the tile would draw the same "missing input" error
 // on every refresh forever, with nobody to ask. A profile the capability
@@ -231,7 +231,7 @@ func nameCell(name string) string {
 	return textclean.Name(name)
 }
 
-// withLine spells a tile's inputs the way `--set` states them.
+// withLine spells a tile's inputs the way `--with` states them.
 func withLine(with map[string]any) string {
 	if len(with) == 0 {
 		return ""
@@ -256,7 +256,7 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 			" still appear. `--profile` pins the tile to one connection, so `rta dashboard add" +
 			" kube.overview --profile prod` and the same with `--profile staging` are two tiles," +
 			" each named on its own panel. Without it the tile follows whatever `rta use` switched on." +
-			" `--set` fills the capability's inputs, `key=value`, typed the way it declares them." +
+			" `--with` fills the capability's inputs, `key=value`, typed the way it declares them." +
 			" `--section` draws the tile in a named group under a header that folds, with the other tiles that" +
 			" name it. `--refresh` sets how often it is re-run, such as 30s: a section and the screen can state the" +
 			" same key as a default, and the nearest one wins." +
@@ -271,17 +271,17 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 	}
 	cmd.Flags().String("profile", "", "pin the tile to this connection: a profile name, or name/instance")
 	// StringArray, as profile set's is: StringSlice split its argument on
-	// commas, so net.port's own `--set ports=22,80` became "ports=22" and a
+	// commas, so net.port's own `--with ports=22,80` became "ports=22" and a
 	// stray "80", refused as not a key=value pair, and no value with a comma
-	// could be stated at all. A list-shaped input is one --set per element.
-	cmd.Flags().StringArray("set", nil, "an input for the run, `key=value`; repeat for several")
+	// could be stated at all. A list-shaped input is one --with per element.
+	cmd.Flags().StringArray("with", nil, "an input for the run, `key=value`; repeat for several")
 	cmd.Flags().Int("width", 0, "how wide the tile is, in twelfths of the screen: 6 is half, 4 a third; 0 leaves it to its section, the screen and the terminal")
 	cmd.Flags().Int("height", 0, "how tall the tile's box is, in lines; 0 leaves it to what the tile has to say")
 	cmd.Flags().String("section", "", "draw the tile in this section, under a header that folds; left out, in none")
 	cmd.Flags().String("refresh", "", "how often the tile is re-run, such as 30s or 5m; left out, its section's, then the screen's, then the capability's")
 	addViewFlag(cmd, "put the tile on this view, creating it when it is new")
 	completeFlag(cmd, "profile", completeProfiles)
-	completeFlag(cmd, "set", completeTileInputs(reg))
+	completeFlag(cmd, "with", completeTileInputs(reg))
 	completeFlag(cmd, "section", completeSections)
 	return cmd
 }
@@ -410,12 +410,12 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		}
 		expandsTo = refs
 	}
-	pairs, _ := cmd.Flags().GetStringArray("set")
+	pairs, _ := cmd.Flags().GetStringArray("with")
 	with, verr := parseTileInputs(pairs, c)
 	if verr != nil {
 		return nil, verr
 	}
-	// The host holds every run to what the inputs declare, so a --set
+	// The host holds every run to what the inputs declare, so a --with
 	// outside an input's options or range would be written, then refused on
 	// every refresh with nobody watching. Refused here instead, by the same
 	// check, while the person who typed it is still looking.
@@ -425,7 +425,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	}
 	// Written the way every run reads it, as profile set writes a value: an
 	// option typed in another case is spelled as declared. The run rewrote
-	// `--set proto=TCP` to tcp anyway, while the file and `dashboard list`
+	// `--with proto=TCP` to tcp anyway, while the file and `dashboard list`
 	// kept a spelling the declaration does not have.
 	for k := range with {
 		with[k] = resolved[k]
@@ -467,7 +467,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		}
 	}
 	if automatic && len(with) == 0 && width == 0 && height == 0 && section == "" && refresh == "" {
-		hint := "`--profile <name>` pins a second one to a connection; `--set`, `--width`, `--height`, `--section` and `--refresh` say how this one runs"
+		hint := "`--profile <name>` pins a second one to a connection; `--with`, `--width`, `--height`, `--section` and `--refresh` say how this one runs"
 		if slices.Contains(blockOf(cfg, drawn).Hidden, id) {
 			hint = "it is hidden — `rta dashboard unhide " + id + inViewFlag(drawn) + "` brings it back"
 		}
@@ -689,7 +689,7 @@ func tilesPinnedTo(cfg config.Config, name string) []string {
 	return out
 }
 
-// parseTileInputs turns `--set key=value` into the tile's `with:` block,
+// parseTileInputs turns `--with key=value` into the tile's `with:` block,
 // typed against the capability's own declaration — the same reasons
 // parseSetFlags gives for a profile's `set:`, applied to a tile's inputs,
 // which are keyed by input name rather than by config key because a tile
@@ -705,23 +705,23 @@ func parseTileInputs(pairs []string, c plugin.Capability) (map[string]any, *view
 		k, v, ok := strings.Cut(pair, "=")
 		k = strings.TrimSpace(k)
 		if !ok || k == "" {
-			return nil, view.Errorf("core.dashboard.set.shape",
-				"one --set argument is not a `key=value` pair").
-				WithHint("write it as `--set namespace=platform`")
+			return nil, view.Errorf("core.dashboard.with.shape",
+				"one --with argument is not a `key=value` pair").
+				WithHint("write it as `--with namespace=platform`")
 		}
 		if k == "profile" {
-			return nil, view.Errorf("core.dashboard.set.profile",
+			return nil, view.Errorf("core.dashboard.with.profile",
 				"the profile is not an input of %s", c.ID).
 				WithHint("`--profile " + v + "` is how a tile is pinned to one")
 		}
 		f, declared := byName[k]
 		if !declared {
-			return nil, view.Errorf("core.dashboard.set.unknown",
+			return nil, view.Errorf("core.dashboard.with.unknown",
 				"%s has no input named %q", c.ID, k).
 				WithHint("`rta explain " + c.ID + "` lists the inputs it declares")
 		}
 		if f.Type == plugin.Secret || f.Type == plugin.SecretSlice {
-			verr := view.Errorf("core.dashboard.set.secret",
+			verr := view.Errorf("core.dashboard.with.secret",
 				"%q is a credential, and a tile's inputs are written into %s in plaintext",
 				k, config.Path())
 			// A profile's `secrets:` reaches only an input a profile may
@@ -737,7 +737,7 @@ func parseTileInputs(pairs []string, c plugin.Capability) (map[string]any, *view
 				"`rta profile set <name> --plugin " + plugin.Namespace(c.ID) + " --secret " + k + "=kv:<entry>`")
 		}
 		if v == "" {
-			return nil, view.Errorf("core.dashboard.set.empty", "`--set %s=` states no value", k).
+			return nil, view.Errorf("core.dashboard.with.empty", "`--with %s=` states no value", k).
 				WithHint("leave the flag out to let the input default — and check the variable this came from expanded")
 		}
 		if _, seen := raw[k]; !seen {
@@ -752,17 +752,17 @@ func parseTileInputs(pairs []string, c plugin.Capability) (map[string]any, *view
 	for _, k := range order {
 		f := byName[k]
 		if !f.Type.Repeatable() && len(raw[k]) > 1 {
-			return nil, view.Errorf("core.dashboard.set.repeated",
-				"`--set %s` is given more than once, and %s takes one value", k, k).
+			return nil, view.Errorf("core.dashboard.with.repeated",
+				"`--with %s` is given more than once, and %s takes one value", k, k).
 				WithHint("repeating a key states a list, and only a list-shaped input takes one")
 		}
 		v, verr := typedSetValue(f, k, raw[k])
 		if verr != nil {
 			// typedSetValue's refusal is worded for a profile's `set:`,
 			// whose keys are config keys; a tile's are input names, and an
-			// input with no config key would be told to write `--set =`.
+			// input with no config key would be told to write `--with =`.
 			out := *verr
-			out.Code = "core.dashboard.set.type"
+			out.Code = "core.dashboard.with.type"
 			out.Hint = "`rta explain " + c.ID + "` says what " + k + " takes"
 			return nil, &out
 		}
@@ -773,7 +773,7 @@ func parseTileInputs(pairs []string, c plugin.Capability) (map[string]any, *view
 
 // tileCanRunUnasked refuses a tile that would draw the same "missing input"
 // error on every refresh: a required input with no default, no config key
-// a file could fill, nothing under --set, and — when the tile is pinned —
+// a file could fill, nothing under --with, and — when the tile is pinned —
 // nothing a profile could fill either.
 func tileCanRunUnasked(c plugin.Capability, with map[string]any, pinned bool) *view.Error {
 	missing := tui.MissingInputs(c, with, pinned)
@@ -782,14 +782,14 @@ func tileCanRunUnasked(c plugin.Capability, with map[string]any, pinned bool) *v
 	}
 	verr := view.Errorf("core.dashboard.needs",
 		"%s needs %s, and a tile has no form to ask with", c.ID, strings.Join(missing, ", "))
-	// `--set token=…` is itself refused for a credential, so pointing at it
+	// `--with token=…` is itself refused for a credential, so pointing at it
 	// sent the reader from one refusal to the next.
 	if credential := tui.Untileable(c); len(credential) > 0 {
 		return verr.WithHint(credential[0] + " is a credential, which a tile cannot be given — " +
-			"`--set` would write it into the config in plaintext, and no profile fills it; " +
+			"`--with` would write it into the config in plaintext, and no profile fills it; " +
 			"run `" + strings.Join(append([]string{"rta"}, c.Words()...), " ") + "` when you have one")
 	}
-	return verr.WithHint("`--set " + missing[0] + "=<value>` states it for every run")
+	return verr.WithHint("`--with " + missing[0] + "=<value>` states it for every run")
 }
 
 func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, *view.Error) {
@@ -1053,8 +1053,8 @@ func completeAddedTiles(*cobra.Command, []string, string) ([]cobra.Completion, c
 	return out, cobra.ShellCompDirectiveNoFileComp
 }
 
-// completeTileInputs offers the named capability's inputs as `--set` keys,
-// credentials left out since `--set` refuses them.
+// completeTileInputs offers the named capability's inputs as `--with` keys,
+// credentials left out since `--with` refuses them.
 func completeTileInputs(reg *registry.Registry) func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 	return func(_ *cobra.Command, args []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		if len(args) == 0 || strings.Contains(prefix, "=") {

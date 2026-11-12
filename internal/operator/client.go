@@ -205,7 +205,7 @@ func (c Client) Call(ctx context.Context, verb string, payload, out any) *view.E
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusOK || decodeErr != nil || challenge.Nonce == "" {
 		return view.Errorf("core.operator.protocol",
-			"%s did not answer a challenge (HTTP %d) — is it an rta mcp server started with --operators?",
+			"%s did not answer a challenge (HTTP %d) — is it an rta mcp server started with --operators-file?",
 			c.URL, res.StatusCode)
 	}
 	body, err := json.Marshal(c.Signer.Sign(c.URL, challenge.Nonce, verb, raw))

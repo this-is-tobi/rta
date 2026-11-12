@@ -77,7 +77,7 @@ func TestExplainCardSaysWhatTheDashboardDoesWithIt(t *testing.T) {
 // debug.ansi reads its text from a pipe when a CLI call leaves it out, and a
 // tile has no pipe: `rta dashboard add debug.ansi` wrote a tile answering "no
 // text to explain" on every refresh, and the card offered that very command.
-// The add is refused unless --set states the text, and the card says so, as
+// The add is refused unless --with states the text, and the card says so, as
 // it says what the pipe is for.
 func TestATileIsToldToStateAPipedInput(t *testing.T) {
 	reg, err := NewRegistry()
@@ -86,10 +86,10 @@ func TestATileIsToldToStateAPipedInput(t *testing.T) {
 	}
 	run := session(t, reg)
 	_, errOut, err := run("dashboard", "add", "debug.ansi", "--dry-run")
-	if err == nil || !strings.Contains(errOut, "core.dashboard.needs") || !strings.Contains(errOut, "--set input=") {
-		t.Errorf("err = %v, output %q; want core.dashboard.needs hinting --set input=", err, errOut)
+	if err == nil || !strings.Contains(errOut, "core.dashboard.needs") || !strings.Contains(errOut, "--with input=") {
+		t.Errorf("err = %v, output %q; want core.dashboard.needs hinting --with input=", err, errOut)
 	}
-	if _, errOut, err := run("dashboard", "add", "debug.ansi", "--set", "input=x", "--dry-run"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "debug.ansi", "--with", "input=x", "--dry-run"); err != nil {
 		t.Errorf("a tile stating its text was refused: %v, %q", err, errOut)
 	}
 	c, ok := reg.Capability("debug.ansi")
@@ -97,7 +97,7 @@ func TestATileIsToldToStateAPipedInput(t *testing.T) {
 		t.Fatal("no debug.ansi")
 	}
 	kv := cardOf(reg, c)
-	if got := pairValue(kv, "dashboard"); !strings.Contains(got, "`rta dashboard add debug.ansi --set input=…`") {
+	if got := pairValue(kv, "dashboard"); !strings.Contains(got, "`rta dashboard add debug.ansi --with input=…`") {
 		t.Errorf("dashboard row = %q, want the add it takes", got)
 	}
 	if got := pairValue(kv, "input:input"); !strings.Contains(got, "pipe") || !strings.Contains(got, "required") {

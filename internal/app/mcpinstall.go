@@ -676,8 +676,8 @@ func newMCPInstallCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comma
 		"register the server to refuse a call that needs a grant, instead of asking you")
 	cmd.Flags().BoolVar(&consentNotify, "consent-notify", false,
 		"with --consent, also ring this machine's desktop notification when a call is parked")
-	cmd.Flags().DurationVar(&consentWait, "consent-wait", consent.DefaultWait,
-		"with --consent, how long a parked call waits for your answer before it is refused")
+	cmd.Flags().Var(durationInto(&consentWait, consent.DefaultWait), "consent-wait",
+		"with --consent, how long a parked call waits for your answer before it is refused, such as 90s or 5m")
 	cmd.Flags().IntVar(&maxResultMiB, "max-result", plugin.DefaultResultLimit>>20,
 		"the most a result may be, in MiB, before the server withholds it")
 	cmd.Flags().StringSliceVar(&roots, "root", nil,

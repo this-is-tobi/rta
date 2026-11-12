@@ -254,7 +254,7 @@ const maxResultCeilingMiB = 256
 // ProtectServeFiles reads before the command line is parsed.
 const (
 	tokenFileFlag = "token-file"
-	operatorsFlag = "operators"
+	operatorsFlag = "operators-file"
 )
 
 // ProtectServeFiles hands paths.Protect the token file and the operator
@@ -467,7 +467,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			}
 			if httpAddr == "" && operatorsFile != "" {
 				fmt.Fprintln(cmd.ErrOrStderr(),
-					"rta: --operators does nothing without --http — at this terminal you already are the operator")
+					"rta: --operators-file does nothing without --http — at this terminal you already are the operator")
 			}
 			if httpAddr == "" && observeAddr != "" {
 				return serveUsage("--observe needs --http",
@@ -497,12 +497,12 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// A parked call needs a person positioned to answer it. Over
 				// HTTP that person is an enrolled operator answering through
 				// the channel — `rta agent approve <id> --server <name>` — so
-				// --consent stands or falls with --operators: without a
+				// --consent stands or falls with --operators-file: without a
 				// roster there is still nobody to reach, and a control nobody
 				// can exercise must not be allowed to pretend it works (the
 				// same rule ConsentNotify follows one flag over).
 				if consentOn && operatorsFile == "" {
-					return serveUsage("--consent over --http needs --operators",
+					return serveUsage("--consent over --http needs --operators-file",
 						"a parked call waits for a person, and enrolled operators answering with "+
 							"`rta agent approve --server` are the only people positioned to; see "+
 							"docs/30-boundary/66-operators.md")
@@ -605,7 +605,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					// must carry the same string; that agreement is the
 					// anti-relay binding.
 					if operatorsURL == "" {
-						return serveUsage("an --operators roster needs --operators-url",
+						return serveUsage("an --operators-file roster needs --operators-url",
 							"the exact URL operators put in their remotes.yaml, signed into every "+
 								"operator request so a call meant for this server verifies nowhere else")
 					}
@@ -630,7 +630,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					}
 					roster, groupReadable, err := operator.LoadRoster(operatorsFile)
 					if err != nil {
-						return view.Errorf("core.mcp.operators", "reading --operators: %v", err).
+						return view.Errorf("core.mcp.operators", "reading --operators-file: %v", err).
 							WithHint("one line per operator, the one `rta operator status` prints on their machine")
 					}
 					// A warning and not a refusal: adding an operator to the
@@ -923,14 +923,14 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			"per line (`rta operator status` prints yours); mounts /operator/v1 beside the MCP endpoint")
 	cmd.Flags().StringVar(&operatorsURL, "operators-url", "",
 		"this server's canonical URL, exactly as operators write it in remotes.yaml; required with "+
-			"--operators — it is signed into every operator request, so a call meant for this server "+
+			"--operators-file — it is signed into every operator request, so a call meant for this server "+
 			"verifies nowhere else")
 	// Off by default, and the default is the important half: a call parked
 	// in a server nobody is watching is worse than a refusal.
 	cmd.Flags().BoolVar(&consentOn, "consent", false,
 		"ask instead of refusing when a call needs a grant nobody issued — you answer with `rta agent approve`")
-	cmd.Flags().DurationVar(&consentWait, "consent-wait", consent.DefaultWait,
-		"how long a parked call waits for your answer before it is refused")
+	cmd.Flags().Var(durationInto(&consentWait, consent.DefaultWait), "consent-wait",
+		"how long a parked call waits for your answer before it is refused, such as 90s or 5m")
 	cmd.Flags().BoolVar(&consentNotify, "consent-notify", false,
 		"also ring this machine's desktop notification when a call is parked")
 	cmd.Flags().IntVar(&maxResultMiB, "max-result", plugin.DefaultResultLimit>>20,

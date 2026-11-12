@@ -243,6 +243,7 @@ func TestOptionsThatCannotWorkAreRefusedBeforeAnythingIsRegistered(t *testing.T)
 		"wait without consent":     {"--no-consent", "--consent-wait", "1m"},
 		"consent both ways":        {"--consent", "--no-consent"},
 		"wait past the maximum":    {"--consent", "--consent-wait", "20m"},
+		"a day, in rta's grammar":  {"--consent", "--consent-wait", "1d"},
 		"max-result below one":     {"--max-result", "0"},
 		"max-result above ceiling": {"--max-result", "999"},
 		"a root that is no dir":    {"--root", filepath.Join(t.TempDir(), "nope")},

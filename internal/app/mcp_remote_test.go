@@ -78,8 +78,8 @@ func TestTheServersFilesAreFoundBeforeTheCommandLineIsParsed(t *testing.T) {
 		want []string
 	}{
 		{[]string{"mcp", "serve", "--as", "x", "--http", ":8443", "--token-file", "tokens.txt"}, []string{"tokens.txt"}},
-		{[]string{"mcp", "serve", "--token-file=a", "--operators", "ops.txt", "--operators-url", "https://x"}, []string{"a", "ops.txt"}},
-		{[]string{"mcp", "serve", "--operators-url=https://x", "--operators=ops.txt", "--token-file", "a", "--token-file", "b"}, []string{"b", "ops.txt"}},
+		{[]string{"mcp", "serve", "--token-file=a", "--operators-file", "ops.txt", "--operators-url", "https://x"}, []string{"a", "ops.txt"}},
+		{[]string{"mcp", "serve", "--operators-url=https://x", "--operators-file=ops.txt", "--token-file", "a", "--token-file", "b"}, []string{"b", "ops.txt"}},
 		{[]string{"note", "add", "--", "--token-file", "a"}, nil},
 		{[]string{"mcp", "serve", "--token-file"}, nil},
 		{[]string{"mcp", "serve", "--as", "x"}, nil},
@@ -110,10 +110,10 @@ func TestHTTPRefusesConsentWithoutOperators(t *testing.T) {
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("--http --consent with no --operators was accepted")
+		t.Fatal("--http --consent with no --operators-file was accepted")
 	}
-	if !strings.Contains(err.Error(), "consent") || !strings.Contains(err.Error(), "--operators") {
-		t.Errorf("err = %q, want it to name --consent and the --operators fix", err)
+	if !strings.Contains(err.Error(), "consent") || !strings.Contains(err.Error(), "--operators-file") {
+		t.Errorf("err = %q, want it to name --consent and the --operators-file fix", err)
 	}
 }
 
@@ -125,7 +125,7 @@ func TestHTTPRefusesConsentWithoutOperators(t *testing.T) {
 func TestHTTPConsentWithOperatorsClearsTheConsentGate(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
 	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0", "--consent",
-		"--operators", "does-not-matter-yet", "--operators-url", "https://rta.example.com"})
+		"--operators-file", "does-not-matter-yet", "--operators-url", "https://rta.example.com"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
@@ -133,7 +133,7 @@ func TestHTTPConsentWithOperatorsClearsTheConsentGate(t *testing.T) {
 		t.Fatal("--http with no verifier was accepted")
 	}
 	if strings.Contains(err.Error(), "consent") {
-		t.Errorf("err = %q, still the consent refusal despite --operators", err)
+		t.Errorf("err = %q, still the consent refusal despite --operators-file", err)
 	}
 	if !strings.Contains(err.Error(), "token") {
 		t.Errorf("err = %q, want the missing-verifier refusal next in line", err)
@@ -155,7 +155,7 @@ func TestHTTPRequiresATokenFile(t *testing.T) {
 }
 
 // The consent check runs first: a caller who passed --consent with neither
-// --operators nor --token-file should never see the token-file message
+// --operators-file nor --token-file should never see the token-file message
 // stand in for the consent one, since fixing that message's complaint
 // would still refuse.
 func TestHTTPConsentIsCheckedBeforeTokenFile(t *testing.T) {
@@ -291,16 +291,16 @@ func TestHTTPRefusesAGarbledOperatorsFile(t *testing.T) {
 	}
 	cmd := NewRoot(registry.New(), "test")
 	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0",
-		"--token-file", tokens, "--operators", roster,
+		"--token-file", tokens, "--operators-file", roster,
 		"--operators-url", "https://rta.example.com"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("a garbled --operators file was accepted")
+		t.Fatal("a garbled --operators-file file was accepted")
 	}
-	if !strings.Contains(err.Error(), "--operators") {
-		t.Errorf("err = %q, want it to name --operators", err)
+	if !strings.Contains(err.Error(), "--operators-file") {
+		t.Errorf("err = %q, want it to name --operators-file", err)
 	}
 }
 
@@ -319,7 +319,7 @@ func TestHTTPOperatorsRequiresACanonicalURL(t *testing.T) {
 	}
 	cmd := NewRoot(registry.New(), "test")
 	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0",
-		"--token-file", tokens, "--operators", roster})
+		"--token-file", tokens, "--operators-file", roster})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
@@ -366,8 +366,8 @@ func TestServeRefusalsAreCodedInTheFormatAskedFor(t *testing.T) {
 			"--oidc-subject", "alice", "--oidc-resource", "http://rta.example.com"), CodeUsage},
 		{append(web, "--oidc-issuer", "https://idp.example", "--oidc-audience", "rta",
 			"--oidc-subject", "alice", "--oidc-resource", "https://rta.example.com/?x"), CodeUsage},
-		{append(web, "--token-file", tokens, "--operators", roster), CodeUsage},
-		{append(web, "--token-file", tokens, "--operators", roster,
+		{append(web, "--token-file", tokens, "--operators-file", roster), CodeUsage},
+		{append(web, "--token-file", tokens, "--operators-file", roster,
 			"--operators-url", "http://rta.example.com"), CodeUsage},
 		{[]string{"--http", "127.0.0.1:99999", "--token-file", tokens}, "core.mcp.listen"},
 		{append(web, "--token-file", loose), "core.mcp.tokenfile"},

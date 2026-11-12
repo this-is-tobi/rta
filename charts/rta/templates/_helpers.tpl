@@ -390,7 +390,7 @@ Parameters:
 - {{ include "rta.server.oidcResource" (dict "server" $s) | quote }}
 {{- end }}
 {{- if $s.operators.enabled }}
-- --operators
+- --operators-file
 - {{ printf "%s/%s" $s.paths.rosterDir $s.operators.key | quote }}
 - --operators-url
 - {{ include "rta.server.operatorsURL" (dict "server" $s) | quote }}

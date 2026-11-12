@@ -253,7 +253,7 @@ func TestAStrangerCannotCall(t *testing.T) {
 	}
 }
 
-// Without --operators the paths do not exist: they fall through to the MCP
+// Without --operators-file the paths do not exist: they fall through to the MCP
 // handler's bearer wall, indistinguishable from a server that never heard of
 // the channel.
 func TestWithoutARosterThePathIsBearerWalled(t *testing.T) {

@@ -11,7 +11,7 @@ rta operator init --label tobi        # mints your key; prints the line below
 tobi 4Jx…base64…Qk=                   # one "label base64-pubkey" per line
 # start the server with it
 rta mcp serve --http :8443 --token-file tokens.txt \
-  --operators operators.txt --operators-url https://rta.example.com
+  --operators-file operators.txt --operators-url https://rta.example.com
 ```
 
 The label is how the roster and [the record](./40-audit-trail.md) name you, as `operator:tobi` in its credential column. `--label` sets it when the key is minted (it is `operator` otherwise), and `rta operator status --label <name>` prints the roster line for another label from the same key, without minting anything; it asks for the passphrase, since the line is made from the key it unlocks.
@@ -20,7 +20,7 @@ The label is how the roster and [the record](./40-audit-trail.md) name you, as `
 
 ## Talk to the server
 
-`--operators` mounts `/operator/v1` beside the [MCP](../95-reference/10-glossary.md#acronyms) endpoint. Name the server in `remotes.yaml` beside your config —
+`--operators-file` mounts `/operator/v1` beside the [MCP](../95-reference/10-glossary.md#acronyms) endpoint. Name the server in `remotes.yaml` beside your config —
 
 ```yaml
 servers:
@@ -43,7 +43,7 @@ rta grant allow kv.get db-password --agent claude --ttl 15m --server work
 ```mermaid
 sequenceDiagram
     participant You as Your machine<br/>(rta and your operator key)
-    participant Srv as The server<br/>(rta mcp serve --operators)
+    participant Srv as The server<br/>(rta mcp serve --operators-file)
     participant Ag as The agent
     You->>Srv: grant allow … --server work
     Srv-->>You: the prepared grant and a one-time challenge
@@ -60,7 +60,7 @@ The server *prepares* the grant — validation, [TTL](../95-reference/10-glossar
 
 ## Answer consent from your machine
 
-[Live consent](./35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked) travels the same way, and it is what makes `--consent` legal beside `--http` at all: start the server with both plus `--operators`, and a call that parks waits for an enrolled operator rather than for nobody. `rta agent pending --server work` lists the queue, `rta agent show <id> --server work` reads one call in full, and `rta agent approve`/`deny` answer it — every answer signed under your passphrase, the one-shot included. That last part is a deliberate asymmetry with the local flow, where a bare `agent approve` is passphrase-free because it releases a call an agent with a shell could have run directly: that shell-equivalence argument does not travel a network, so remotely there is no passphrase-free answer. The binding is the digest the local flow already rests on, made to cross the wire: your machine derives it from the fields it *displayed* — never copies it from what the server sent — and the server compares it against the parked file at the moment the sealed decision is minted, so a queue entry that changed after you read it, or a server that showed you one call while parking another, produces a refusal instead of an approval. (`--ttl` and `--role` stay out of a remote answer, and are refused beside `--server`: a standing grant is the prepare-and-sign flow above, with its own review step.)
+[Live consent](./35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked) travels the same way, and it is what makes `--consent` legal beside `--http` at all: start the server with both plus `--operators-file`, and a call that parks waits for an enrolled operator rather than for nobody. `rta agent pending --server work` lists the queue, `rta agent show <id> --server work` reads one call in full, and `rta agent approve`/`deny` answer it — every answer signed under your passphrase, the one-shot included. That last part is a deliberate asymmetry with the local flow, where a bare `agent approve` is passphrase-free because it releases a call an agent with a shell could have run directly: that shell-equivalence argument does not travel a network, so remotely there is no passphrase-free answer. The binding is the digest the local flow already rests on, made to cross the wire: your machine derives it from the fields it *displayed* — never copies it from what the server sent — and the server compares it against the parked file at the moment the sealed decision is minted, so a queue entry that changed after you read it, or a server that showed you one call while parking another, produces a refusal instead of an approval. (`--ttl` and `--role` stay out of a remote answer, and are refused beside `--server`: a standing grant is the prepare-and-sign flow above, with its own review step.)
 
 ## Why an agent cannot ride it
 

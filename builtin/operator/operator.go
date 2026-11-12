@@ -32,7 +32,7 @@ func Plugin() plugin.Plugin {
 				Description: "Generates an ed25519 keypair: the private half stays on this machine, " +
 					"encrypted under a passphrase that is never stored, never accepted from the " +
 					"environment, and refused on the command line; the public half is what you paste " +
-					"into a server's roster (`rta mcp serve --operators`). Signing anything takes the passphrase, so an " +
+					"into a server's roster (`rta mcp serve --operators-file`). Signing anything takes the passphrase, so an " +
 					"agent that reads every file on this machine still cannot speak as you. Refuses " +
 					"to overwrite an existing key: rotating is `rm` plus re-enrolling everywhere, " +
 					"deliberately manual.",
@@ -51,7 +51,7 @@ func Plugin() plugin.Plugin {
 				Summary: "Your operator key at a glance — or a remote server's, given one",
 				Description: "Without `server`: whether this machine holds an operator key, its " +
 					"fingerprint, and the exact line to paste into a server's roster (`rta mcp serve " +
-					"--operators`), made from the key the passphrase unlocks, so a key file someone " +
+					"--operators-file`), made from the key the passphrase unlocks, so a key file someone " +
 					"changed cannot enroll their key in your name. With `server` (a name from remotes.yaml, beside your config): asks that server " +
 					"who it is — version, agent name, guard state, enrolled operators — as a signed " +
 					"call, so it also proves your enrollment end to end.",
@@ -104,9 +104,9 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 
 // enrollLine introduces the roster line an operator hands to a server. The
 // roster is the file the server is started with, and `rta mcp serve
-// --operators` is the only spelling that has: serving is a command, never a
+// --operators-file` is the only spelling that has: serving is a command, never a
 // capability another surface could name its own way.
-const enrollLine = "add this line to the roster a server is started with (`rta mcp serve --operators`):\n"
+const enrollLine = "add this line to the roster a server is started with (`rta mcp serve --operators-file`):\n"
 
 func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	if server := req.String("server"); server != "" {

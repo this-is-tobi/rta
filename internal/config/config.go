@@ -106,8 +106,8 @@ func TileKey(id, profile string) string {
 // AddArgs spells this entry as the arguments `rta dashboard add` takes to
 // write it again. The receipts and the TUI's footer name the way back as
 // the exact command, and the whole entry has to be in it: one that took an
-// automatic tile's place is refused without the --span or --set that made
-// it more than that tile. A list-shaped input is one --set per element,
+// automatic tile's place is refused without the --span or --with that made
+// it more than that tile. A list-shaped input is one --with per element,
 // which is how the flag states a list.
 //
 // Each argument is one shell word. Joined as they came, a value holding a
@@ -140,14 +140,14 @@ func (t Tile) AddArgs() string {
 		switch v := t.With[k].(type) {
 		case []any:
 			for _, each := range v {
-				args = append(args, "--set", fmt.Sprintf("%s=%v", k, each))
+				args = append(args, "--with", fmt.Sprintf("%s=%v", k, each))
 			}
 		case []string:
 			for _, each := range v {
-				args = append(args, "--set", k+"="+each)
+				args = append(args, "--with", k+"="+each)
 			}
 		default:
-			args = append(args, "--set", fmt.Sprintf("%s=%v", k, v))
+			args = append(args, "--with", fmt.Sprintf("%s=%v", k, v))
 		}
 	}
 	for i, arg := range args {

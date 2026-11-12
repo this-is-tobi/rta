@@ -77,7 +77,7 @@ func addRefusal(c plugin.Capability, pinned bool) string {
 	}
 	if missing := MissingInputs(c, nil, pinned); len(missing) > 0 {
 		return c.ID + " needs " + strings.Join(missing, ", ") + " — `rta dashboard add " + c.ID +
-			" --set " + missing[0] + "=…` states it"
+			" --with " + missing[0] + "=…` states it"
 	}
 	return ""
 }

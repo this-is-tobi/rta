@@ -56,7 +56,7 @@ func dropIn(t *testing.T, name, text string) string {
 func TestProfileSetDashboardRefusesAProfileWhoseScreenIsItsOwn(t *testing.T) {
 	run := session(t, setRegistry(t))
 	path := dropIn(t, "20-staging.yaml", stagingEntry)
-	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "ops", "--set", "dbname=shop"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "ops", "--with", "dbname=shop"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	for _, named := range []string{"ops", "none", "default", "ghost"} {
@@ -236,7 +236,7 @@ func TestADryRunOrAnUnchangedAddLeavesTheEntryAsItWas(t *testing.T) {
 	if err != nil || !strings.Contains(out, "would write") || !strings.Contains(out, filepath.Join("config.d", "20-staging.yaml")) {
 		t.Fatalf("dry run: %v %q\n%s", err, errOut, out)
 	}
-	out, errOut, err = run("dashboard", "add", "db.status", "--set", "dbname=orders", "--view", "staging")
+	out, errOut, err = run("dashboard", "add", "db.status", "--with", "dbname=orders", "--view", "staging")
 	if err != nil || !strings.Contains(out, "nothing written") {
 		t.Fatalf("an add of what is there: %v %q\n%s", err, errOut, out)
 	}
@@ -295,7 +295,7 @@ func TestProfileShowAndListSayWhatScreenAProfileShows(t *testing.T) {
 	run := session(t, setRegistry(t))
 	dropIn(t, "20-staging.yaml", stagingEntry)
 	for _, args := range [][]string{
-		{"dashboard", "add", "db.status", "--view", "ops", "--set", "dbname=ops"},
+		{"dashboard", "add", "db.status", "--view", "ops", "--with", "dbname=ops"},
 		{"profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "ops"},
 	} {
 		if _, errOut, err := run(args...); err != nil {

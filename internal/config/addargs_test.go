@@ -8,7 +8,7 @@ import (
 )
 
 // AddArgs is the way back a receipt or the TUI's footer spells: the whole
-// entry, so it can be pasted, with a list-shaped input as one --set per
+// entry, so it can be pasted, with a list-shaped input as one --with per
 // element and the inputs in a stable order.
 func TestAddArgsSpellsTheWholeEntry(t *testing.T) {
 	cases := []struct {
@@ -17,11 +17,11 @@ func TestAddArgsSpellsTheWholeEntry(t *testing.T) {
 	}{
 		{Tile{ID: "sys.overview"}, "sys.overview"},
 		{Tile{ID: "kube.overview", Profile: "prod/edge"}, "kube.overview --profile prod/edge"},
-		{Tile{ID: "sys.overview", Width: 6, With: map[string]any{"cores": true}}, "sys.overview --width 6 --set cores=true"},
+		{Tile{ID: "sys.overview", Width: 6, With: map[string]any{"cores": true}}, "sys.overview --width 6 --with cores=true"},
 		{Tile{ID: "cert.expiry", With: map[string]any{"port": 8443, "host": "a.example"}},
-			"cert.expiry --set host=a.example --set port=8443"},
+			"cert.expiry --with host=a.example --with port=8443"},
 		{Tile{ID: "eol.check", With: map[string]any{"product": []any{"nodejs", "go"}}},
-			"eol.check --set product=nodejs --set product=go"},
+			"eol.check --with product=nodejs --with product=go"},
 	}
 	for _, c := range cases {
 		if got := c.tile.AddArgs(); got != c.want {
@@ -53,7 +53,7 @@ func TestAddArgsIsOneShellWordPerArgument(t *testing.T) {
 	tile := Tile{ID: "debug.ansi", Profile: "prod", With: map[string]any{
 		"input": "a b; $(id)", "ports": "22,80", "raw": "\x1b[31mhi",
 	}}
-	want := "debug.ansi --profile prod --set 'input=a b; $(id)' --set ports=22,80 --set $'raw=\\033[31mhi'"
+	want := "debug.ansi --profile prod --with 'input=a b; $(id)' --with ports=22,80 --with $'raw=\\033[31mhi'"
 	if got := tile.AddArgs(); got != want {
 		t.Errorf("AddArgs() = %s, want %s", got, want)
 	}
@@ -69,8 +69,8 @@ func TestAddArgsIsOneShellWordPerArgument(t *testing.T) {
 	for _, w := range bytes.Split(bytes.TrimSuffix(out, []byte{0}), []byte{0}) {
 		got = append(got, string(w))
 	}
-	argv := []string{"debug.ansi", "--profile", "prod", "--set", "input=a b; $(id)",
-		"--set", "ports=22,80", "--set", "raw=\x1b[31mhi"}
+	argv := []string{"debug.ansi", "--profile", "prod", "--with", "input=a b; $(id)",
+		"--with", "ports=22,80", "--with", "raw=\x1b[31mhi"}
 	if !slices.Equal(got, argv) {
 		t.Errorf("read back as %q, want %q", got, argv)
 	}

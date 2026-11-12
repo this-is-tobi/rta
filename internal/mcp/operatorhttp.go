@@ -243,7 +243,7 @@ func (h *operatorHandler) answer(env operator.Envelope, id operator.Identity,
 		when := id.Expires.Format("2006-01-02")
 		verr := view.Errorf("core.operator.expired",
 			"this operator key's enrollment expired on %s", when).
-			WithHint("re-enrollment is a roster edit: whoever holds the --operators file removes " +
+			WithHint("re-enrollment is a roster edit: whoever holds the --operators-file file removes " +
 				"or re-dates this key's line and restarts the server")
 		refusedBy(rec, verr)
 		return http.StatusForbidden, errorBody{Error: verr}
@@ -516,7 +516,7 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string, role ope
 			"this key is enrolled role=read on this server — status, grant.list, consent.list and "+
 				"lock.list are what that covers, and %q is not among them", env.Verb).
 			WithHint("a roster line without the annotation enrolls a full operator; edit the server's " +
-				"--operators file and restart it")
+				"--operators-file file and restart it")
 	}
 	switch env.Verb {
 	case operator.VerbStatus:
@@ -840,7 +840,7 @@ func (h *operatorHandler) consentOffered() *view.Error {
 	}
 	return view.Errorf("core.operator.consent",
 		"this server was started without --consent, so nothing parks here and there is nothing to answer").
-		WithHint("`rta mcp serve --http --operators <roster> --consent` is the shape that parks and answers")
+		WithHint("`rta mcp serve --http --operators-file <roster> --consent` is the shape that parks and answers")
 }
 
 func verbUnoffered(verb string) *view.Error {

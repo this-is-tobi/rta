@@ -11,10 +11,10 @@ import (
 
 func TestAddWithAViewCreatesItAndLeavesTheBlockAlone(t *testing.T) {
 	run := session(t, setRegistry(t))
-	if _, errOut, err := run("dashboard", "add", "db.status", "--set", "dbname=main"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--with", "dbname=main"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	out, errOut, err := run("dashboard", "add", "db.status", "--set", "dbname=shop", "--view", "dbs")
+	out, errOut, err := run("dashboard", "add", "db.status", "--with", "dbname=shop", "--view", "dbs")
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
@@ -38,7 +38,7 @@ func TestAddWithAViewCreatesItAndLeavesTheBlockAlone(t *testing.T) {
 
 func TestACommandWithoutAViewActsOnTheOneThatIsDrawn(t *testing.T) {
 	run := session(t, setRegistry(t))
-	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "dbs", "--set", "dbname=shop"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "dbs", "--with", "dbname=shop"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "dbs"); err != nil {
@@ -48,7 +48,7 @@ func TestACommandWithoutAViewActsOnTheOneThatIsDrawn(t *testing.T) {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	// With prod on, a bare add goes to dbs, which is what is on screen.
-	if _, errOut, err := run("dashboard", "add", "db.status", "--set", "dbname=other"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--with", "dbname=other"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	cfg := loadedConfig(t)
@@ -59,7 +59,7 @@ func TestACommandWithoutAViewActsOnTheOneThatIsDrawn(t *testing.T) {
 		t.Errorf("dbs holds %d entries, want 1 (the same tile, replaced)", got)
 	}
 	// --view default names the block when that is the one meant.
-	if _, errOut, err := run("dashboard", "add", "db.status", "--set", "dbname=block", "--view", "default"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--with", "dbname=block", "--view", "default"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	if got := loadedConfig(t).Dashboard.Add; len(got) != 1 || got[0].With["dbname"] != "block" {
@@ -69,7 +69,7 @@ func TestACommandWithoutAViewActsOnTheOneThatIsDrawn(t *testing.T) {
 
 func TestListAndRmAndHideNameTheirViewAndRefuseOneThatIsNotThere(t *testing.T) {
 	run := session(t, setRegistry(t))
-	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "dbs", "--set", "dbname=shop"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "dbs", "--with", "dbname=shop"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	list, _, err := run("dashboard", "list", "--view", "dbs")
@@ -104,8 +104,8 @@ func TestListAndRmAndHideNameTheirViewAndRefuseOneThatIsNotThere(t *testing.T) {
 func TestViewsListsEveryViewWhoSelectsItAndTheOneDrawn(t *testing.T) {
 	run := session(t, setRegistry(t))
 	for _, args := range [][]string{
-		{"dashboard", "add", "db.status", "--view", "dbs", "--set", "dbname=shop"},
-		{"dashboard", "add", "db.status", "--view", "ops", "--set", "dbname=ops"},
+		{"dashboard", "add", "db.status", "--view", "dbs", "--with", "dbname=shop"},
+		{"dashboard", "add", "db.status", "--view", "ops", "--with", "dbname=ops"},
 		{"profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "ops"},
 	} {
 		if _, errOut, err := run(args...); err != nil {
@@ -137,7 +137,7 @@ func TestViewsListsEveryViewWhoSelectsItAndTheOneDrawn(t *testing.T) {
 // count what is drawn, so one word named three numbers.
 func TestViewsCountsTheEntriesAViewStatesAndSaysSo(t *testing.T) {
 	run := session(t, setRegistry(t))
-	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "dbs", "--set", "dbname=shop"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "dbs", "--with", "dbname=shop"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	out, errOut, err := run("dashboard", "views", "-o", "json")
@@ -154,7 +154,7 @@ func TestProfileSetDashboardTakesAViewThatExistsOrNone(t *testing.T) {
 	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "ghost"); err == nil || !strings.Contains(errOut, "core.dashboard.noview") {
 		t.Errorf("a view nothing states was selected: %v\n%s", err, errOut)
 	}
-	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "dbs", "--set", "dbname=shop"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "dbs", "--with", "dbname=shop"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "dbs"); err != nil {
@@ -189,7 +189,7 @@ func TestADanglingViewIsReportedByCheckAndNeverRefusesTheProfile(t *testing.T) {
 func TestProfileSetDashboardIsRepeatedToLinkSeveralViewsInOrder(t *testing.T) {
 	run := session(t, setRegistry(t))
 	for _, view := range []string{"ops", "ops-apps", "databases"} {
-		if _, errOut, err := run("dashboard", "add", "db.status", "--view", view, "--set", "dbname="+view); err != nil {
+		if _, errOut, err := run("dashboard", "add", "db.status", "--view", view, "--with", "dbname="+view); err != nil {
 			t.Fatalf("%s: %v %q", view, err, errOut)
 		}
 	}
@@ -220,7 +220,7 @@ func TestProfileSetDashboardIsRepeatedToLinkSeveralViewsInOrder(t *testing.T) {
 
 func TestNoneBesideANameIsRefusedAndALinkToAMissingViewNamesTheOnesThatExist(t *testing.T) {
 	run := session(t, setRegistry(t))
-	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "ops", "--set", "dbname=ops"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "ops", "--with", "dbname=ops"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal",
@@ -241,7 +241,7 @@ func TestNoneBesideANameIsRefusedAndALinkToAMissingViewNamesTheOnesThatExist(t *
 func TestViewsSaysWhoLinksEachViewIncludingTheDashboardBlock(t *testing.T) {
 	run := session(t, setRegistry(t))
 	for _, view := range []string{"ops", "databases"} {
-		if _, errOut, err := run("dashboard", "add", "db.status", "--view", view, "--set", "dbname="+view); err != nil {
+		if _, errOut, err := run("dashboard", "add", "db.status", "--view", view, "--with", "dbname="+view); err != nil {
 			t.Fatalf("%s: %v %q", view, err, errOut)
 		}
 	}
@@ -276,14 +276,14 @@ func TestViewsSaysWhoLinksEachViewIncludingTheDashboardBlock(t *testing.T) {
 // command may act on, so an SRE can edit staging's screen while prod is on.
 func TestACommandCanStillAddressAViewAnotherProfileLinks(t *testing.T) {
 	run := session(t, setRegistry(t))
-	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "stage-only", "--set", "dbname=a"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "stage-only", "--with", "dbname=a"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	for _, args := range [][]string{
 		{"profile", "set", "stage", "--plugin", "db", "--set", "host=stage.internal", "--dashboard", "stage-only"},
 		{"profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal"},
 		{"use", "prod"},
-		{"dashboard", "add", "db.status", "--view", "stage-only", "--set", "dbname=b"},
+		{"dashboard", "add", "db.status", "--view", "stage-only", "--with", "dbname=b"},
 		{"profile", "set", "prod", "--dashboard", "stage-only"},
 	} {
 		if _, errOut, err := run(args...); err != nil {
@@ -300,7 +300,7 @@ func TestACommandCanStillAddressAViewAnotherProfileLinks(t *testing.T) {
 func TestACommandWithoutAViewSaysWhichOfSeveralLinkedScreensItActedOn(t *testing.T) {
 	run := session(t, setRegistry(t))
 	for _, view := range []string{"ops", "ops-apps"} {
-		if _, errOut, err := run("dashboard", "add", "db.status", "--view", view, "--set", "dbname="+view); err != nil {
+		if _, errOut, err := run("dashboard", "add", "db.status", "--view", view, "--with", "dbname="+view); err != nil {
 			t.Fatalf("%v %q", err, errOut)
 		}
 	}
@@ -312,7 +312,7 @@ func TestACommandWithoutAViewSaysWhichOfSeveralLinkedScreensItActedOn(t *testing
 			t.Fatalf("%v: %v %q", args, err, errOut)
 		}
 	}
-	out, errOut, err := run("dashboard", "add", "db.status", "--set", "dbname=extra")
+	out, errOut, err := run("dashboard", "add", "db.status", "--with", "dbname=extra")
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
