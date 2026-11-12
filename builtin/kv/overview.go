@@ -110,7 +110,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	case "":
 		status = "ok — no store yet"
 	default:
-		s, lerr := load(unattended(req))
+		s, lerr := load(ctx, unattended(req))
 		switch {
 		case lerr == nil:
 			inv := inventoryOf(s)

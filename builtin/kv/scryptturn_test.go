@@ -1,6 +1,7 @@
 package kv
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -28,7 +29,7 @@ func holdTurn(t *testing.T) (release func()) {
 func opening(values map[string]any) <-chan *view.Error {
 	done := make(chan *view.Error, 1)
 	go func() {
-		_, verr := load(req(values, false))
+		_, verr := load(context.Background(), req(values, false))
 		done <- verr
 	}()
 	return done
@@ -56,6 +57,42 @@ func TestAPassphraseDerivationWaitsItsTurn(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the store was never opened once the turn came free")
+	}
+}
+
+// **A call that ends while it waits gives its turn up.** The wait knew nothing
+// of the call: an MCP client that sent a burst of kv.list and cancelled them, or
+// closed its session, left every one queued, each to run its derivation in turn
+// for nobody while the calls behind it waited. Cancelled, the call returns at
+// once with kv.cancelled, and the turn, once free, is not spent on it.
+func TestACallThatEndsWhileItWaitsGivesItsTurnUp(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "first", "value": "x"}, false)
+
+	release := holdTurn(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := runList(ctx, req(nil, false))
+		done <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-done:
+		if verr := view.AsError(err, "x"); verr.Code != "kv.cancelled" {
+			t.Errorf("a cancelled kv.list answered %v, want kv.cancelled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("kv.list was cancelled and went on waiting for the turn")
+	}
+	release()
+	// The turn it gave up is free: nothing of the cancelled call is queued on it.
+	select {
+	case scryptTurn <- struct{}{}:
+		<-scryptTurn
+	case <-time.After(5 * time.Second):
+		t.Fatal("the turn was taken after the call that waited for it had ended")
 	}
 }
 

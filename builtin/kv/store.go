@@ -2,6 +2,7 @@ package kv
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -493,12 +494,12 @@ func askPassphrase() (string, *view.Error) {
 // is settled for a store not yet made: one that will be locked to a key asks
 // nothing, and a recipients file with no store behind it is refused by
 // writeKeys in its own words once there is a value to refuse.
-func lockBeforeValue(req plugin.Request) *view.Error {
+func lockBeforeValue(ctx context.Context, req plugin.Request) *view.Error {
 	if !canPrompt(req) || req.DryRun {
 		return nil
 	}
 	if fileExists(storePath()) {
-		_, verr := load(req)
+		_, verr := load(ctx, req)
 		return verr
 	}
 	if mode, _, verr := currentMode(); verr != nil || mode != modePassphrase || identityPath(req) != "" {
@@ -514,7 +515,7 @@ func lockBeforeValue(req plugin.Request) *view.Error {
 // load decrypts the store. A missing file is an empty store — first use
 // needs no setup step. A decrypt failure (wrong key or a corrupted file —
 // age cannot tell them apart, and neither can we) is one coded error.
-func load(req plugin.Request) (store, *view.Error) { return open(req, true) }
+func load(ctx context.Context, req plugin.Request) (store, *view.Error) { return open(ctx, req, true) }
 
 // open is load, with whether a key that does not fit ends the store session
 // (wrongKey) left to the caller.
@@ -525,7 +526,7 @@ func load(req plugin.Request) (store, *view.Error) { return open(req, true) }
 // passphrase it tried is the environment's, which wins over a session and says
 // nothing about it, so a stale export would end an unlock the person typed into
 // the TUI a minute ago for having been asked a question about the export.
-func open(req plugin.Request, endSessionOnWrongKey bool) (store, *view.Error) {
+func open(ctx context.Context, req plugin.Request, endSessionOnWrongKey bool) (store, *view.Error) {
 	data, err := atomicfile.ReadFile(storePath())
 	if os.IsNotExist(err) {
 		return store{Entries: map[string]entry{}}, nil
@@ -533,12 +534,15 @@ func open(req plugin.Request, endSessionOnWrongKey bool) (store, *view.Error) {
 	if err != nil {
 		return store{}, view.Errorf("kv.store.unreadable", "reading %s: %v", storePath(), err)
 	}
-	identities, verr := readKeys(req, data)
+	identities, verr := readKeys(ctx, req, data)
 	if verr != nil {
 		return store{}, verr
 	}
-	r, err := decrypt(data, identities...)
+	r, err := decrypt(ctx, data, identities...)
 	if err != nil {
+		if ctx.Err() != nil {
+			return store{}, ended("opened")
+		}
 		return store{}, wrongKey(req, endSessionOnWrongKey)
 	}
 	plaintext, err := io.ReadAll(r)
@@ -594,7 +598,7 @@ func wrongKey(req plugin.Request, endSession bool) *view.Error {
 // save encrypts and writes the store atomically: tmp file + rename, same
 // discipline as the plaintext itemstore, so a crash mid-write can never
 // leave a half-written store behind.
-func save(req plugin.Request, s store) *view.Error {
+func save(ctx context.Context, req plugin.Request, s store) *view.Error {
 	recipients, specs, current, verr := writeKeys(req, s.Recipients)
 	if verr != nil {
 		return verr
@@ -603,14 +607,14 @@ func save(req plugin.Request, s store) *view.Error {
 	// commits to, so the next write has something trustworthy to check
 	// kv.recipients against.
 	s.Recipients = current
-	return saveTo(req.Surface(), s, recipients, specs)
+	return saveTo(ctx, req.Surface(), s, recipients, specs)
 }
 
 // saveTo is save with the recipients already decided — the re-key path, where
 // the new set is computed rather than derived from the flags of a write.
 // specs nil means the recorded set is unchanged. sf is the surface asking,
 // for the names a refusal gives what to run next.
-func saveTo(sf plugin.Surface, s store, recipients []age.Recipient, specs []string) *view.Error {
+func saveTo(ctx context.Context, sf plugin.Surface, s store, recipients []age.Recipient, specs []string) *view.Error {
 	// Every write stamps the current format, so a store only ever has to be
 	// guessed at once — the write that follows the guess settles it. That is
 	// also what makes this write the point of no return for a store whose
@@ -624,8 +628,11 @@ func saveTo(sf plugin.Surface, s store, recipients []age.Recipient, specs []stri
 		return view.Errorf("kv.store.encode", "encoding store: %v", err)
 	}
 	var buf bytes.Buffer
-	w, err := encrypt(&buf, recipients...)
+	w, err := encrypt(ctx, &buf, recipients...)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ended("written")
+		}
 		return view.Errorf("kv.store.encrypt", "encrypting store: %v", err)
 	}
 	if _, err := w.Write(plaintext); err != nil {

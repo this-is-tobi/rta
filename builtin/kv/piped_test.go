@@ -1,6 +1,7 @@
 package kv
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -73,7 +74,7 @@ func TestAValuePipedThroughFileIsLabelledByWhatItHolds(t *testing.T) {
 			t.Errorf("%s: kind and source = %q, want %q", key, got[key], want)
 		}
 	}
-	s, verr := load(req(nil, false))
+	s, verr := load(context.Background(), req(nil, false))
 	if verr != nil {
 		t.Fatal(verr)
 	}

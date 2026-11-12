@@ -1,6 +1,7 @@
 package kv
 
 import (
+	"context"
 	"os"
 	"sort"
 	"strconv"
@@ -114,7 +115,7 @@ func reveal(sf plugin.Surface, key string) (string, *view.Error) {
 		"identity":   os.Getenv(identityEnv),
 	}, false, true)
 
-	s, verr := load(req)
+	s, verr := load(context.Background(), req)
 	if verr != nil {
 		return "", hostOpenHint(sf, verr)
 	}
@@ -229,7 +230,7 @@ func Names() []string {
 		"passphrase": hostPassphrase(),
 		"identity":   os.Getenv(identityEnv),
 	}, false, true)
-	s, verr := load(req)
+	s, verr := load(context.Background(), req)
 	if verr != nil {
 		return nil
 	}
@@ -267,7 +268,7 @@ func Lacking(keys []string) ([]string, *view.Error) {
 		"passphrase": hostPassphrase(),
 		"identity":   os.Getenv(identityEnv),
 	}, false, true)
-	s, verr := open(req, false)
+	s, verr := open(context.Background(), req, false)
 	if verr != nil {
 		return nil, verr
 	}
@@ -319,7 +320,7 @@ func Store(name, value, description, origin string) *view.Error {
 		return verr
 	}
 	defer unlock()
-	s, verr := load(req)
+	s, verr := load(context.Background(), req)
 	if verr != nil {
 		return verr
 	}
@@ -334,7 +335,7 @@ func Store(name, value, description, origin string) *view.Error {
 		Value: []byte(value), Description: description, Kind: detectKind(value, ""),
 		Origin: origin, Created: now, Updated: now,
 	}
-	return save(req, s)
+	return save(context.Background(), req, s)
 }
 
 // StoreStamp identifies the store's current contents without opening it.

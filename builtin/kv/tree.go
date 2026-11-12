@@ -39,8 +39,8 @@ func treeCapability() plugin.Capability {
 	}
 }
 
-func runTree(_ context.Context, req plugin.Request) (view.View, error) {
-	s, verr := load(req)
+func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
+	s, verr := load(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}

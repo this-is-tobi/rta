@@ -141,7 +141,7 @@ func TestAStoreLockedUnderAShortPassphraseKeepsOpeningAndTakingWrites(t *testing
 		t.Fatal(err)
 	}
 	r.SetWorkFactor(10)
-	if verr := saveTo(plugin.SurfaceCLI, store{Entries: map[string]entry{"old": {Value: []byte("from before")}}},
+	if verr := saveTo(context.Background(), plugin.SurfaceCLI, store{Entries: map[string]entry{"old": {Value: []byte("from before")}}},
 		[]age.Recipient{r}, nil); verr != nil {
 		t.Fatal(verr)
 	}

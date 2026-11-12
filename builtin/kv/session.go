@@ -1,6 +1,7 @@
 package kv
 
 import (
+	"context"
 	"os"
 	"sync"
 	"time"
@@ -157,7 +158,7 @@ func StartSession(passphrase string, ttl time.Duration) *view.Error {
 		"passphrase": passphrase,
 		"identity":   os.Getenv(identityEnv),
 	}, false, true)
-	if _, verr := load(req); verr != nil {
+	if _, verr := load(context.Background(), req); verr != nil {
 		return verr
 	}
 	startSession(passphrase, ttl)
