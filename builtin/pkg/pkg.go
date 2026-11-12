@@ -57,6 +57,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -68,15 +69,38 @@ import (
 // runCommand is the seam every tool invocation goes through: tests replace
 // it with recorded output, and nothing else in the package touches os/exec
 // for a query.
-var runCommand = func(ctx context.Context, name string, args ...string) (stdout, stderr string, err error) {
+var runCommand = runQuery
+
+func runQuery(ctx context.Context, name string, args ...string) (stdout, stderr string, err error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	var out, errBuf strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	cmd.Stdin = nil
+	cmd.Dir = workDir()
 	cmd.WaitDelay = pipeDelay
 	err = cmd.Run()
 	return out.String(), errBuf.String(), err
+}
+
+// workDir is the directory every manager is asked from, and upgraded from:
+// the home directory, so that the answer is this machine's and the same
+// wherever rta was started.
+//
+// Several managers read the directory they run in as a project. The go
+// command switches to the toolchain the go.mod there asks for, downloading
+// it when it is not cached, so `go version` inside a module that wanted
+// 1.27.4 answered 1.27.4 for a go that was 1.27.2, and a read of the
+// managers could fetch a toolchain. mise answers for the tools the
+// directory's mise.toml pins, and refuses outright under one it has not
+// trusted. A dashboard tile drew whichever of those the TUI had been started
+// in. From the home directory each reads its global state, which is what
+// "outdated on this machine" means, and an upgrade acts on what the row said.
+func workDir() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		return home
+	}
+	return "/"
 }
 
 // pipeDelay bounds how long a finished-or-killed manager may hold its pipes.

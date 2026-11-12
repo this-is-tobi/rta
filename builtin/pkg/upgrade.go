@@ -21,8 +21,15 @@ const upgradeTimeout = 20 * time.Minute
 // runUpgrade is the seam for the one mutating exec: tests record what would
 // have run, and the real one streams the manager's own output to the
 // terminal, because an upgrade's progress is something to watch.
-var runUpgrade = func(ctx context.Context, argv []string, out io.Writer) error {
+var runUpgrade = runUpgradeCommand
+
+// runUpgradeCommand runs from workDir too, where the outdated rows were read:
+// mise upgrades the tools of the directory it runs in, so an upgrade started
+// in a project acted on that project's tools rather than the ones its row
+// named.
+func runUpgradeCommand(ctx context.Context, argv []string, out io.Writer) error {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir = workDir()
 	cmd.Stdin = nil
 	cmd.Stdout = out
 	cmd.Stderr = out
