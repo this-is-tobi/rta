@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/kubeerr"
+	"github.com/this-is-tobi/rta/internal/procgroup"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -87,7 +88,7 @@ func Secrets(ctx context.Context, name string, t Target) (map[string]string, *vi
 	// ignored, because what is stuck is os/exec's copying goroutines rather
 	// than the process. Over MCP that is a tool call that never answers and
 	// an agent that never gets its turn back.
-	cmd.WaitDelay = waitDelay
+	cmd.WaitDelay = procgroup.WaitDelay
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

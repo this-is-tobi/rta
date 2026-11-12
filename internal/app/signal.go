@@ -47,7 +47,7 @@ import (
 // signalGrace is how long a command has, after a signal cancelled its
 // context, to return on its own. Longer than the slowest cleanup a command
 // does when it does listen — a kube forward's kubectl gets SIGTERM and two
-// seconds to go (internal/tunnel's waitDelay) — and short enough that the
+// seconds to go (procgroup.WaitDelay) — and short enough that the
 // person who pressed ^C is not left wondering whether it registered.
 const signalGrace = 3 * time.Second
 

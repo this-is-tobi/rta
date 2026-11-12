@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/internal/kubeerr"
+	"github.com/this-is-tobi/rta/internal/procgroup"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -303,7 +304,7 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 	// whole openCeiling and reports tunnel.open.timeout — "did not come up in
 	// time" — throwing away kubectl's real, already-buffered explanation. It
 	// is the first failed open that pays this, not a long-running one.
-	cmd.WaitDelay = waitDelay
+	cmd.WaitDelay = procgroup.WaitDelay
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

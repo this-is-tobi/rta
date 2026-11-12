@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/procgroup"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -196,7 +197,7 @@ func probeSSH(ctx context.Context, name string, spec sshSpec, tun *Tunnel) *view
 	// keep this stderr pipe open. The probe itself is already bounded by
 	// openCeiling and gaveUp, so what this bounds is the Wait goroutine
 	// below, which would otherwise leak one per timed-out probe.
-	cmd.WaitDelay = waitDelay
+	cmd.WaitDelay = procgroup.WaitDelay
 	// The kill os/exec makes when ctx ends, recorded before it is made: the
 	// probe waits on waitCtx, derived from ctx, and a deadline closes ctx's
 	// Done before it cancels waitCtx, so ssh could be killed and seen to exit

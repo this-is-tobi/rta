@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/procgroup"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -33,10 +34,10 @@ func runUpgradeCommand(ctx context.Context, argv []string, out io.Writer) error 
 	cmd.Stdin = nil
 	cmd.Stdout = out
 	cmd.Stderr = out
-	// pipeDelay's reason. It matters here on the TUI path, where out is a
+	// procgroup.WaitDelay's reason. It matters here on the TUI path, where out is a
 	// buffer and so a pipe; at a terminal out is the terminal itself and
 	// there is nothing to hold.
-	cmd.WaitDelay = pipeDelay
+	cmd.WaitDelay = procgroup.WaitDelay
 	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		return err
 	}

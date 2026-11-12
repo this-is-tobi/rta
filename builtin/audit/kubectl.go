@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/internal/kubeerr"
+	"github.com/this-is-tobi/rta/internal/procgroup"
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -52,12 +53,6 @@ const kubeAuditRefresh = 10 * time.Minute
 // that service, or of a public API, for as long as a terminal was open. What they
 // say moves by the day.
 const outwardAuditRefresh = time.Hour
-
-// kubectlWaitDelay bounds how long a finished-or-killed kubectl may hold its
-// pipes; see kubectlJSON. It only starts counting once the process has
-// exited or the context has killed it, so a healthy listing is never cut
-// short by it.
-const kubectlWaitDelay = 2 * time.Second
 
 // list is the shape every `kubectl get -o json` returns.
 type list[T any] struct {
@@ -119,7 +114,7 @@ func kubectlJSON(ctx context.Context, args []string, what string, out any) *view
 	// is stuck is os/exec's copying goroutines rather than the process.
 	// internal/tunnel met this first and bounds every kubectl it starts the
 	// same way; this one wedged a whole audit with no error and no ceiling.
-	cmd.WaitDelay = kubectlWaitDelay
+	cmd.WaitDelay = procgroup.WaitDelay
 	raw, err := cmd.Output()
 	// ErrWaitDelay means kubectl itself finished and something else held
 	// the pipes; the bytes may be the whole answer. JSON is self-delimiting,
