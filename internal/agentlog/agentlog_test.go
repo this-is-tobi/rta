@@ -544,3 +544,31 @@ func TestAKeyIsNeverMintedOverWhatIsLeftOfARolledRecord(t *testing.T) {
 		t.Fatalf("an empty directory did not start a record: %v", err)
 	}
 }
+
+// Clip bounds a field of an entry in bytes, on a character boundary, and marks
+// the cut: a byte-slice through a multi-byte character would put invalid UTF-8
+// into a sealed file, where it stays. It walked back one character at a time
+// from the end, 1.1 ms for a field of a mebibyte cut to 200 bytes, and is
+// format.Head with a mark.
+func TestClipCutsOnACharacterAndMarksTheCut(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"short", 10, "short"},
+		{"exactly", 7, "exactly"},
+		{"abcdef", 3, "abc…"},
+		{"aéb", 2, "a…"},
+		{"日本語", 4, "日…"},
+		{"abc", 0, "…"},
+	} {
+		if got := Clip(tc.in, tc.n); got != tc.want {
+			t.Errorf("Clip(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
+		}
+	}
+	long := strings.Repeat("é", 1<<19)
+	if got := Clip(long, 201); !utf8.ValidString(got) || len(got) > 201+len("…") {
+		t.Errorf("a mebibyte cut to 201 bytes came back as %d bytes, valid %v", len(got), utf8.ValidString(got))
+	}
+}

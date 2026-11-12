@@ -1777,16 +1777,15 @@ func (l *lineReader) Err() error   { return l.err }
 // byte-slice through a multi-byte character would put invalid UTF-8 into a
 // sealed file, where it stays forever. Exported for the MCP bridge, which
 // bounds what it puts in an entry before handing it over and kept a copy of
-// this beside it.
+// this beside it. format.Head is the cut, from the front: walking back from
+// the end one character at a time took a millisecond on a field of a
+// mebibyte.
 func Clip(s string, n int) string {
-	if len(s) <= n {
+	head, rest := format.Head(s, n)
+	if rest == 0 {
 		return s
 	}
-	for len(s) > n {
-		_, size := utf8.DecodeLastRuneInString(s)
-		s = s[:len(s)-size]
-	}
-	return s + "…"
+	return head + "…"
 }
 
 // recordBytes is how much of a line an entry's records take.
