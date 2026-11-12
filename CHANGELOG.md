@@ -1,5 +1,107 @@
 # Changelog
 
+## [0.60.0](https://github.com/this-is-tobi/rta/compare/v0.59.0...v0.60.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* a ttl outside its bounds, or written with a sign, is refused before the call runs, and an agent's ttl must match the schema's duration pattern.
+* `rta dashboard add --set` is --with, and its core.dashboard.set.* refusals are core.dashboard.with.*.
+* **sdk:** a plugin built on this SDK whose plain key means different things to two capabilities, or whose dotted key is not the capability's own, exits at start with the rule it broke, and sdktest fails it.
+* **config:** plugins.cert.warn-days, plugins.eol.warn-days and plugins.audit.warn-days are warn-within, written with a unit (30d); plugins.eol.catalogue.limit is products.limit; plugins.eol.products is watch.products; plugins.net.dns.server is dns.resolver. --warn-days is --warn-within, net dns --server is --resolver, and an agent calling net.resolver.set names nameserver.
+* **policy:** a policy file states max-ttl, never-profile, require-scope and require-repo-policy. One stating maxTTL, neverProfile, requireScope or requireRepoPolicy refuses every gated call until the key is respelled, so a team sharing .rta-policy.yaml upgrades rta together.
+* **config:** a profile connection states `tunnel-tls: true`; a connection stating `tunnelTLS` is refused until it is renamed, and `tunnel-tls` on a connection whose plugin takes no URL is refused.
+* **sdk:** a plugin whose TLS switch offers `insecure` as its only word for off no longer registers; offer `disable`, `off`, `false` or `none`.
+* **net:** `rta net send --tls` to a host whose certificate this machine does not trust, or that is not valid for the name the call uses, is refused. Name its CA with --ca-file (a self-signed host's own certificate) or the name with --tls-server-name.
+* **config:** a plugins: section stating a key no capability of the plugin reads stops that plugin's calls (core.config.unapplied) until the key is fixed or removed; `rta config check` and `rta doctor` name it with its line. A dashboard tile whose with: names an input its capability does not take draws an error instead of running. `rta config set` and the TUI write a dotted key as one key.
+* **plugin:** `rta plugin upgrade <name>` against an index that claims an older version exits 3 without --yes where nobody can be asked, and `rta plugin upgrade --all` exits 1 when it holds one back. The Available cell of `rta plugin outdated` carries "(older)" beside such a claim.
+* **agent:** in `rta agent log` output read by a script, profile is "—" rather than "" when the call named no connection, revealed is "no" rather than "-", and seq in -o json and yaml records is a number rather than a string.
+
+### Features
+
+* a grant's, an approval's and a lock's ttl is a length of time the host checks ([d258f4b](https://github.com/this-is-tobi/rta/commit/d258f4b6c5a9a6aec64454ff13d59501e3cdb115))
+* a tile takes its inputs with --with, and --consent-wait reads rta's grammar ([281b64d](https://github.com/this-is-tobi/rta/commit/281b64dc51d91f9e5ddebbaba752ca2aa4e6e1aa))
+* **config:** a plugin key is one key flat or nested, and a key nothing reads stops the plugin ([36ec337](https://github.com/this-is-tobi/rta/commit/36ec337d811c083961227de3cd0914f584ca83f4))
+* **config:** built-in keys say what they hold, and warn-within takes a length of time ([131e9d1](https://github.com/this-is-tobi/rta/commit/131e9d1d8d9e9db5c0415a41347498e4934f6e42))
+* **config:** tunnel-tls is spelled like every other key, and refused where it fills nothing ([3a30627](https://github.com/this-is-tobi/rta/commit/3a30627f3f4c0ea071e11ee3f9a3ac482de6c5b7))
+* **plugin:** a move between builds and a repin name the keys the build does not read ([9aecb66](https://github.com/this-is-tobi/rta/commit/9aecb66a05b9d5b44ecea07b5ccfd7d4a84db596))
+* **plugin:** a move onto a build that ran here before says what applies again ([d4c3dcf](https://github.com/this-is-tobi/rta/commit/d4c3dcf3eb25b075cd18bdea1d32c8bfb33f4b21))
+* **plugin:** an upgrade asks before it moves a plugin back, and a sweep holds it ([06832fd](https://github.com/this-is-tobi/rta/commit/06832fd818a54b9c2fd6483e405577b5d9ce9e84))
+* **policy:** a policy key is spelled like every other key ([e0e24db](https://github.com/this-is-tobi/rta/commit/e0e24dbcb3f7070a84de12bf76f754c5ed3ef802))
+* **profile:** rta profile set writes a connection's secrets-from ([764e5f7](https://github.com/this-is-tobi/rta/commit/764e5f7b519efcf053cfe536d522c68ed6fea6a3))
+* **sdk:** a CA file setting completes like a path, and no plugin turns tls off with insecure ([8c7d332](https://github.com/this-is-tobi/rta/commit/8c7d332a5da1ad041d10b6ad87eb33b487f03bba))
+* **sdk:** a config key means one thing to every capability that reads it ([3187abd](https://github.com/this-is-tobi/rta/commit/3187abd8eb9473da951ea168985fbaee01a034e1))
+* **sdk:** a plugin names the config keys it renamed ([5aa9b66](https://github.com/this-is-tobi/rta/commit/5aa9b661e20a8c8643154b1f63c8469b4a212adc))
+* **sdk:** a plugin's client follows a redirect only within its address, and says why it stopped ([5abd3cc](https://github.com/this-is-tobi/rta/commit/5abd3cc576ab685608c59027ca0fa6f48d490364))
+* **sdk:** plugin.Service declares a connection once and reads its target, TLS and failures ([5608252](https://github.com/this-is-tobi/rta/commit/560825235eb2c668b43959e1106abbd7c036343a))
+
+
+### Bug Fixes
+
+* **agent:** a shipped record spells nothing one way, and its seq is a number ([fad6424](https://github.com/this-is-tobi/rta/commit/fad642467878b2795d6067e55e1c568118341d49))
+* **agent:** refused calls are said refused, not pending ([23c129b](https://github.com/this-is-tobi/rta/commit/23c129bca76afa4f9c8c2b5fce5fa3471964c79a))
+* **agent:** the record masks every credential the http dry run masks ([d137754](https://github.com/this-is-tobi/rta/commit/d137754a60f280ce246136b395f89283402791ce))
+* **audit:** ~ stands for the home directory only on a path under it ([30d895c](https://github.com/this-is-tobi/rta/commit/30d895cf067ff3f4c855d730b7e99b99e7133888))
+* **audit:** a gateway URL that url.Parse refuses still has its credential hidden ([a87fb12](https://github.com/this-is-tobi/rta/commit/a87fb12eff395119987d0a767d0da9712ea94c5b))
+* **audit:** audit.web goes through the proxy the environment names ([c4d7f12](https://github.com/this-is-tobi/rta/commit/c4d7f1299157e115dc788099317b364c38a59fbe))
+* **cli:** any value of NO_COLOR turns the colour off, as no-color.org says ([252b102](https://github.com/this-is-tobi/rta/commit/252b102bd90f5b2fe07c0e2eafe3af9c48a3639e))
+* **config:** a confine that is not strict stops plugins instead of freeing them ([f071b53](https://github.com/this-is-tobi/rta/commit/f071b53ec5e751455be3657f55386b31916d5b75))
+* **config:** a pin too short to trust is called short, not stale ([2fcc0c4](https://github.com/this-is-tobi/rta/commit/2fcc0c4e1dfd14781c9c778ab794c5f9e74d8b8e))
+* **config:** a value YAML would misread is written so the file still loads ([1a3a96d](https://github.com/this-is-tobi/rta/commit/1a3a96d4ee4112bd7b10d96f948da5113a2f5e21))
+* **config:** rta config edit saves the fix to a file that does not parse ([a31649a](https://github.com/this-is-tobi/rta/commit/a31649a5d57175cd31c8b1c7687b3bc1a7c8b2df))
+* **config:** the schema of a plugin with a key inside another's name is written ([5e39df1](https://github.com/this-is-tobi/rta/commit/5e39df14d2daa8649f2383aef7e959c7759919dd))
+* **explain:** a config key is spelled as `rta config set` takes it ([f7f9872](https://github.com/this-is-tobi/rta/commit/f7f9872feab55c9b10fcea9e95a44e4166903354))
+* **git:** a token in an https URL is masked whatever case its scheme is written in ([2322415](https://github.com/this-is-tobi/rta/commit/232241583e416b0f639c6855a3d0905cc6e70316))
+* **grant:** a grant naming no agent is a question when the record has seen another ([e86390e](https://github.com/this-is-tobi/rta/commit/e86390e5ee26ccbaeed379844e3c8c9872f3269d))
+* **grant:** a grant on a whole plugin is asked about on a server too ([570863f](https://github.com/this-is-tobi/rta/commit/570863f9fc8daedef09aa4f62c1faae05de613d7))
+* **grant:** the roster shows a grant's note once a grant has one ([41b344a](https://github.com/this-is-tobi/rta/commit/41b344a14a2870318ec05a109f03b26e88df9903))
+* **grant:** the whole-plugin warning names the revoke that takes that grant alone ([365eca6](https://github.com/this-is-tobi/rta/commit/365eca66163abe5eef51712ae1558187e158e233))
+* **kv:** a call that ends while it waits for the passphrase turn gives it up ([5d32d3f](https://github.com/this-is-tobi/rta/commit/5d32d3fc8edefaa91a8773208ff7658e94f94d5c))
+* **kv:** a mistyped key is answered with the nearest one, and a tree knows a key from a folder ([c9fae07](https://github.com/this-is-tobi/rta/commit/c9fae07c4493dd9a14d2a8138f08034b051fb929))
+* **mcp:** a call the client cancels while it runs is recorded as cancelled ([9c3d795](https://github.com/this-is-tobi/rta/commit/9c3d795ca7a176cd7e6faceaef514ff5a52064db))
+* **mcp:** a client on the newest protocol revision is recorded as connected ([666bc0a](https://github.com/this-is-tobi/rta/commit/666bc0a94e1565756646e42dce0b8f1748dcd820))
+* **mcp:** a config that breaks after profiles were written keeps them in force ([fb713aa](https://github.com/this-is-tobi/rta/commit/fb713aa48462009c42e81e1e56388b586ef62833))
+* **mcp:** oidc discovery and signing keys are fetched only over https ([b49545f](https://github.com/this-is-tobi/rta/commit/b49545fc731d0bc30a147bb149d36afa188ddca4))
+* **net:** a send over tls writes only to a peer whose certificate checks out ([59d54f1](https://github.com/this-is-tobi/rta/commit/59d54f19cdb78cc698fa58b51083f172807b1b83))
+* **note:** a due date is said back as the day it was read as ([94623b4](https://github.com/this-is-tobi/rta/commit/94623b41735675d71db4f49ed9f03ae786065fc9))
+* **pkg:** a first install says when the shell will not find what it placed ([7ee4b65](https://github.com/this-is-tobi/rta/commit/7ee4b6586001902c473f7f3291d41fa5e1150c4a))
+* **pkg:** a tool without --version is read from its store, and an upgrade never replaces a link ([d2f9389](https://github.com/this-is-tobi/rta/commit/d2f93892f54454a69e90c652099db1a61cc0beef))
+* **pkg:** an update macOS offers is not a reboot owed ([d5a2db1](https://github.com/this-is-tobi/rta/commit/d5a2db14f725afb95db36ce94f9f8e2e1792a047))
+* **pkg:** every manager is asked from the home directory, wherever rta was started ([7053c92](https://github.com/this-is-tobi/rta/commit/7053c920f3f7ac48ca04f5f51b712f0c5ea96716))
+* **pkg:** macOS's own Ruby is not a package manager of yours ([628533f](https://github.com/this-is-tobi/rta/commit/628533f3d44f436386d9f4deb71258aac3bea30d))
+* **plugin:** a dry-run sweep says what would happen, not what did ([d5fa796](https://github.com/this-is-tobi/rta/commit/d5fa796d2297c5dd6b7c18536c7a0cca89217a62))
+* **plugin:** a request owns every list it holds ([cba8dc5](https://github.com/this-is-tobi/rta/commit/cba8dc58e8e3f4b63df52bda379fd98c0e04e187))
+* **render:** -o yaml parses whatever a value or a column name begins with ([f50627b](https://github.com/this-is-tobi/rta/commit/f50627b6c690ca740aca06a09e619768bd83ca67))
+* rta's own downloads and lookups never follow a redirect down to plain http ([968c940](https://github.com/this-is-tobi/rta/commit/968c9407a3994bccdd2f761cf01c0dbac5608eb1))
+* three slips on the consent path, said the way the operator meets them ([10a6a47](https://github.com/this-is-tobi/rta/commit/10a6a4753a7216957770ad102a521e176bc60322))
+* **tui:** a revoke names the grant it took back, and a row's key on a page with no row says so ([dda11ce](https://github.com/this-is-tobi/rta/commit/dda11ce067821e6a46fe23ab9d58a522f83395da))
+
+
+### Performance Improvements
+
+* **agentlog:** verifying the record holds no agent's call up ([05824b0](https://github.com/this-is-tobi/rta/commit/05824b0e6c7bb7c633efa5af01469d40d4b2288b))
+* **agent:** the log counts the record's calls without decoding them ([2382b0f](https://github.com/this-is-tobi/rta/commit/2382b0f7373967d8f40e3e34c3ee6111b909d8c1))
+* **config:** each configuration file is parsed once, not three times ([771c41f](https://github.com/this-is-tobi/rta/commit/771c41fbffe8a705405ad793a1ee4521bde47886))
+* **mcp:** a call reuses the parse of configuration bytes it has already read ([df6421e](https://github.com/this-is-tobi/rta/commit/df6421ee0d4baf58fb6ce6b2fb308ce876b09166))
+* **note:** a note list reads the store once, not once per row ([ee6267f](https://github.com/this-is-tobi/rta/commit/ee6267fca1c483b761b75611c86228db762cd1ff))
+
+
+### Code Refactoring
+
+* a function nothing calls and forwarders that only rename are gone ([a41881f](https://github.com/this-is-tobi/rta/commit/a41881f77c90ec37a278cca15a6356776f6966cb))
+* **agentlog:** the ledger's Clip is format.Head with a mark, not a third cutter ([49694eb](https://github.com/this-is-tobi/rta/commit/49694ebee3194855d354bb95050c48f342fe475b))
+* one digest cut and one pin floor, held by the registry ([6d72121](https://github.com/this-is-tobi/rta/commit/6d7212130dcb0dd6a3d4a70c11a7fb50e14c0ce1))
+* **procgroup:** one bound on the pipes a forking program may hold ([510cd0d](https://github.com/this-is-tobi/rta/commit/510cd0d91b65dfc1b1fbdb244cc0740fccf0d75a))
+* **textclean:** the proxy masker is textclean.Userinfo, one rule for a URL-valued setting ([c882782](https://github.com/this-is-tobi/rta/commit/c882782b55013517786640d197c081e04e9a11c9))
+* the characters a declaration refuses and a result loses are one set ([e86387c](https://github.com/this-is-tobi/rta/commit/e86387cdca086215f1c94eb108dac073feb32a38))
+
+
+### Dependencies
+
+* **deps:** rta builds with Go 1.27.4, which fixes a net/http advisory it reaches ([60f8d43](https://github.com/this-is-tobi/rta/commit/60f8d4357070f2e7f09b28de1db869f00b512b4f))
+* **deps:** update go toolchain to v1.27.4 ([6e74743](https://github.com/this-is-tobi/rta/commit/6e7474384c3c3cdf01c1935f88fd0def52aec437))
+* **deps:** update golang.org/x/crypto to v0.59.0 [security] ([dbb94ed](https://github.com/this-is-tobi/rta/commit/dbb94ed55b3397acf19ac54de9651adffc2360c6))
+
 ## [0.59.0](https://github.com/this-is-tobi/rta/compare/v0.58.0...v0.59.0) (2026-11-07)
 
 
