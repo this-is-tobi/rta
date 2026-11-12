@@ -133,8 +133,13 @@ func runUpgradeCapability(ctx context.Context, req plugin.Request) (view.View, e
 }
 
 func upgradeManager(ctx context.Context, req plugin.Request, m manager, pkg string) (view.View, error) {
-	if _, err := lookPath(m.bin); err != nil {
+	path, err := lookPath(m.bin)
+	if err != nil {
 		return nil, view.Errorf("pkg.manager.missing", "%s is not on this machine's PATH", m.bin)
+	}
+	if why := m.osOwned(path); why != "" {
+		return nil, view.Errorf("pkg.manager.system", "%s at %s is %s, and pkg does not upgrade it", m.name, path, why).
+			WithHint("install a Ruby of your own (mise, rbenv, Homebrew) and its gems are read and upgraded here")
 	}
 	argv := m.upgrade(pkg)
 	if argv == nil {

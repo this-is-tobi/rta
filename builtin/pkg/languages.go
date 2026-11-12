@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode"
 
@@ -347,7 +348,7 @@ func cargoManager() manager {
 
 func gemManager() manager {
 	return manager{
-		name: "gem", bin: "gem",
+		name: "gem", bin: "gem", ownedByOS: systemRuby(runtime.GOOS),
 		list: func(ctx context.Context, _ *registryClient) ([]outdated, *view.Error) {
 			// `gem outdated` prints `name (1.0.0 < 1.2.0)`.
 			out, verr := run(ctx, "gem", "outdated")
@@ -374,6 +375,25 @@ func gemManager() manager {
 			}
 			return []string{"gem", "update", pkg}
 		},
+	}
+}
+
+// systemRuby is gem's ownedByOS on goos: on macOS, /usr/bin/gem is Apple's
+// own Ruby, on the sealed system volume.
+//
+// Its gems are the ones Ruby 2.6 and Apple shipped, csv and json and
+// nokogiri and forty more, and `gem outdated` listed every one as behind:
+// on one Mac, 42 of the 60 packages the overview counted, each with a `gem
+// update` that cannot write there without sudo, into a Ruby nobody should
+// change. Linux keeps its rows: a distribution's Ruby can hold gems the
+// person installed for themselves with --user-install, and those are theirs
+// to see.
+func systemRuby(goos string) func(path string) string {
+	return func(path string) string {
+		if goos == "darwin" && path == "/usr/bin/gem" {
+			return "macOS's own Ruby, whose gems ship with the system"
+		}
+		return ""
 	}
 }
 
