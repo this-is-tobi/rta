@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/agentlog"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // A call that handed the agent a stored value says so where the eye is, and a
@@ -60,7 +61,27 @@ func TestTheRevealedColumnIsInTheFullTableWhateverTheRowsHold(t *testing.T) {
 	if got := col.cell(loud[1], ""); got != "yes" {
 		t.Errorf("the revealing row reads %q", got)
 	}
-	if got := col.cell(loud[0], ""); got != "-" {
-		t.Errorf("the other row reads %q", got)
+	if got := col.cell(loud[0], ""); got != "no" {
+		t.Errorf("the other row reads %q, want no: a yes-or-no field says no", got)
+	}
+}
+
+// **A shipped row spells nothing one way, and its seq is a number.** The
+// recipe's `jq -c '.records[]'` met "—" in credential and role, "" in profile
+// and "-" in revealed, and a seq of "1" to cast before it could compare.
+func TestAShippedRowSpellsNothingOneWayAndItsSeqIsANumber(t *testing.T) {
+	rows := []agentlog.Entry{{Seq: 7, Cap: "sys.cpu", Outcome: agentlog.Ran}}
+	for _, c := range logColumns(rows, false, true) {
+		got := c.cell(rows[0], "")
+		switch c.Name {
+		case "seq":
+			if c.Kind != view.KindNumber || got != "7" {
+				t.Errorf("seq is %q of kind %q, want 7 as a number", got, c.Kind)
+			}
+		case "credential", "role", "profile":
+			if got != "—" {
+				t.Errorf("%s with nothing set reads %q, want the em dash every field of nothing uses", c.Name, got)
+			}
+		}
 	}
 }
