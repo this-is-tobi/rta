@@ -603,8 +603,12 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 
 	// Which of the refusals only a grant would answer is the operator's to act
-	// on, so it leads with the word the theme draws as pending, and a tile does
-	// not spend its lines on where to read them: `g` opens the log from it.
+	// on, so it leads with warn, which the theme draws amber, as every
+	// overview's row that asks for something does, and then says what happened
+	// to them. It led with "pending", for that word's colour, and pending is the
+	// queue `agent pending` shows: the row said "pending 2" while that command
+	// said nothing was waiting. A tile does not spend its lines on where to read
+	// them: `g` opens the log from it.
 	listed, why := sf.CapabilityWith("agent.log", "refused")+" lists them", sf.CapabilityWith("agent.log", "refused", "detail")+" says why"
 	listing := 4
 	if tile {
@@ -616,7 +620,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	needsGrant, answered := unanswered(needsGrant, entries, standing, time.Now())
 	needs := "0"
 	if len(needsGrant) > 0 {
-		needs = "pending " + refusalCount(needsGrant, listed, listing)
+		needs = "warn — " + refusedLine(needsGrant, listed, listing)
 		found.Warn(needsGrantVerdict(len(needsGrant), tile))
 	}
 	if answered > 0 {
@@ -758,6 +762,21 @@ func lastCall(agent string) string {
 // were (the first few, most; none on a tile, which has no room for names beside
 // a count and opens the log on `g`), and — beside the kinds the operator can act
 // on — where to read them.
+// refusedLine is refusalCount for the refusals a grant would answer, said as
+// what happened to them: "2 refused: kv.get db-password, net.dns example.org;
+// where", or "2 refused" on a tile.
+func refusedLine(entries []agentlog.Entry, where string, most int) string {
+	line := fmt.Sprintf("%d refused", len(entries))
+	if most == 0 {
+		return line
+	}
+	line += ": " + callList(entries, most)
+	if where != "" {
+		line += "; " + where
+	}
+	return line
+}
+
 func refusalCount(entries []agentlog.Entry, where string, most int) string {
 	if len(entries) == 0 || most == 0 {
 		return strconv.Itoa(len(entries))

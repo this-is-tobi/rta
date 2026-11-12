@@ -140,8 +140,8 @@ func TestARefusalForWantOfAGrantLeadsWithPending(t *testing.T) {
 
 	pairs := pairsOf(t, overviewOn(t, plugin.SurfaceCLI, nil))
 	got := valueOf(t, pairs, "needs your grant")
-	if !strings.HasPrefix(got, "pending 1 — kv.get api/stripe") || theme.ClassifyStatus(got) != theme.StatusWarn {
-		t.Errorf("needs your grant = %q, want it to lead with the word the theme draws as a warning", got)
+	if !strings.HasPrefix(got, "warn — 1 refused: kv.get api/stripe") || theme.ClassifyStatus(got) != theme.StatusWarn {
+		t.Errorf("needs your grant = %q, want it led by warn and saying the calls were refused", got)
 	}
 	if want := "warn — 1 call needs your grant"; valueOf(t, pairs, "status") != want {
 		t.Errorf("status = %q, want %q", valueOf(t, pairs, "status"), want)
@@ -182,8 +182,8 @@ func TestOnATileTheConnectedRowIsOneWordAndTheHintsStayOnTheCLI(t *testing.T) {
 	}
 	// The key column is as wide as the longest key, and a tile has thirty-five
 	// cells: the long keys go short there, and the refusals are counted, not named.
-	if got := valueOf(t, tile, "needs grant"); got != "pending 1" {
-		t.Errorf("tile: needs grant = %q, want the count, led by the pending word", got)
+	if got := valueOf(t, tile, "needs grant"); got != "warn — 1 refused" {
+		t.Errorf("tile: needs grant = %q, want the count, led by warn and not by pending", got)
 	}
 	if got := valueOf(t, tile, "refused"); got != "1" {
 		t.Errorf("tile: refused = %q", got)

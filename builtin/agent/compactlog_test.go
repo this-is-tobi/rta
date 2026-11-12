@@ -377,7 +377,7 @@ func TestTheOverviewTellsWhatNeedsYourGrantFromWhatWasMalformed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := overviewPair(t, v, "needs your grant"), "pending 1 — kv.get db-password; `rta agent log --refused` lists them"; got != want {
+	if got, want := overviewPair(t, v, "needs your grant"), "warn — 1 refused: kv.get db-password; `rta agent log --refused` lists them"; got != want {
 		t.Errorf("needs your grant = %q, want %q", got, want)
 	}
 	if got, want := overviewPair(t, v, "malformed or unknown calls"), "3 — note.add, net.dns, no_such_tool"; got != want {

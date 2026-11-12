@@ -1277,7 +1277,7 @@ func TestOverviewCountsWhatMatters(t *testing.T) {
 	if got["calls in the last hour"] != "3" {
 		t.Fatalf("recent = %q", got["calls in the last hour"])
 	}
-	if want := "pending 1 — kv.get db-password; `rta agent log --refused` lists them"; got["needs your grant"] != want {
+	if want := "warn — 1 refused: kv.get db-password; `rta agent log --refused` lists them"; got["needs your grant"] != want {
 		t.Fatalf("needs your grant = %q, want %q", got["needs your grant"], want)
 	}
 	if got["you approved live"] != "1" {
