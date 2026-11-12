@@ -414,9 +414,17 @@ func TestAHintToCertExpiryIsSpelledForTheSurfaceAsking(t *testing.T) {
 // cert was the only network-touching family in the catalogue with no timeout
 // input, so every capability that dials has to declare one — and declare the
 // same one, since a per-capability guess is how `cert inspect` and `cert tls`
-// end up disagreeing about how long a host gets to answer.
+// end up disagreeing about how long a host gets to answer. The three over what
+// is trusted read this machine's own store and dial nothing.
 func TestEveryCapabilityDeclaresTheSameTimeout(t *testing.T) {
+	local := map[string]bool{}
+	for _, c := range trustCapabilities() {
+		local[c.ID] = true
+	}
 	for _, c := range Plugin().Capabilities {
+		if local[c.ID] {
+			continue
+		}
 		var f *plugin.Field
 		for i := range c.Inputs {
 			if c.Inputs[i].Name == "timeout" {

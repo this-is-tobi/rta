@@ -2369,6 +2369,7 @@ func preparedRun(c plugin.Capability, values map[string]any, bound boundProfile,
 		Profile:     bound.filled,
 		ProfileName: bound.name,
 		Tunnel:      bound.tunnel,
+		Coordinate:  bound.coordinate,
 		Fence:       bound.fence,
 		Config:      PluginConfig(c),
 		// The heading Config sits under, for a refusal to name the line.

@@ -38,6 +38,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/internal/role"
 	agentsession "github.com/this-is-tobi/rta/internal/session"
+	"github.com/this-is-tobi/rta/internal/tlstrust"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -368,6 +369,7 @@ func doctorTable(reg *registry.Registry, detail bool) view.Table {
 	doctorRoles(add)
 	doctorGrants(reg, add)
 	doctorLocks(add)
+	doctorTrustedServers(add)
 	doctorGuard(add, detail)
 	doctorStore(add, detail)
 	doctorConfinement(add, detail)
@@ -1319,6 +1321,56 @@ func doctorLocks(add func(check, status, detail string)) {
 		add("locks", "info", fmt.Sprintf("%d standing: %s — every call from %s is refused, "+
 			"whatever it holds (`rta lock list` says why)", len(locks), strings.Join(named, ", "),
 			format.Plural(len(locks), "it", "each")))
+	}
+}
+
+// A certificate trusted on first use stands in for a CA on its connection,
+// and one waiting is a server whose every call is refused until somebody looks
+// at it (internal/tlstrust): both belong where an operator reads about the
+// machine's standing. Nothing is said on a machine that trusted nothing, which
+// is most of them, and a clean list is one line.
+func doctorTrustedServers(add func(check, status, detail string)) {
+	servers, verr := tlstrust.List()
+	if verr != nil {
+		add("trusted servers", "error", verr.Message+" — "+verr.Hint)
+		return
+	}
+	var trusted, waiting, changed, ended []string
+	for _, s := range servers {
+		name := s.Server + " (" + s.Plugin + ")"
+		switch {
+		case s.Trusted != nil && s.Pending != nil:
+			changed = append(changed, name)
+		case s.Pending != nil:
+			waiting = append(waiting, name)
+		}
+		if s.Trusted == nil {
+			continue
+		}
+		trusted = append(trusted, name)
+		if leaf := s.Trusted.Leaf(); leaf != nil && leaf.NotAfter.Before(time.Now()) {
+			ended = append(ended, name)
+		}
+	}
+	if n := len(changed); n > 0 {
+		add("trusted servers", "warn", fmt.Sprintf("%s a certificate other than the one trusted, so %s refused "+
+			"until somebody looks: %s — `rta cert trust` shows each beside the one it would replace",
+			format.Plural(n, "a server presented", "servers presented"), format.Plural(n, "its calls are", "their calls are"),
+			strings.Join(changed, ", ")))
+	}
+	if n := len(waiting); n > 0 {
+		add("trusted servers", "warn", fmt.Sprintf("%s a certificate nothing here vouches for, kept until it is "+
+			"trusted or forgotten: %s — `rta cert trust` shows each and trusts it on your word",
+			format.Plural(n, "a server presented", "servers presented"), strings.Join(waiting, ", ")))
+	}
+	if n := len(ended); n > 0 {
+		add("trusted servers", "info", fmt.Sprintf("the certificate trusted for %s has ended, and is still "+
+			"reached, since what was trusted is that certificate and not its dates — worth renewing on the server",
+			strings.Join(ended, ", ")))
+	}
+	if len(trusted) > 0 && len(changed)+len(waiting)+len(ended) == 0 {
+		add("trusted servers", "ok", format.Count(len(trusted), "server", "servers")+
+			" trusted on first use — `rta cert trusted` lists them")
 	}
 }
 

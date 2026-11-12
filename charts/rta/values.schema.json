@@ -489,7 +489,7 @@
             },
             "^cert(@[0-9a-f]+)?$": {
               "additionalProperties": false,
-              "description": "X.509 and TLS inspection: certificates, chains, expiry",
+              "description": "X.509 and TLS inspection: certificates, chains, expiry, and the servers trusted on first use",
               "properties": {
                 "include": {
                   "default": "chain",

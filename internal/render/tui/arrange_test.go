@@ -1735,34 +1735,33 @@ func TestNoTileReasonTellsTheThreeApartFromEachOther(t *testing.T) {
 	}
 }
 
-// The real plugin set is what the copy is actually read against, so at least
-// one plugin has to land in each of the two interesting buckets — otherwise
-// the distinction above is theory.
+// The real plugin set is what the copy is actually read against, so the
+// plugins with no tile have to land in more than one bucket — otherwise the
+// distinction above is theory.
 //
 // Builtins only, and worth being clear about the gap: all.Registry returns
 // what is compiled in, so the external plugins that motivated the fix — kube,
 // pg, vault, cnpg, every one of which sets NoPreview on all its capabilities —
 // are not in it. This passes on debug and keys, which decline for their own
-// reasons. It is evidence that both buckets occur in practice, not coverage of
-// the plugins the wrong sentence was actually being shown for.
-func TestTheRealPluginSetExercisesBothReasons(t *testing.T) {
+// reasons, beside cert, whose reads need a target and whose list of the
+// servers trusted declines to run unasked. It was the one built-in whose every
+// read needs input until that list came, so that sentence is the cases' above
+// alone. It is evidence that the buckets occur in practice, not coverage of the
+// plugins the wrong sentence was actually being shown for.
+func TestTheRealPluginSetExercisesMoreThanOneReason(t *testing.T) {
 	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var declined, needsInput []string
+	by := map[string][]string{}
 	for _, p := range reg.Plugins() {
 		if _, ok := TileFor(reg, p); ok {
 			continue
 		}
-		switch NoTileReason(p) {
-		case "nothing here runs unasked":
-			declined = append(declined, p.Name)
-		case "needs to be told what to look at":
-			needsInput = append(needsInput, p.Name)
-		}
+		reason := NoTileReason(p)
+		by[reason] = append(by[reason], p.Name)
 	}
-	if len(declined) == 0 || len(needsInput) == 0 {
-		t.Errorf("both reasons should be represented: declined=%v needsInput=%v", declined, needsInput)
+	if len(by["nothing here runs unasked"]) == 0 || len(by) < 2 {
+		t.Errorf("more than one reason should be represented, declining among them: %v", by)
 	}
 }

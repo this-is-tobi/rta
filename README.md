@@ -100,7 +100,7 @@ Ask Claude Code to add a note and rta asks you first — `rta agent pending` sho
 
 ## What is in it
 
-**21 built-in plugins, 131 capabilities** in the default build, and `rta plugin list` is the inventory:
+**21 built-in plugins, 134 capabilities** in the default build, and `rta plugin list` is the inventory:
 
 `sys` · `net` · `http` · `cert` · `fs` · `kv` · `note` · `gen` · `codec` · `time` · `audit` · `grant` · `agent` · `operator` · `lock` · `pkg` · `debug` · `keys` · `git` · `eol` · `gitignore`
 

@@ -31,6 +31,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/internal/tlstrust"
 	"github.com/this-is-tobi/rta/internal/toolcall"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -749,7 +750,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// for one that does, which is the whole inventory one call at a time.
 		var filled map[string]any
 		var fence plugin.Fence
-		via := plugin.TunnelNone
+		via, coordinate := plugin.TunnelNone, ""
 		if profileName != "" {
 			conn, verr := profile.Lookup(connections, c, profileName, reg)
 			if verr != nil {
@@ -859,13 +860,14 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			for input, v := range dialled {
 				filled[input] = v
 			}
-			via = opened
+			via, coordinate = opened, profile.Coordinate(conn, opened)
 		}
 		run := plugin.ResolveRequest(c, plugin.Inputs{
 			Caller:      values,
 			Profile:     filled,
 			ProfileName: profileName,
 			Tunnel:      via,
+			Coordinate:  coordinate,
 			Fence:       fence,
 			Config:      opts.pluginConfig(c),
 			// The heading Config sits under, for a refusal to name the line.
@@ -932,8 +934,19 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			return errResultAs(forAgent(c, verr), stated), nil
 		}
 		started := time.Now()
-		v, err := c.Run(ctx, run)
+		// What trust did during the call — a certificate trusted as it arrived
+		// through a forward, or one kept for the operator — goes on the record,
+		// where the operator reads it: the agent is told none of it but that a
+		// certificate waits, and never which server's.
+		var trust []string
+		v, err := c.Run(tlstrust.Noting(ctx, func(note string) { trust = append(trust, note) }), run)
 		rec.Millis = time.Since(started).Milliseconds()
+		if len(trust) > 0 {
+			if rec.Note != "" {
+				trust = append([]string{rec.Note}, trust...)
+			}
+			rec.Note = agentlog.Clip(strings.Join(trust, "; "), maxReason)
+		}
 		opts.ended.spentOn(refusalKey(ctx, opts), covering)
 		if err != nil {
 			// No refund: the handler ran. A use used to come back on any

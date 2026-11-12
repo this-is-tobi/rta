@@ -987,12 +987,12 @@ func (c *Client) attach(dst *plugin.Capability, raw *rtav1.Capability) {
 		if verr := c.deny.namedFile(id, declared, req); verr != nil {
 			return nil, verr
 		}
-		v, err := c.call(ctx, id, req)
+		v, err := c.trusting(ctx, id, declared, req)
 		return v, c.deny.deniedOpen(id, c.Identity.execPath(), req, err)
 	}
 	if raw.GetHasPrefill() {
 		dst.Prefill = func(ctx context.Context, req plugin.Request) (map[string]any, error) {
-			return c.prefill(ctx, id, req)
+			return c.prefill(ctx, id, withTrust(id, declared, req))
 		}
 	}
 	// Bounds-checked rather than trusted to line up. wire.PluginFromProto
@@ -1006,7 +1006,7 @@ func (c *Client) attach(dst *plugin.Capability, raw *rtav1.Capability) {
 		}
 		field := dst.Inputs[i].Name
 		dst.Inputs[i].Suggest = func(ctx context.Context, req plugin.Request) []string {
-			return c.suggest(ctx, id, field, req)
+			return c.suggest(ctx, id, field, withTrust(id, declared, req))
 		}
 	}
 }

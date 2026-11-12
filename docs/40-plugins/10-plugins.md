@@ -36,7 +36,7 @@ What is built in, with a first command for each. `rta plugin list` is the same i
 | `sys` | Host telemetry: CPU, memory, disk, load, processes | `rta sys overview` |
 | `net` | Network diagnostics: ping, DNS, ports, hosts file | `rta net dns github.com` |
 | `http` | Request any endpoint and inspect the response — a REST client | `rta http get https://example.com` |
-| `cert` | X.509 and TLS inspection: certificates, chains, expiry | `rta cert expiry example.com` |
+| `cert` | X.509 and TLS inspection: certificates, chains, expiry, and the servers trusted on first use | `rta cert expiry example.com` |
 | `fs` | Filesystem answers: what is using space, what is here, what is this file | `rta fs usage ~/Downloads` |
 | `git` | Structured views of a git repository — status, log, diff, branches, blame, config, hooks | `rta git status` |
 | `gitignore` | Starter .gitignore files from github/gitignore: find templates, print them as one file | `rta gitignore show Go macOS` |
