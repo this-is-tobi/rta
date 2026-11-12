@@ -132,7 +132,7 @@ func configSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts)
 		Example: "  rta config set output json\n" +
 			"  rta config set dashboard.width 6\n" +
 			"  rta config set theme.status alerts\n" +
-			"  rta config set plugins.net.timeout 20\n" +
+			"  rta config set plugins.net.ping.timeout 20s\n" +
 			"  rta config set dashboard.hidden gen.overview git.overview",
 		Args:              cobra.MinimumNArgs(2),
 		ValidArgsFunction: completeConfigSet(reg),

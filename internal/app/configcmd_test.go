@@ -17,6 +17,37 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// **Every `config set` example sets what it says.** The help's fourth was `rta
+// config set plugins.net.timeout 20`: net has no such key, its timeouts are each
+// capability's, and a bare 20 is not a duration either, so the line refused both
+// ways when copied. The examples test parses every example against the command
+// tree, which a key that does not exist passes; these run, as dry runs, against
+// the built-ins.
+func TestEveryConfigSetExampleSetsWhatItSays(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, _, err := NewRoot(reg, "test").Find([]string{"config", "set"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ran := 0
+	for _, line := range strings.Split(set.Example, "\n") {
+		words := commandWords(strings.TrimSpace(line))
+		if len(words) < 2 || words[0] != "rta" {
+			continue
+		}
+		ran++
+		if _, errOut, _, err := configRun(t, reg, "", append(words[1:], "--dry-run")...); err != nil {
+			t.Errorf("%s: %v %s", strings.TrimSpace(line), err, errOut)
+		}
+	}
+	if ran < 3 {
+		t.Fatalf("ran %d examples; has the help moved?", ran)
+	}
+}
+
 // configRegistry is two plugins with the keys the commands have to tell apart: a
 // number held to two different ranges, a key nested one level, a closed set, a
 // list, a bool, a credential, and an input that is not a config key at all.

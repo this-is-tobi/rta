@@ -131,7 +131,7 @@ func TestExplainAnswersWithTheCardAndItsInputsAsATable(t *testing.T) {
 		}
 	}
 	for column, wanted := range map[string]string{
-		"Type": "int", "Default": "20", "Min": "1", "Max": "500", "Config": "log.limit", "Required": "", "Secret": "",
+		"Type": "int", "Default": "20", "Min": "1", "Max": "500", "Config": "plugins.git.log.limit", "Required": "", "Secret": "",
 	} {
 		if limit[column] != wanted {
 			t.Errorf("git.log's limit %s = %q, want %q (row %v)", column, limit[column], wanted, limit)
@@ -152,26 +152,29 @@ func TestTheInputsTableCarriesWhatTheCardSays(t *testing.T) {
 			{Name: "wait", Type: plugin.Duration, Min: "1s", Max: "5m", Default: "10s"},
 			{Name: "token", Type: plugin.Secret, Local: true},
 			{Name: "empty", Type: plugin.String, Default: ""},
+			{Name: "limit", Type: plugin.Int, Config: "thing.limit"},
 		},
 	}
 	byName := map[string][]string{}
-	for _, row := range inputsTable(c).Rows {
+	for _, row := range inputsTable(c, "plugins.demo").Rows {
 		byName[row[0]] = row
 	}
 	// Name Type Required Default Min Max Options Config Positional Local Secret Help
 	for name, want := range map[string][]string{
-		"name":   {"name", "string", "true", "", "", "", "", "", "true", "", "", "which one"},
-		"mode":   {"mode", "string", "", "fast", "", "", "fast|slow", "", "", "", "", ""},
-		"wait":   {"wait", "duration", "", "10s", "1s", "5m", "", "", "", "", "", ""},
-		"token":  {"token", "secret", "", "", "", "", "", "", "", "true", "true", ""},
-		"empty":  {"empty", "string", "", "", "", "", "", "", "", "", "", ""},
+		"name":  {"name", "string", "true", "", "", "", "", "", "true", "", "", "which one"},
+		"mode":  {"mode", "string", "", "fast", "", "", "fast|slow", "", "", "", "", ""},
+		"wait":  {"wait", "duration", "", "10s", "1s", "5m", "", "", "", "", "", ""},
+		"token": {"token", "secret", "", "", "", "", "", "", "", "true", "true", ""},
+		"empty": {"empty", "string", "", "", "", "", "", "", "", "", "", ""},
+		// The key whole, as `rta config set` takes it, not the plugin's short form.
+		"limit":  {"limit", "int", "", "", "", "", "", "plugins.demo.thing.limit", "", "", "", ""},
 		"detail": {"detail", "bool", "", "false", "", "", "", "", "", "", "", "full detailed view"},
 	} {
 		if got := byName[name]; strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 			t.Errorf("input %s = %q, want %q", name, got, want)
 		}
 	}
-	if none := inputsTable(plugin.Capability{ID: "demo.none"}); len(none.Rows) != 0 || none.Empty == "" {
+	if none := inputsTable(plugin.Capability{ID: "demo.none"}, "plugins.demo"); len(none.Rows) != 0 || none.Empty == "" {
 		t.Errorf("a capability with no inputs has rows %v and no sentence for a person: %q", none.Rows, none.Empty)
 	}
 }
