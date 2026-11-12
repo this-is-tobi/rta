@@ -356,7 +356,64 @@ func resolve(c Capability, in Inputs) (map[string]any, map[string]origin) {
 			}
 		}
 	}
+	for name, v := range out {
+		out[name] = detached(v)
+	}
 	return out, from
+}
+
+// detached is v with every list and mapping in it copied, so what a request
+// holds is its own.
+//
+// **Because a value's memory outlives the call it is handed to.** A list under
+// the base plugins: section is the server's startup read, laid onto every call
+// for the life of the process; a list under a profile's set: is the read a
+// server answers from while the config file does not parse; a default is the
+// declaration's own; a tile's with: is the dashboard the TUI keeps. A handler
+// that sorted, appended into or rewrote a list it was handed — Values copies
+// one level, not what is inside it — rewrote it for every later call, and under
+// a profile moved the connection's fingerprint, so the operator's grant stopped
+// matching. No handler does that today: this makes "no handler can" a property
+// of the request rather than of an audit of every handler. The lists are an
+// operator's few entries, so copying them per call costs nothing a call notices.
+//
+// The decoder's own containers are copied all the way down; a typed list is
+// copied once, since what it holds is values.
+func detached(v any) any {
+	switch t := v.(type) {
+	case []any:
+		if t == nil {
+			return v
+		}
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = detached(e)
+		}
+		return out
+	case map[string]any:
+		if t == nil {
+			return v
+		}
+		out := make(map[string]any, len(t))
+		for k, e := range t {
+			out[k] = detached(e)
+		}
+		return out
+	case map[any]any:
+		if t == nil {
+			return v
+		}
+		out := make(map[any]any, len(t))
+		for k, e := range t {
+			out[k] = detached(e)
+		}
+		return out
+	case []string:
+		return slices.Clone(t)
+	case []byte:
+		return slices.Clone(t)
+	}
+	return v
 }
 
 // toInt accepts every shape an integer arrives in. YAML gives uint64, JSON
