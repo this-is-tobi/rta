@@ -213,7 +213,7 @@ func TestRemovingAnAddedTileWithdrawsItsEntry(t *testing.T) {
 // are in TestDashboardRmNamesTheWholeEntryAsTheWayBack on the other surface.
 func TestHSpellsTheWayBackOfAnEntryWhole(t *testing.T) {
 	entry := config.Tile{ID: "db.status", Profile: "prod", Width: 6, Section: "host", With: map[string]any{"dbname": "shop"}}
-	const line = "rta dashboard add db.status --profile prod --width 6 --section host --set dbname=shop"
+	const line = "rta dashboard add db.status --profile prod --width 6 --section host --with dbname=shop"
 	pressH := func(t *testing.T, m Model) string {
 		t.Helper()
 		m.selected = -1

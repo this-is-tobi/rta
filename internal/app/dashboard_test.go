@@ -22,7 +22,7 @@ func TestDashboardAddWritesAnEntryAndTheTUIDrawsIt(t *testing.T) {
 	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	out, errOut, err := run("dashboard", "add", "db.status", "--profile", "prod", "--set", "dbname=shop")
+	out, errOut, err := run("dashboard", "add", "db.status", "--profile", "prod", "--with", "dbname=shop")
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
@@ -51,7 +51,7 @@ func TestDashboardAddWritesAnEntryAndTheTUIDrawsIt(t *testing.T) {
 // `dashboard list` showed a spelling the declaration does not have.
 func TestDashboardAddWritesAnOptionTheWayItIsDeclared(t *testing.T) {
 	run := session(t, setRegistry(t))
-	if _, errOut, err := run("dashboard", "add", "db.status", "--set", "sslmode=REQUIRE"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--with", "sslmode=REQUIRE"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	if add := loadedConfig(t).Dashboard.Add; len(add) != 1 || add[0].With["sslmode"] != "require" {
@@ -63,17 +63,17 @@ func TestDashboardAddWritesAnOptionTheWayItIsDeclared(t *testing.T) {
 // leaves one tile, and the receipt says nothing changed when nothing did.
 func TestDashboardAddIsIdempotentPerKey(t *testing.T) {
 	run := session(t, setRegistry(t))
-	if _, errOut, err := run("dashboard", "add", "db.status", "--set", "dbname=shop"); err != nil {
+	if _, errOut, err := run("dashboard", "add", "db.status", "--with", "dbname=shop"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	out, _, err := run("dashboard", "add", "db.status", "--set", "dbname=shop")
+	out, _, err := run("dashboard", "add", "db.status", "--with", "dbname=shop")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "unchanged") {
 		t.Errorf("a repeat was not reported as unchanged: %q", out)
 	}
-	out, _, err = run("dashboard", "add", "db.status", "--set", "dbname=other")
+	out, _, err = run("dashboard", "add", "db.status", "--with", "dbname=other")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,8 +107,8 @@ func TestDashboardAddOfANumberOrAListIsUnchangedTheSecondTime(t *testing.T) {
 	}
 	run := session(t, reg)
 	for _, args := range [][]string{
-		{"--set", "limit=20"},
-		{"--set", "ports=22", "--set", "ports=80"},
+		{"--with", "limit=20"},
+		{"--with", "ports=22", "--with", "ports=80"},
 	} {
 		add := append([]string{"dashboard", "add", "ps.list"}, args...)
 		if _, errOut, err := run(add...); err != nil {
@@ -263,14 +263,14 @@ func TestDashboardAddRefusesWhatATileCannotBe(t *testing.T) {
 		{"an unknown capability", []string{"nope.here"}, "core.dashboard.unknown"},
 		{"a mutation", []string{"grant.allow"}, "core.dashboard.notread"},
 		{"a profile nobody configured", []string{"db.status", "--profile", "ghost"}, "core.profile.unknown"},
-		{"an input it does not declare", []string{"db.status", "--set", "colour=red"}, "core.dashboard.set.unknown"},
-		{"a credential in plaintext", []string{"db.status", "--set", "password=hunter2"}, "core.dashboard.set.secret"},
-		{"the profile as an input", []string{"db.status", "--set", "profile=prod"}, "core.dashboard.set.profile"},
-		{"a value of the wrong type", []string{"db.status", "--set", "port=many"}, "core.dashboard.set.type"},
+		{"an input it does not declare", []string{"db.status", "--with", "colour=red"}, "core.dashboard.with.unknown"},
+		{"a credential in plaintext", []string{"db.status", "--with", "password=hunter2"}, "core.dashboard.with.secret"},
+		{"the profile as an input", []string{"db.status", "--with", "profile=prod"}, "core.dashboard.with.profile"},
+		{"a value of the wrong type", []string{"db.status", "--with", "port=many"}, "core.dashboard.with.type"},
 		// What every run would refuse, refused before it is written: a tile
 		// with either would fail on each refresh with nobody watching.
-		{"a number outside its range", []string{"db.status", "--set", "port=70000"}, "core.input.range"},
-		{"a value outside its options", []string{"db.status", "--set", "sslmode=allow"}, "core.input.option"},
+		{"a number outside its range", []string{"db.status", "--with", "port=70000"}, "core.input.range"},
+		{"a value outside its options", []string{"db.status", "--with", "sslmode=allow"}, "core.input.option"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -290,9 +290,9 @@ func TestDashboardAddRefusesWhatATileCannotBe(t *testing.T) {
 
 // codec.jwt's token stopped being Required so a pipe could supply it, and
 // `rta dashboard add codec.jwt` then wrote a tile answering "no token to
-// read" on every refresh: a tile reads no pipe, `--set` refuses a
+// read" on every refresh: a tile reads no pipe, `--with` refuses a
 // credential, and no profile fills it. Refused as it was before, with a hint
-// that does not send the reader to a `--set` refusing the same thing, and
+// that does not send the reader to a `--with` refusing the same thing, and
 // the card no longer offers the command.
 // A capability that reveals a stored value is kept off the dashboard for what it
 // hands over, and its card says that: kv.get's said "nothing is changed" and
@@ -324,7 +324,7 @@ func TestDashboardAddRefusesACredentialATileCannotBeGiven(t *testing.T) {
 		if err == nil || !strings.Contains(errOut, "core.dashboard.needs") {
 			t.Errorf("%s: err = %v, output %q; want core.dashboard.needs", id, err, errOut)
 		}
-		if strings.Contains(errOut, "--set") && !strings.Contains(errOut, "a tile cannot be given") {
+		if strings.Contains(errOut, "--with") && !strings.Contains(errOut, "a tile cannot be given") {
 			t.Errorf("%s: the hint points at --set: %q", id, errOut)
 		}
 		c, _ := reg.Capability(id)
@@ -332,20 +332,20 @@ func TestDashboardAddRefusesACredentialATileCannotBeGiven(t *testing.T) {
 			t.Errorf("%s: card says %q, want never a tile", id, got)
 		}
 	}
-	// And `--set token=…`, refused as a credential, is not sent on to a
+	// And `--with token=…`, refused as a credential, is not sent on to a
 	// profile's `secrets:`: no profile fills the token, and the `profile
 	// set` that hint named is refused in turn.
-	_, errOut, err := run("dashboard", "add", "codec.jwt", "--set", "token=abc", "--dry-run")
-	if err == nil || !strings.Contains(errOut, "core.dashboard.set.secret") ||
+	_, errOut, err := run("dashboard", "add", "codec.jwt", "--with", "token=abc", "--dry-run")
+	if err == nil || !strings.Contains(errOut, "core.dashboard.with.secret") ||
 		strings.Contains(errOut, "profile set") || !strings.Contains(errOut, "`rta codec jwt`") {
-		t.Errorf("err = %v, output %q; want core.dashboard.set.secret naming the command, not a profile", err, errOut)
+		t.Errorf("err = %v, output %q; want core.dashboard.with.secret naming the command, not a profile", err, errOut)
 	}
 }
 
 // A credential a profile does fill is still pointed at one.
 func TestDashboardAddPointsAFillableCredentialAtAProfile(t *testing.T) {
 	run := session(t, setRegistry(t))
-	_, errOut, err := run("dashboard", "add", "db.status", "--set", "password=hunter2")
+	_, errOut, err := run("dashboard", "add", "db.status", "--with", "password=hunter2")
 	if err == nil || !strings.Contains(errOut, "--secret password=kv:") {
 		t.Errorf("err = %v, output %q; want the profile's secrets: hint", err, errOut)
 	}
@@ -353,7 +353,7 @@ func TestDashboardAddPointsAFillableCredentialAtAProfile(t *testing.T) {
 
 func TestDashboardAddDryRunWritesNothing(t *testing.T) {
 	run := session(t, setRegistry(t))
-	out, errOut, err := run("dashboard", "add", "db.status", "--set", "dbname=shop", "--dry-run")
+	out, errOut, err := run("dashboard", "add", "db.status", "--with", "dbname=shop", "--dry-run")
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}

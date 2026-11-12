@@ -69,7 +69,7 @@ func TestARunWithoutAPipedInputIsRefusedInTheTUI(t *testing.T) {
 	if rm.err == nil || rm.err.Code != "core.input.missing" || ran {
 		t.Errorf("a run leaving the token out: %+v (ran %v)", rm.err, ran)
 	}
-	// A tile is not told to write a credential into its entry, which `--set`
+	// A tile is not told to write a credential into its entry, which `--with`
 	// refuses: the same way out `rta dashboard add` gives.
 	tm := tileCmd(0, tile{cap: c}, statedConfig{}, "", nil, config.Connection{})().(tileMsg)
 	if tm.err == nil || tm.err.Code != "core.input.missing" || ran ||

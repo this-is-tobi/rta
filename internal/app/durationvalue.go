@@ -1,6 +1,10 @@
 package app
 
-import "github.com/this-is-tobi/rta/pkg/plugin"
+import (
+	"time"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
+)
 
 // durationValue is how an input of type Duration is given on the command line:
 // the text the caller wrote, held as text because that is what every surface
@@ -13,15 +17,32 @@ import "github.com/this-is-tobi/rta/pkg/plugin"
 // (plugin.ParseDuration), so a bare number is refused here as it is on every
 // other surface, and the refusal reaches refuseFlagValue under the type's own
 // name, with the capability's range beside it.
-type durationValue struct{ value string }
+type durationValue struct {
+	value string
+	// into, when set, is a length of time of rta's own the flag fills as well,
+	// such as --consent-wait.
+	into *time.Duration
+}
 
 func newDurationValue(def string) *durationValue { return &durationValue{value: def} }
 
+// durationInto is a durationValue for a flag of rta's own whose value is a
+// length of time, kept in d: read in the grammar every other length of time
+// rta takes is, `1d` included, where pflag's DurationVar read Go's.
+func durationInto(d *time.Duration, def time.Duration) *durationValue {
+	*d = def
+	return &durationValue{value: plugin.FormatDuration(def), into: d}
+}
+
 func (d *durationValue) Set(raw string) error {
-	if _, err := plugin.ParseDuration(raw); err != nil {
+	parsed, err := plugin.ParseDuration(raw)
+	if err != nil {
 		return err
 	}
 	d.value = raw
+	if d.into != nil {
+		*d.into = parsed
+	}
 	return nil
 }
 
