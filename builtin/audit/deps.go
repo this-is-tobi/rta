@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
+	"github.com/this-is-tobi/rta/internal/redirect"
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -89,7 +90,10 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 		timeout := req.Duration("timeout")
 		qctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		client := &stdhttp.Client{Timeout: timeout}
+		// The query is a POST: a 301 or 302 answered to it would send it again
+		// as a GET without its body, and a hop down to plain http would hand
+		// the inventory and the answer to the path (internal/redirect).
+		client := &stdhttp.Client{Timeout: timeout, CheckRedirect: redirect.Follow}
 		vulns, err = queryOSV(qctx, client, inv.queryable)
 		if err != nil {
 			return nil, view.Errorf("audit.deps.osv", "querying osv.dev: %v", err).

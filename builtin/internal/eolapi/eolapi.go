@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/redirect"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -29,6 +30,11 @@ import (
 // plugin. Every function takes the base as a parameter so a test can point
 // it at an httptest.Server that answers wrongly on purpose.
 const APIBase = "https://endoflife.date/api/v1"
+
+// Client is the client every call here goes through outside a test: one that
+// follows the API's redirects to any https host and never down to plain http
+// (internal/redirect), where net/http's default followed either.
+var Client = redirect.Client()
 
 // requestTimeout bounds one call. Not a declared field the way http.get's
 // timeout is: that plugin dials whatever URL the caller names, which may be

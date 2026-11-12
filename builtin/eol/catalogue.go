@@ -2,7 +2,6 @@ package eol
 
 import (
 	"context"
-	"net/http"
 	"strings"
 
 	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
@@ -43,7 +42,7 @@ func runProducts(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runProductsAt(ctx context.Context, req plugin.Request, base string) (view.View, error) {
-	entries, verr := eolapi.FetchCatalogue(ctx, http.DefaultClient, base)
+	entries, verr := eolapi.FetchCatalogue(ctx, eolapi.Client, base)
 	if verr != nil {
 		return nil, verr
 	}
