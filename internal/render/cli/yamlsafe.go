@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+
+	"github.com/this-is-tobi/rta/internal/yamlguard"
 )
 
 // A tab in a value used to disappear on the way out through `-o yaml`.
@@ -39,7 +41,7 @@ import (
 func yamlSafe(v any) any {
 	switch t := v.(type) {
 	case string:
-		if strings.ContainsRune(t, '\t') {
+		if needsQuotedValue(t) {
 			return quotedScalar(t)
 		}
 		return t
@@ -72,8 +74,19 @@ func yamlSafe(v any) any {
 	return v
 }
 
+// needsQuotedValue is a string the encoder would write plain and every parser
+// would read as another, or reject: one holding a tab (above), and one that
+// begins `? `. The encoder writes that one bare too, and a parser reads it as
+// the opening of a complex mapping key, so the whole document failed to parse
+// for a cell, a value or a title that happened to begin with a question mark
+// and a space. Found by adding it to the hostile strings every format is
+// swept with; the encoder quotes the other indicators itself. The rule is
+// yamlguard's, which the config and the manifests are written by too.
+func needsQuotedValue(s string) bool { return yamlguard.NeedsQuotes(s) }
+
 // needsQuotedKey is a map key the encoder would write as itself and every
-// parser would read as another, or reject: the same tab, and a newline.
+// parser would read as another, or reject: what a value needs (above), and a
+// newline.
 //
 // A key is where this stopped being only a value's problem. A table's records
 // are keyed by its column names, and a name is whoever wrote the plugin's
@@ -86,10 +99,19 @@ func yamlSafe(v any) any {
 // contains a newline survives as a block scalar, so the value case has never
 // needed this half.
 //
+// One more is a key's alone, found the same way, by writing every hostile
+// string as a column name and reading the record back: the encoder writes
+// `<<` bare, which every parser takes for YAML's merge key, and the string
+// after it failed the whole document. A SQL alias can be one. The indicators
+// that mean something only alone or elsewhere in a line — `?`, `:`, `-`, `|`,
+// a flow bracket — the encoder already quotes.
+//
 // The keys that do not need it are left as the strings they are, and a map
 // without such a key is written exactly as it was: the encoder orders both
 // kinds of map by the key's text, so quoting a key moves nothing.
-func needsQuotedKey(k string) bool { return strings.ContainsAny(k, "\t\n") }
+func needsQuotedKey(k string) bool {
+	return needsQuotedValue(k) || strings.ContainsRune(k, '\n') || k == "<<"
+}
 
 // quotedScalar is a string that writes itself as a double-quoted YAML scalar,
 // which is the one style that can carry a tab.

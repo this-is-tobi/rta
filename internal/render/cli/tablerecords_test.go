@@ -213,7 +213,31 @@ func TestARedactedColumnsSecretIsInNoFormatAndNoRecord(t *testing.T) {
 // what it comes back as. Neither loses a field or fails to parse for what is in
 // the name.
 func TestARecordIsKeyedByAnyColumnName(t *testing.T) {
-	for _, h := range hostile {
+	// A key has hazards of its own on top of a value's. `<<` is YAML's merge
+	// key: written bare, every parser takes it to merge the mapping that
+	// follows, and a string there fails the whole document. The others are
+	// the indicators that mean something at the start of a mapping entry.
+	keys := append(append([]struct{ name, value string }{}, hostile...), []struct{ name, value string }{
+		{"merge key", "<<"},
+		{"merge key spaced", "<< "},
+		{"complex key", "? key"},
+		{"question mark", "?"},
+		{"colon", ":"},
+		{"leading colon", ": x"},
+		{"equals", "="},
+		{"leading dash alone", "-"},
+		{"flow mapping", "{a: b}"},
+		{"flow sequence", "[a, b]"},
+		{"pipe", "|"},
+		{"greater than", ">"},
+		{"percent", "%YAML"},
+		{"at", "@key"},
+		{"backtick", "`key"},
+		{"comma", ","},
+		{"quote alone", `"`},
+		{"apostrophe", "it's"},
+	}...)
+	for _, h := range keys {
 		t.Run(h.name, func(t *testing.T) {
 			tbl := view.Table{Columns: []view.Column{{Name: h.value}, {Name: "Other"}}, Rows: [][]string{{"first", "second"}}}
 			for _, f := range []Format{JSON, YAML} {
