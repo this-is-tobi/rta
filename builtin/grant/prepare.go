@@ -641,21 +641,29 @@ func (s selector) narrowed() string {
 func stillArgs(spec operatorid.RevokeSpec, server string, still core.Grant) []plugin.Arg {
 	args := []plugin.Arg{{Name: "target", Value: still.Target, Positional: true}}
 	if spec.Exact {
-		if still.Scope != "" {
-			args = append(args, plugin.Arg{Name: "scope", Value: still.Scope, Positional: true})
-		}
-		if still.Profile != "" {
-			args = append(args, plugin.Arg{Name: "profile", Value: still.Profile})
-		}
-		if still.Agent != "" {
-			args = append(args, plugin.Arg{Name: "agent", Value: still.Agent})
-		}
-		args = append(args, plugin.Arg{Name: "exact", Value: true})
+		args = exactArgs(still)
 	}
 	if server != "" {
 		args = append(args, plugin.Arg{Name: "server", Value: server})
 	}
 	return args
+}
+
+// exactArgs names g alone to a revoke: its target, its record, its connection
+// and its agent, then --exact, without which a selector left out matches every
+// grant and the target alone takes back every grant on it.
+func exactArgs(g core.Grant) []plugin.Arg {
+	args := []plugin.Arg{{Name: "target", Value: g.Target, Positional: true}}
+	if g.Scope != "" {
+		args = append(args, plugin.Arg{Name: "scope", Value: g.Scope, Positional: true})
+	}
+	if g.Profile != "" {
+		args = append(args, plugin.Arg{Name: "profile", Value: g.Profile})
+	}
+	if g.Agent != "" {
+		args = append(args, plugin.Arg{Name: "agent", Value: g.Agent})
+	}
+	return append(args, plugin.Arg{Name: "exact", Value: true})
 }
 
 // revokeSelector is the selector a revoke's spec names.
