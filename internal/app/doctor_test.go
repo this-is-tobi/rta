@@ -540,6 +540,23 @@ func TestTheDoctorSaysWhenTheLockDoesNotParse(t *testing.T) {
 // the operator take the key for one of them: the file gets a warning of its
 // own, where there is a sandbox to be left out of. `confine: strict` changes
 // nothing where the deny list confines, so the warning stands with it set.
+func TestTheDoctorSaysAConfineThatIsNotStrictIsNotRead(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", filepath.Join(home, "data"))
+	t.Setenv("RTA_CONFIG", filepath.Join(home, "config.yaml"))
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("confine: Strict\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var rows []string
+	doctorConfinement(func(check, status, detail string) { rows = append(rows, check+" "+status+" "+detail) }, false)
+	for _, r := range rows {
+		if strings.HasPrefix(r, "plugin confinement error") && strings.Contains(r, `"Strict"`) {
+			return
+		}
+	}
+	t.Errorf("doctor = %q, want an error naming the confine: it does not read", rows)
+}
+
 func TestTheDoctorNamesAFileOfRtasOwnThePluginSandboxLeavesOut(t *testing.T) {
 	for _, conf := range []string{"", "confine: strict\n"} {
 		home := t.TempDir()

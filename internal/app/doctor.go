@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -1372,7 +1373,14 @@ func doctorStore(add func(check, status, detail string), detail bool) {
 // confinement review succeeds identically on a confined macOS host.
 func doctorConfinement(add func(check, status, detail string), detail bool) {
 	deny, denyErr := pluginhost.Resolve()
-	strict, abi, _ := pluginhost.Strict()
+	strict, abi, strictErr := pluginhost.Strict()
+	// Where the deny list confines every plugin, a confine: strict is not
+	// changes no launch, so it is said beside the row rather than in its
+	// place; on Linux the launch refuses it, and denyErr already says so.
+	var ve *view.Error
+	if pluginhost.Confined() && errors.As(strictErr, &ve) {
+		add("plugin confinement", "error", ve.Message+"; "+ve.Hint+" — on Linux no plugin starts under it")
+	}
 	switch {
 	case denyErr != nil:
 		add("plugin confinement", "error", denyErr.Error())

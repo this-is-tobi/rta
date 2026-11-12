@@ -87,6 +87,11 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 		out = append(out, configProblem{Key: "output", Line: lines["output"], Fatal: true,
 			Text: fmt.Sprintf("%q is not an output format (it takes %s)", cfg.Output, formatNames())})
 	}
+	if _, verr := cfg.StrictConfinement(); verr != nil {
+		out = append(out, configProblem{Key: "confine", Line: lines["confine"], Fatal: true,
+			Text: fmt.Sprintf("%q is not a confinement rta knows (it takes %s), and on Linux no plugin starts under it",
+				cfg.Confine, config.ConfineStrict)})
+	}
 	// The palette's own questions, asked of this file's text and without painting
 	// anything: a check of one file must not leave its colours on the screen,
 	// and the answer is the same one the screen would get. The operator's own

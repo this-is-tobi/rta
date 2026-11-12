@@ -18,6 +18,32 @@ func setPath(t *testing.T) string {
 	return p
 }
 
+// strict is the one word confine: takes, and any other is refused rather than
+// read as not asking: the launch asked "is it strict" and nothing else, so a
+// misspelt one ran every plugin unconfined on Linux.
+func TestAConfineThatIsNotStrictIsRefusedNotReadAsNotAsking(t *testing.T) {
+	p := setPath(t)
+	for confine, want := range map[string]bool{"": false, "strict": true} {
+		if on, verr := (Config{Confine: confine}).StrictConfinement(); verr != nil || on != want {
+			t.Errorf("confine %q = %v, %v; want %v", confine, on, verr, want)
+		}
+	}
+	if err := os.WriteFile(p, []byte("confine: Strict\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	on, verr := cfg.StrictConfinement()
+	if verr == nil || on {
+		t.Fatalf("confine: Strict = %v, %v; want it refused", on, verr)
+	}
+	if verr.Code != "config.confine" || !strings.Contains(verr.Message, p) || !strings.Contains(verr.Hint, "strict") {
+		t.Errorf("refusal = %s: %s (%s); want it to name the file and the word", verr.Code, verr.Message, verr.Hint)
+	}
+}
+
 func TestMissingFileIsZeroConfig(t *testing.T) {
 	setPath(t)
 	cfg, err := Load()

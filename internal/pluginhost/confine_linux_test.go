@@ -118,6 +118,16 @@ func TestStrictInTheConfigurationIsWhatTheLaunchGets(t *testing.T) {
 	if _, err := Resolve(); err == nil {
 		t.Error("a configuration that does not load let a launch through without saying whether it is strict")
 	}
+	// A word strict is not was read as not asking, and every plugin ran with
+	// this user's full access: it may be the very file that asks.
+	for _, word := range []string{"Strict", "stric", "true", "landlock"} {
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("confine: "+word+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if d, err := Resolve(); err == nil || !strings.Contains(err.Error(), "none starts") {
+			t.Errorf("confine: %s let a launch through, strict %v, %v", word, d.Strict, err)
+		}
+	}
 }
 
 // The shim confines for real: under it, a shell reads and writes what the

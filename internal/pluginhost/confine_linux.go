@@ -82,14 +82,19 @@ var errNoLandlock = errors.New("confine: strict needs Landlock (Linux 5.13 or la
 
 // strictAsked reads whether the operator asked for strict confinement. A
 // configuration that does not load is refused rather than read as not asking:
-// it may be the very file that asks.
+// it may be the very file that asks. So is a confine: strict is not.
 func strictAsked() (bool, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return false, fmt.Errorf("the configuration does not load, so whether plugins are to be confined "+
 			"strictly is not known, and none starts: %w", err)
 	}
-	return cfg.Confine == "strict", nil
+	on, verr := cfg.StrictConfinement()
+	if verr != nil {
+		return false, fmt.Errorf("%s, so whether plugins are to be confined strictly is not known, and none "+
+			"starts — %s: %w", verr.Message, verr.Hint, verr)
+	}
+	return on, nil
 }
 
 // strictReady fills in what a strict launch needs, or says why there is none:
