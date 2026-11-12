@@ -56,20 +56,44 @@ func RefuseAnchors(data []byte) error {
 		// its own message, which names the line; this just isn't it.
 		return nil //nolint:nilerr // see above: the decoder's message is the one worth reading
 	}
+	if anchored(file) {
+		return ErrAnchors
+	}
+	return nil
+}
+
+// Parse is the document's syntax tree, refused with ErrAnchors when it uses an
+// anchor or an alias: RefuseAnchors and the parse a decoder would make, in one
+// pass, for a caller that decodes from the tree (yaml.NodeToValue) rather than
+// parse the same bytes again. A syntax error is the parser's own, the one the
+// decoder would have reported.
+func Parse(data []byte) (*ast.File, error) {
+	file, err := parser.ParseBytes(data, 0)
+	if err != nil {
+		return nil, err
+	}
+	if anchored(file) {
+		return nil, ErrAnchors
+	}
+	return file, nil
+}
+
+// anchored reports whether any document of file uses an anchor or an alias.
+//
+// The matched node is deliberately not echoed into a message: an AnchorNode's
+// own String() walks the value it anchors, and while that is bounded by what is
+// actually written in the file (never a dereferenced, expanded copy), there is
+// no reason to stringify attacker-controlled YAML into an error message when
+// naming the rule is enough.
+func anchored(file *ast.File) bool {
 	v := &anchorVisitor{}
 	for _, doc := range file.Docs {
 		ast.Walk(v, doc)
 		if v.found {
-			// The matched node is deliberately not echoed into the message:
-			// an AnchorNode's own String() walks the value it anchors, and
-			// while that is bounded by what is actually written in the file
-			// (never a dereferenced, expanded copy), there is no reason to
-			// stringify attacker-controlled YAML into an error message when
-			// naming the rule is enough.
-			return ErrAnchors
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 type anchorVisitor struct{ found bool }

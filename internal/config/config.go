@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/filelock"
@@ -485,12 +486,24 @@ func Together(path string, data []byte) (Config, error) {
 func parse(path string, data []byte) (Config, error) {
 	var cfg Config
 	data = trimBOM(data)
+	// One parse of the text, which the anchor check, the decode and the read
+	// of the raw profiles below all decode from. Each used to parse the same
+	// bytes again, and three parses of every file were most of what a load
+	// cost: about half of it goes with the two that are gone.
+	var body ast.Node
 	if len(data) > 0 {
-		if err := yamlguard.RefuseAnchors(data); err != nil {
+		file, err := yamlguard.Parse(data)
+		if errors.Is(err, yamlguard.ErrAnchors) {
 			return cfg, view.Errorf("config.invalid", "parsing %s: %v", path, err).
 				WithHint(parseHint(err))
 		}
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
+		if err == nil && len(file.Docs) > 0 {
+			body = file.Docs[0].Body
+		}
+		if err == nil && body != nil {
+			err = yaml.NodeToValue(body, &cfg)
+		}
+		if err != nil {
 			if refusal := refuseBadSections(path, data); refusal != nil {
 				return cfg, refusal
 			}
@@ -520,7 +533,7 @@ func parse(path string, data []byte) (Config, error) {
 		var raw struct {
 			Profiles map[string]map[string]any `yaml:"profiles"`
 		}
-		_ = yaml.Unmarshal(data, &raw)
+		_ = yaml.NodeToValue(body, &raw)
 		for name, p := range cfg.Profiles {
 			p = cfg.Stamp(p)
 			p.unknown = unclaimed(raw.Profiles[name], profileKeys)
