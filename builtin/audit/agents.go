@@ -18,6 +18,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -963,9 +964,20 @@ func auditModelEndpoint(r *findings.Report) {
 // that gets pasted into an issue, while every other check here names a
 // credential and never shows it. A value that is not a URL at all is shown
 // as it is, since there is no userinfo to find in it.
+//
+// url.Parse refuses a userinfo holding a space, a `^`, a `{` or a `|`, which
+// the URL parsers agents are written with percent-encode and send: such a
+// value is masked by its shape (textclean.Userinfo), where it was printed
+// whole for being refused.
 func endpointForDisplay(raw string) string {
 	u, err := url.Parse(raw)
-	if err != nil || u.User == nil {
+	if err != nil {
+		if masked := textclean.Userinfo(raw); masked != raw {
+			return masked + " (credentials in the URL not shown)"
+		}
+		return raw
+	}
+	if u.User == nil {
 		return raw
 	}
 	u.User = nil

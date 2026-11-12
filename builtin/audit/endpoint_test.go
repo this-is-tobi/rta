@@ -36,6 +36,25 @@ func TestTheEndpointRowNeverPrintsACredentialInTheURL(t *testing.T) {
 	}
 }
 
+// url.Parse refuses a userinfo holding a space, a `^`, a `{` or a `|`, and
+// the URL parsers agents are written with percent-encode those and send the
+// credential: a generated password is the usual way to get one. The refused
+// value was shown whole.
+func TestAnEndpointURLParseRefusesStillHidesItsCredential(t *testing.T) {
+	for _, v := range []string{
+		"https://alice:a^b{c|d}@gateway.example/v1",
+		"https://alice:two words@gateway.example/v1",
+	} {
+		got := endpointForDisplay(v)
+		if strings.Contains(got, "alice") || strings.Contains(got, "a^b") || strings.Contains(got, "words") {
+			t.Errorf("endpointForDisplay(%q) = %q, which prints the credential", v, got)
+		}
+		if !strings.Contains(got, "gateway.example/v1") {
+			t.Errorf("endpointForDisplay(%q) = %q, which lost the gateway the row is about", v, got)
+		}
+	}
+}
+
 // A value with no userinfo, or one that is not a URL at all, is shown as it
 // is: there is nothing to hide, and rewriting it would be the audit
 // misquoting the setting.
