@@ -348,6 +348,36 @@ func TestAnEditThatStatesWhatAnotherFileStatesIsRefusedBeforeItIsSaved(t *testin
 	}
 }
 
+// The fix to a file that does not parse is held to what it says, not to what
+// it replaces: the broken text on disk was refused under the file's own name,
+// so `rta config edit` could never save the line that put it right. Another
+// file that does not parse is left out of the question, whole.
+func TestAFixIsHeldToItsOwnTextNotToTheBrokenOneItReplaces(t *testing.T) {
+	dir := layout(t, map[string]string{
+		"config.yaml":           "output: [unclosed\n",
+		"config.d/10-prod.yaml": "profiles: [unclosed\n",
+		"config.d/20-ok.yaml":   profile("base", "b.example"),
+	})
+	prod := filepath.Join(dir, "config.d", "10-prod.yaml")
+	if _, err := Validate(Path(), []byte("output: json\n")); err != nil {
+		t.Errorf("the fix to the config file was refused: %v", err)
+	}
+	if _, err := Validate(prod, []byte(profile("prod", "p.example"))); err != nil {
+		t.Errorf("the fix to a drop-in was refused: %v", err)
+	}
+	if _, err := Validate(prod, []byte(profile("base", "x.example"))); err == nil || !strings.Contains(err.Error(), "stated in both") {
+		t.Errorf("a fix stating what another file states = %v, want it refused", err)
+	}
+	together, err := Together(prod, []byte(profile("prod", "p.example")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !together.Trusted() || together.Profiles["base"].Plugins == nil || together.Profiles["prod"].Plugins == nil {
+		t.Errorf("together = trusted %v, profiles %v; want both profiles, trusted as the file's path is",
+			together.Trusted(), together.ProfileNames())
+	}
+}
+
 // Every file is checked for the keys rta ignores, and a finding names its file.
 func TestCheckNamesTheFileAKeyIsIgnoredIn(t *testing.T) {
 	dir := layout(t, map[string]string{

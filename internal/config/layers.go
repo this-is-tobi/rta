@@ -142,14 +142,27 @@ func readStack() (*stack, error) { return readStackWith("", nil, Config{}, false
 // Lenient leaves a file that does not parse out of the stack instead of
 // refusing it: the question being asked is about one file, and another's
 // parse error is that file's to report, once, under its own name.
+//
+// **And never refuses the file it is asked about for what is on disk.** That
+// text is the one being replaced, so its parse error says nothing of the text
+// replacing it, and refusing on it kept `rta config edit` from ever saving the
+// fix to a file that did not parse: the editor reopened under an error about
+// a line the person had already put right. A file left out is left out whole,
+// not appended with what a failed parse half read, which could be refused as
+// stating a unit another file states.
 func readStackWith(path string, text []byte, cfg Config, lenient bool) (*stack, error) {
 	mainText, err := ReadText()
 	if err != nil {
 		return nil, err
 	}
 	mainCfg, err := parse(Path(), mainText)
-	if err != nil && (!lenient || path == Path()) {
-		return nil, err
+	if err != nil {
+		if !lenient {
+			return nil, err
+		}
+		// Left out, but still the file whose path decides what the
+		// stack is trusted with (merged).
+		mainCfg = Config{trusted: trustedPath()}
 	}
 	s := &stack{layers: []layer{{path: Path(), main: true, exists: mainText != nil, text: mainText, cfg: mainCfg}}}
 	dir := DropInDir()
@@ -165,8 +178,11 @@ func readStackWith(path string, text []byte, cfg Config, lenient bool) (*stack, 
 			return nil, view.Errorf("config.unreadable", "reading %s: %v", file, err)
 		}
 		fileCfg, err := parse(file, fileText)
-		if err != nil && (!lenient || file == path) {
+		if err != nil && !lenient {
 			return nil, err
+		}
+		if err != nil && file != path {
+			continue
 		}
 		if file == path {
 			fileText, fileCfg, replaced = text, cfg, true
