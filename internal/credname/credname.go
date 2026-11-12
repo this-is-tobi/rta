@@ -3,7 +3,10 @@
 //
 // It is shared by what masks a credential and what forgets one: the http dry
 // run, which shows a request with its credential headers masked, and the
-// completion history, which never writes one down. They kept a list each.
+// completion history, which never writes one down, and the agent record
+// (textclean.Credentials), which masks one in what it keeps. They kept a
+// list each, and the record's, of exact names, wrote down GitLab's and
+// Vault's tokens that the other two knew.
 // The history's began as Authorization alone and grew to every header an API
 // takes its key in; the dry run kept Authorization, Cookie and
 // Proxy-Authorization, so `rta http post … --header 'PRIVATE-TOKEN: glpat-…'
@@ -52,11 +55,11 @@ func Header(name string) bool {
 
 // Param reports whether a URL query parameter named name carries a
 // credential: one named as such a header is (`?api_key=…`,
-// `?access_token=…`), or `sig`, the signature of a shared-access URL, a word
-// too short to look for inside other names.
+// `?access_token=…`), or `sig`, the signature of a shared-access URL, or
+// `pwd`: words too short to look for inside other names.
 func Param(name string) bool {
 	folded := fold(name)
-	return folded == "sig" || containsAny(folded, headerWords)
+	return folded == "sig" || folded == "pwd" || containsAny(folded, headerWords)
 }
 
 func fold(name string) string {

@@ -65,3 +65,46 @@ func toS(v any) string {
 		return ""
 	}
 }
+
+// The http capabilities' header and url inputs are plain, so what the record
+// keeps of them is what textclean.Credentials leaves; the http dry run and the
+// completion history decide the same question by credname. A header or a
+// parameter that list calls a credential was masked in the dry run, forgotten
+// by the history, and written in clear into the sealed record.
+func TestTheRecordMasksEveryCredentialTheDryRunMasks(t *testing.T) {
+	c := plugin.Capability{Inputs: []plugin.Field{
+		{Name: "header", Type: plugin.StringSlice},
+		{Name: "url", Type: plugin.String},
+	}}
+	const secret = "glpat-REALLYSECRET0123"
+	for _, h := range []string{"PRIVATE-TOKEN", "X-Vault-Token", "X-Goog-Api-Key", "Api-Key", "X-Auth-Key", "Authorization", "X-Api-Key"} {
+		got := auditArgs(c, map[string]any{"header": []string{h + ": " + secret}})
+		if kept := got["header"]; strings.Contains(toString(kept), secret) {
+			t.Errorf("the record keeps %s in clear: %v", h, kept)
+		}
+	}
+	for _, p := range []string{"private_token", "apiKey", "x-vault-token", "session", "token", "api_token"} {
+		got := auditArgs(c, map[string]any{"url": "https://gitlab.example/api/v4/projects?" + p + "=" + secret})
+		if kept := got["url"]; strings.Contains(toString(kept), secret) {
+			t.Errorf("the record keeps ?%s= in clear: %v", p, kept)
+		}
+	}
+}
+
+func toString(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case []string:
+		return strings.Join(x, "\n")
+	case []any:
+		var b strings.Builder
+		for _, e := range x {
+			if s, ok := e.(string); ok {
+				b.WriteString(s + "\n")
+			}
+		}
+		return b.String()
+	}
+	return ""
+}
