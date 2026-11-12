@@ -1453,82 +1453,18 @@ type Report struct {
 // it in memory would be a verification an operator learns not to run.
 func Verify() (Report, error) {
 	rep := Report{}
-	// The same lock Append holds for its own read-then-write, and for the
-	// same reason: Append can rotate mid-call, renaming the active file to
-	// a numbered one and recreating it empty, and Verify has to see one
-	// state or the other — never a file list snapshotted before a rotation
-	// read back after it, which is a rename this function was never told
-	// about happening underneath a file name it already committed to. Held
-	// for the whole walk, not just the snapshot: releasing it the moment
-	// the file list is in hand would still leave every read after that
-	// point racing the next rotation.
-	appendMu.Lock()
-	defer appendMu.Unlock()
-	release, err := filelock.Acquire(Path()+".lock", lockStale, lockRetry, lockTimeout)
-	if err != nil {
-		if verr := filelock.Unwritable(err); verr != nil {
-			return rep, verr
-		}
-		return rep, fmt.Errorf("the agent log is busy: %w", err)
-	}
-	defer release()
-
-	// Read before the file list, because the file list is decided by it: a
-	// numbered file is part of this record when its last entry verifies
-	// under this key. Missing is handled below, where "there is no key" and
-	// "there is no record" are told apart.
-	key, keyErr := seal.Key(keyFile, false)
-	if keyErr != nil && !errors.Is(keyErr, seal.ErrMissing) {
-		return rep, keyErr
-	}
-	files, _, foreign, err := segments(key)
-	if err != nil {
+	snap, err := snapshot(&rep)
+	if err != nil || snap == nil {
 		return rep, err
 	}
-	for _, n := range foreign {
-		rep.Foreign = append(rep.Foreign, filepath.Base(segmentPath(n)))
-	}
-	if len(files) == 0 {
-		// Nothing on disk at all. That is either a machine no agent has ever
-		// called, or one whose record was removed wholesale — and with no
-		// chain left to break, the high-water mark is the only thing that can
-		// tell them apart.
-		if keyErr != nil {
-			return rep, nil
-		}
-		if h, ok := readHead(key); ok && h.Seq > 0 {
-			rep.Broken = 1
-			rep.Why = fmt.Sprintf(
-				"nothing is on disk and rta last wrote entry %d, so the whole record has been removed", h.Seq)
-		}
-		return rep, nil
-	}
-	rep.Files = len(files)
-	for _, p := range files {
-		if info, err := os.Stat(p); err == nil {
-			rep.Size += info.Size()
-		}
-	}
-	if keyErr != nil {
-		return rep, fmt.Errorf("%s exists with no seal key beside it, so it was not written by rta", Path())
-	}
-	anchors, badAnchors, err := readAnchors(key)
-	if err != nil {
-		return rep, err
-	}
+	defer snap.close()
+	verifyWalk()
 
 	prev := ""
 	var seq int64
 	started := false
-	for _, p := range files {
-		f, err := atomicfile.Open(p)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return rep, err
-		}
-		sc := newLineReader(f)
+	for _, seg := range snap.files {
+		sc := newLineReader(io.LimitReader(seg.f, seg.size))
 		for sc.Scan() {
 			line := strings.TrimSpace(sc.Text())
 			if line == "" {
@@ -1549,15 +1485,14 @@ func Verify() (Report, error) {
 				// explanation; anything else needs an anchor saying rta
 				// retired what came before, or it is a deletion.
 				if e.Seq != 1 {
-					a, ok := anchors[e.Seq-1]
+					a, ok := snap.anchors[e.Seq-1]
 					if !ok {
-						_ = f.Close()
 						rep.Broken = e.Seq
 						rep.Why = fmt.Sprintf(
 							"the record starts at entry %d and nothing records entries 1-%d as retired",
 							e.Seq, e.Seq-1)
-						if badAnchors > 0 {
-							rep.Why += fmt.Sprintf(" (%d retirement records do not verify)", badAnchors)
+						if snap.badAnchors > 0 {
+							rep.Why += fmt.Sprintf(" (%d retirement records do not verify)", snap.badAnchors)
 						}
 						return rep, nil
 					}
@@ -1572,22 +1507,19 @@ func Verify() (Report, error) {
 			case e.Prev != prev:
 				rep.Broken, rep.Why = e.Seq, "it does not follow the entry before it"
 			default:
-				if !verifies(key, []byte(line), e) {
+				if !verifies(snap.key, []byte(line), e) {
 					rep.Broken, rep.Why = e.Seq, "its contents do not match its seal"
 				} else if e.Cut > 0 {
 					rep.Broken, rep.Why = e.Seq, cutWhy(e)
 				}
 			}
 			if rep.Broken != 0 {
-				_ = f.Close()
 				return rep, nil
 			}
 			prev = e.Seal
 			seq = e.Seq
 		}
-		err = sc.Err()
-		_ = f.Close()
-		if err != nil {
+		if err := sc.Err(); err != nil {
 			return rep, err
 		}
 	}
@@ -1597,7 +1529,7 @@ func Verify() (Report, error) {
 	// check above walks forward from the beginning and none of them can see
 	// entries that are no longer there, so without this a truncated file is
 	// simply a shorter one that verifies.
-	h, ok := readHead(key)
+	h, ok := snap.head, snap.headOK
 	switch {
 	case !ok && rep.Entries > 0:
 		rep.Broken = seq
@@ -1617,6 +1549,126 @@ func Verify() (Report, error) {
 	// check that guards nothing is a check somebody eventually trusts.
 	return rep, nil
 }
+
+// snapshot is the record as Verify walks it, taken under the lock Append
+// holds for its own read-then-write, and for the same reason: Append can
+// rotate mid-call, renaming the active file to a numbered one and recreating
+// it empty, and Verify has to see one state or the other, never a file list
+// taken before a rotation and read back by name after it. Every segment is
+// opened here, its size and the marks the walk is checked against are read
+// here, and the lock goes: a descriptor keeps its file through a later
+// rotation's rename and a retirement's unlink, and a read that stops at the
+// size taken here never meets a line written since. Held for the whole walk,
+// as it was, it made every MCP call wait on a verification, half a second on
+// a record at its retention ceiling, and agent metrics, a /metrics scrape and
+// the doctor all verify. The end mark is read here and not after the walk,
+// or the entries appended since would read as the record stopping short of
+// it.
+//
+// No snapshot and no error is a record with nothing on disk, and rep says
+// what that means.
+func snapshot(rep *Report) (*ledgerSnapshot, error) {
+	appendMu.Lock()
+	defer appendMu.Unlock()
+	release, err := filelock.Acquire(Path()+".lock", lockStale, lockRetry, lockTimeout)
+	if err != nil {
+		if verr := filelock.Unwritable(err); verr != nil {
+			return nil, verr
+		}
+		return nil, fmt.Errorf("the agent log is busy: %w", err)
+	}
+	defer release()
+
+	// Read before the file list, because the file list is decided by it: a
+	// numbered file is part of this record when its last entry verifies
+	// under this key. Missing is handled below, where "there is no key" and
+	// "there is no record" are told apart.
+	key, keyErr := seal.Key(keyFile, false)
+	if keyErr != nil && !errors.Is(keyErr, seal.ErrMissing) {
+		return nil, keyErr
+	}
+	files, _, foreign, err := segments(key)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range foreign {
+		rep.Foreign = append(rep.Foreign, filepath.Base(segmentPath(n)))
+	}
+	if len(files) == 0 {
+		// Nothing on disk at all. That is either a machine no agent has ever
+		// called, or one whose record was removed wholesale — and with no
+		// chain left to break, the high-water mark is the only thing that can
+		// tell them apart.
+		if keyErr != nil {
+			return nil, nil
+		}
+		if h, ok := readHead(key); ok && h.Seq > 0 {
+			rep.Broken = 1
+			rep.Why = fmt.Sprintf(
+				"nothing is on disk and rta last wrote entry %d, so the whole record has been removed", h.Seq)
+		}
+		return nil, nil
+	}
+	rep.Files = len(files)
+	for _, p := range files {
+		if info, err := os.Stat(p); err == nil {
+			rep.Size += info.Size()
+		}
+	}
+	if keyErr != nil {
+		return nil, fmt.Errorf("%s exists with no seal key beside it, so it was not written by rta", Path())
+	}
+	anchors, badAnchors, err := readAnchors(key)
+	if err != nil {
+		return nil, err
+	}
+	snap := &ledgerSnapshot{key: key, anchors: anchors, badAnchors: badAnchors}
+	snap.head, snap.headOK = readHead(key)
+	for _, p := range files {
+		f, err := atomicfile.Open(p)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			snap.close()
+			return nil, err
+		}
+		info, err := f.Stat()
+		if err != nil {
+			_ = f.Close()
+			snap.close()
+			return nil, err
+		}
+		snap.files = append(snap.files, openSegment{f: f, size: info.Size()})
+	}
+	return snap, nil
+}
+
+// ledgerSnapshot is what snapshot took under the lock: every segment open with
+// its size, and the marks a walk of them is checked against.
+type ledgerSnapshot struct {
+	key        []byte
+	files      []openSegment
+	anchors    map[int64]anchor
+	badAnchors int
+	head       head
+	headOK     bool
+}
+
+type openSegment struct {
+	f    *os.File
+	size int64
+}
+
+func (s *ledgerSnapshot) close() {
+	for _, seg := range s.files {
+		_ = seg.f.Close()
+	}
+}
+
+// verifyWalk runs between Verify's snapshot and its walk, with the lock let
+// go: a test's way to write to the record while it is being walked.
+var verifyWalk = func() {}
 
 // cutWhy is Verify's reason for an entry written over a cut (Entry.Cut). The
 // entry's number is the first one the cut took, written again: entries are
@@ -1639,7 +1691,7 @@ type lineReader struct {
 	err  error
 }
 
-func newLineReader(f *os.File) *lineReader { return &lineReader{r: bufio.NewReaderSize(f, 64<<10)} }
+func newLineReader(r io.Reader) *lineReader { return &lineReader{r: bufio.NewReaderSize(r, 64<<10)} }
 
 func (l *lineReader) Scan() bool {
 	if l.err != nil {
