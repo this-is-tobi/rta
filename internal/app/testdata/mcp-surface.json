@@ -1947,7 +1947,7 @@
   },
   {
     "name": "net_send",
-    "description": "Send bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes `data` and shows the reply: how you poke a protocol where the client speaks first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in `data` are interpreted; `tls` speaks it over TLS. What arrives is executed by whatever is listening (FLUSHALL empties a Redis), so it is destructive. `net_probe` is the read-only half (connect, handshake, listen) and needs a grant too, since the destination is the caller's choice either way.\n\nSafety: destructive.\n\nRequires a grant.",
+    "description": "Send bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes `data` and shows the reply: how you poke a protocol where the client speaks first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in `data` are interpreted; `tls` speaks it over TLS, to a host whose certificate this machine trusts for the name you call it by. What arrives is executed by whatever is listening (FLUSHALL empties a Redis), so it is destructive. `net_probe` is the read-only half (connect, handshake, listen) and needs a grant too, since the destination is the caller's choice either way.\n\nSafety: destructive.\n\nRequires a grant.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1973,7 +1973,7 @@
           "type": "string"
         },
         "tls": {
-          "description": "complete a TLS handshake before sending, in TLS 1.2 or newer since the payload crosses it",
+          "description": "complete a TLS handshake before sending, TLS 1.2 or newer, with a host whose certificate checks out for its name",
           "type": "boolean"
         },
         "wait": {
