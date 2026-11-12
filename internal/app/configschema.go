@@ -82,7 +82,15 @@ func pluginSchema(reg *registry.Registry, p plugin.Plugin) map[string]any {
 	for k := range readers {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	// Longest first, so every block a key leads through is made before a key
+	// of the same name is placed over it. A plugin may declare a key that is
+	// also the first part of another — `database` beside `database.list.limit`
+	// — and the walk to the second went into the first's value as if it were a
+	// block and panicked, which took `rta config schema` and `rta config edit`
+	// down for anyone with that plugin installed. Nested, the name holds a value
+	// or a block and not both, which is what a reader takes: the schema says
+	// either.
+	sort.Sort(sort.Reverse(sort.StringSlice(keys)))
 	root := schemaBlock(p.Summary)
 	for _, key := range keys {
 		segs := strings.Split(key, ".")
@@ -96,7 +104,13 @@ func pluginSchema(reg *registry.Registry, p plugin.Plugin) map[string]any {
 			}
 			cur = next
 		}
-		cur["properties"].(map[string]any)[segs[len(segs)-1]] = keySchema(reg, p.Name, key, readers[key])
+		props := cur["properties"].(map[string]any)
+		name := segs[len(segs)-1]
+		value := keySchema(reg, p.Name, key, readers[key])
+		if block, ok := props[name]; ok {
+			value = map[string]any{"anyOf": []any{value, block}}
+		}
+		props[name] = value
 	}
 	return root
 }
