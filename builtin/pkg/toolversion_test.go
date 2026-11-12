@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -58,6 +59,7 @@ func TestAToolThatDoesNotKnowTheFlagIsReadFromItsStore(t *testing.T) {
 		"kubectl-stern":        linked(t, root, "krew/bin/kubectl-stern", "krew/store/stern/v1.33.0/stern", false),
 	}
 	c := newRegistryClient()
+	c.tags = newTagCache(time.Now)
 	c.web = latestTags(t, map[string]string{
 		"cloudnative-pg/cloudnative-pg": "v1.30.1", "cert-manager/cmctl": "v2.4.0", "stern/stern": "v1.34.0",
 	})
@@ -194,6 +196,7 @@ func TestAnUpgradeNeverReplacesALink(t *testing.T) {
 	}
 	logged := newRequestLog(t, nil)
 	c := newRegistryClient()
+	c.tags = newTagCache(time.Now)
 	c.github, c.web = logged.URL, logged.URL
 	for _, dryRun := range []bool{true, false} {
 		_, verr := installTool(context.Background(), plugin.SurfaceCLI, c,

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -624,6 +625,7 @@ func TestToolsGrammarAndListing(t *testing.T) {
 		t.Errorf("bad entry = %+v", verr)
 	}
 	c := newRegistryClient()
+	c.tags = newTagCache(time.Now)
 	c.web = latestTags(t, map[string]string{"junegunn/fzf": "v0.55.0"})
 	f := &fake{bins: map[string]bool{"fzf": true}, answers: map[string]fakeAnswer{
 		"fzf --version": {out: "0.50.0 (brew)\n"},
@@ -653,6 +655,7 @@ func TestAReleaseTagIsReadForTheVersionInIt(t *testing.T) {
 	tags := map[string]string{"oven-sh/bun": "bun-v1.1.38", "jqlang/jq": "jq-1.7.1", "openai/codex": "rust-v0.47.0",
 		"junegunn/fzf": "v0.55.0", "some/nightly": "nightly"}
 	c := newRegistryClient()
+	c.tags = newTagCache(time.Now)
 	c.web = latestTags(t, tags)
 	f := &fake{bins: map[string]bool{"bun": true, "jq": true, "codex": true, "fzf": true, "nightly": true}, answers: map[string]fakeAnswer{
 		"bun --version":     {out: "1.1.20\n"},
@@ -918,6 +921,7 @@ func TestParseVersionReadsTheFirstThingThatLooksLikeOne(t *testing.T) {
 // gets. pkg.overview then counted it among "N current".
 func TestAToolWhoseVersionCouldNotBeReadIsNotOk(t *testing.T) {
 	c := newRegistryClient()
+	c.tags = newTagCache(time.Now)
 	c.web = latestTags(t, map[string]string{"junegunn/fzf": "v0.55.0"})
 	// On $PATH, answering --version with something that holds no version:
 	// a wrapper script, a tool that prints only a commit hash, a binary
@@ -949,6 +953,7 @@ func TestAToolWhoseVersionCouldNotBeReadIsNotOk(t *testing.T) {
 // reads as unknown, which is what every other tool that cannot be read reads.
 func TestAToolIsNeverAskedForItsVersionTheSecondWay(t *testing.T) {
 	c := newRegistryClient()
+	c.tags = newTagCache(time.Now)
 	c.web = latestTags(t, map[string]string{"kubernetes/kubectl": "v1.31.0"})
 	f := &fake{bins: map[string]bool{"kubectl": true}, answers: map[string]fakeAnswer{
 		"kubectl --version": {code: 1, stderr: "error: unknown flag: --version\n"},

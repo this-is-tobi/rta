@@ -45,6 +45,7 @@ func TestAToolsListIsNeverAskedOfTheAPI(t *testing.T) {
 	defer api.Close()
 	c := newRegistryClient()
 	c.github = api.URL
+	c.tags = newTagCache(time.Now)
 	c.web = latestTags(t, map[string]string{"junegunn/fzf": "v0.55.0"})
 	f := &fake{bins: map[string]bool{"fzf": true}, answers: map[string]fakeAnswer{
 		"fzf --version": {out: "0.50.0\n"},
@@ -80,6 +81,7 @@ func TestALatestTagIsReadFromTheLink(t *testing.T) {
 			}))
 			defer srv.Close()
 			c := newRegistryClient()
+			c.tags = newTagCache(time.Now)
 			c.web = srv.URL
 			tag, found, verr := c.latestTag(context.Background(), "o", "r")
 			if verr != nil {
@@ -94,6 +96,7 @@ func TestALatestTagIsReadFromTheLink(t *testing.T) {
 
 func TestAnUnknownRepositoryHasNoRelease(t *testing.T) {
 	c := newRegistryClient()
+	c.tags = newTagCache(time.Now)
 	c.web = latestTags(t, nil)
 	if _, found, verr := c.latestTag(context.Background(), "no", "such"); verr != nil || found {
 		t.Errorf("latestTag = %v, %v; want no release and no error", found, verr)
@@ -117,6 +120,7 @@ func TestARenamedRepositoryIsFollowedToItsNewLink(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := newRegistryClient()
+	c.tags = newTagCache(time.Now)
 	c.web = srv.URL
 	tag, found, verr := c.latestTag(context.Background(), "old", "name")
 	if verr != nil || !found || tag != "v3.0.0" {
@@ -130,6 +134,7 @@ func TestARedirectLoopIsGivenUp(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := newRegistryClient()
+	c.tags = newTagCache(time.Now)
 	c.web = srv.URL
 	if _, found, verr := c.latestTag(context.Background(), "o", "r"); verr == nil || found || verr.Code != "pkg.registry.read" {
 		t.Errorf("latestTag = %v, %+v; want pkg.registry.read", found, verr)
@@ -157,6 +162,10 @@ func TestALinkThatLeavesTheHostOrCarriesAControlIsRefused(t *testing.T) {
 			}))
 			defer srv.Close()
 			c := newRegistryClient()
+			// A memory of its own: the process's is keyed by address, and a test
+			// server's port is one the kernel hands out again, so on Linux a test was
+			// answered "no release" from an earlier test's server on the same port.
+			c.tags = newTagCache(time.Now)
 			c.web = srv.URL
 			tag, found, verr := c.latestTag(context.Background(), "o", "r")
 			if verr == nil || found || tag != "" {
@@ -172,6 +181,7 @@ func TestAnAnsweredRefusalIsSaidWithItsRemedy(t *testing.T) {
 			w.WriteHeader(status)
 		}))
 		c := newRegistryClient()
+		c.tags = newTagCache(time.Now)
 		c.web = srv.URL
 		_, found, verr := c.latestTag(context.Background(), "o", "r")
 		srv.Close()
@@ -184,6 +194,7 @@ func TestAnAnsweredRefusalIsSaidWithItsRemedy(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := newRegistryClient()
+	c.tags = newTagCache(time.Now)
 	c.web = srv.URL
 	if _, _, verr := c.latestTag(context.Background(), "o", "r"); verr == nil || verr.Code != "pkg.registry.status" {
 		t.Errorf("a 502 gave %+v, want pkg.registry.status", verr)
