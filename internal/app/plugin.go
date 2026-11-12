@@ -17,6 +17,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -1159,7 +1160,8 @@ func registerDev(reg *registry.Registry, c *pluginhost.Client, stderr io.Writer)
 		notice := fmt.Sprintf("rta: %s is also installed (%s, %s); this run uses the plugin built "+
 			"from the directory instead", c.Declared.Name, displaced.Path, displaced.Short())
 		if displaced.Digest != origin.Digest {
-			SetPluginConfig(pluginConfig.Without(c.Declared.Name), pluginConfigProblem)
+			SetPluginConfig(pluginConfig.Without(c.Declared.Name),
+				pluginconf.InDevRun(pluginConfigProblem, c.Declared.Name, origin))
 			// What stops applying is said, since nothing else would: the
 			// section is dropped without a word, and a profile entry for the
 			// installed copy is refused as a stale pin in a run that never
@@ -1171,7 +1173,15 @@ func registerDev(reg *registry.Registry, c *pluginhost.Client, stderr io.Writer)
 				"named on the command line"
 		}
 		fmt.Fprintln(stderr, notice)
+		return nil
 	}
+	// Nothing answered to the namespace when the file was resolved, so a
+	// section the file gives it was set aside then as no plugin's, and a call
+	// of this build that failed said so of the plugin that had just answered
+	// (pluginconf.InDevRun). The section is not the build's either, and the
+	// problem now says that. Nothing else changes: what Without takes away is
+	// an installed copy's, and there is none.
+	SetPluginConfig(pluginConfig, pluginconf.InDevRun(pluginConfigProblem, c.Declared.Name, origin))
 	return nil
 }
 
