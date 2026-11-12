@@ -1467,8 +1467,12 @@ func emptyRoster(sf plugin.Surface, withGuard bool, opts rosterOpts, standing in
 	if withGuard {
 		head = "guard  " + guardLine(sf, nil, nil) + "\n\n"
 	}
+	// The agent named: an empty roster is most often a machine where no agent
+	// holds anything, which is where a grant naming none is refused
+	// (resolveAgent), and the line was the one that failed there.
 	allowOne := "Allow one with: " + sf.Call("grant.allow",
-		plugin.Arg{Name: "target", Value: plugin.Placeholder("capability"), Positional: true}, plugin.Arg{Name: "ttl", Value: "15m"})
+		plugin.Arg{Name: "target", Value: plugin.Placeholder("capability"), Positional: true},
+		plugin.Arg{Name: "agent", Value: plugin.Placeholder("agent")}, plugin.Arg{Name: "ttl", Value: "15m"})
 	// An empty list is the ordinary answer and a dropped file is not, so the
 	// difference has to be visible here: this is the one screen where
 	// somebody looking for a grant they issued will come looking for it.

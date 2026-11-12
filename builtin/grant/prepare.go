@@ -819,16 +819,26 @@ func nearestStandingTarget(typed, within string) string {
 // the two populations an operator could be thinking of, and a name from
 // either is one they have already used.
 //
+// The record does not fill a name in on its own, since a name from an old
+// session may be a client long gone, but it does make the guess a question.
+// Filled in from the first two alone, the guess went to the one agent holding a
+// grant while another had just been refused and was the one the operator was
+// answering: `grant allow kv.get prod/db/password` with no --agent issued the
+// password to codex, an agent that had never connected, because claude, whose
+// refusal it answered, held no grant. One known agent is the answer only when
+// the record has seen no other.
+//
 // sf is the surface asking, for the name its refusals give the agent input.
 func resolveAgent(sf plugin.Surface, asked string) (string, *view.Error) {
 	if agent := strings.TrimSpace(asked); agent != "" {
 		return agent, nil
 	}
 	known := knownAgents()
-	switch len(known) {
-	case 1:
+	seen := agentsSeen()
+	switch {
+	case len(known) == 1 && len(seen) == 1:
 		return known[0], nil
-	case 0:
+	case len(known) == 0:
 		// Not "no agent has connected": the log shows the ones that did, and
 		// told they never had, an operator whose agent called an hour ago and
 		// whose grant has since expired was sent looking for a name they had
@@ -836,7 +846,7 @@ func resolveAgent(sf plugin.Surface, asked string) (string, *view.Error) {
 		// grant, since a name from an old session may be a client long gone;
 		// the person asking can be shown them.
 		hint := "no agent is connected right now and none holds a grant"
-		if seen := loggedAgents(); len(seen) > 0 {
+		if len(seen) > 0 {
 			hint += " — the log has seen " + strings.Join(seen, ", ")
 		}
 		return "", view.Errorf("grant.noagent", "name the agent this is for, with %s", sf.InputName("agent")).
@@ -845,9 +855,9 @@ func resolveAgent(sf plugin.Surface, asked string) (string, *view.Error) {
 	default:
 		return "", view.Errorf("grant.whichagent",
 			"name the agent this is for, with %s — this machine knows %s",
-			sf.InputName("agent"), strings.Join(known, ", ")).
-			WithHint("a grant matches one agent exactly, so issuing it to the wrong one " +
-				"is a grant that silently authorizes nothing")
+			sf.InputName("agent"), strings.Join(seen, ", ")).
+			WithHint("a grant matches one agent exactly: issued to the wrong one, it lets that " +
+				"agent in and leaves the one that asked refused")
 	}
 }
 
