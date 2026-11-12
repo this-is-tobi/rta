@@ -56,6 +56,27 @@ Ask for the least you need. Every location you declare is one the operator has t
 
 `rta explain <capability>` prints the exact flag an operator would need. So does `rta plugin dev`, in its `Agents` column, which is the fastest way to check you classified something the way you meant to.
 
+## A credential goes to the host it was configured for
+
+A plugin that talks to a service over HTTP sends its credential with every request, and Go's `http.Client` follows a redirect unless told otherwise. On one that leaves the host it drops `Authorization` and cookies and sends every other header on, `X-Vault-Token`, an `api-key` or a `PRIVATE-TOKEN` included, to whatever host the answer names. A 301, 302 or 303 answering a write sends it again as a `GET` without its body, which your handler then reads as a write that succeeded. Give your client the SDK's policy:
+
+```go
+client := &http.Client{CheckRedirect: plugin.RedirectSameOrigin.CheckRedirect}
+```
+
+It follows a redirect within the address the operator gave, such as a base path or a trailing slash behind a reverse proxy, at most five times, and only one that keeps a write a write. Anything else is refused as a `*plugin.RedirectRefusal` saying why. Word it for your reader with the setting that holds the address, and a sentence of your product's own when it sends redirects for a reason a reader should know:
+
+```go
+var refusal *plugin.RedirectRefusal
+if errors.As(err, &refusal) {
+    return nil, refusal.Refusal(req, "weather", "url", "")
+}
+```
+
+The refusal is coded `weather.redirect.refused`. It names where the answer pointed without its path or query, which can carry a token, and says what to change: the address to give when the service moved, the `https://` one when a plain call was sent on to `https://`, the profile's connection when the call went through a forward. `plugin.RedirectNever` follows none, for a request whose signature binds the address it was sent to.
+
+When your plugin refuses a call for want of its credential, `plugin.CredentialSources(req, capability, input)` names where one goes the way this call reads it: the variable the host reads, which is the profile's own while a profile is in play and none for a labelled instance, the setting, and the store a profile maps from.
+
 ## What rta does to your process
 
 Worth knowing before you debug something surprising:
