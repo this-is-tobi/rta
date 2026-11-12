@@ -2,8 +2,10 @@ package pkg
 
 import (
 	"context"
+	"os/exec"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -56,6 +58,62 @@ func TestAnOfferedMacOSUpdateIsNotARebootOwed(t *testing.T) {
 			if rows[0][2] != "yes" || rows[1][2] != "no" {
 				t.Errorf("restarts = %q, %q; want yes for the one that restarts, no for the other", rows[0][2], rows[1][2])
 			}
+		}
+	}
+}
+
+// **macOS's own Ruby is not a package manager of the person's.** On one Mac,
+// 42 of the 60 packages the overview counted behind were the gems Apple's
+// Ruby 2.6 ships, each offered with a `gem update` that cannot write to the
+// system volume without sudo. Linux keeps its rows: a distribution's Ruby
+// can hold gems installed with --user-install.
+func TestMacOSOwnRubyIsNotAManagerOfYours(t *testing.T) {
+	for _, tc := range []struct {
+		goos, path string
+		owned      bool
+	}{
+		{"darwin", "/usr/bin/gem", true},
+		{"darwin", "/opt/homebrew/opt/ruby/bin/gem", false},
+		{"darwin", "/Users/someone/.local/share/mise/shims/gem", false},
+		{"linux", "/usr/bin/gem", false},
+	} {
+		if got := systemRuby(tc.goos)(tc.path) != ""; got != tc.owned {
+			t.Errorf("%s %s: owned by the OS = %v, want %v", tc.goos, tc.path, got, tc.owned)
+		}
+	}
+
+	f := &fake{bins: map[string]bool{"gem": true}, answers: map[string]fakeAnswer{
+		"gem --version": {out: "3.0.3.1\n"},
+		"gem outdated":  {out: "csv (3.0.9 < 3.3.7)\n"},
+	}}
+	install(t, f)
+	lookPath = func(name string) (string, error) {
+		if name == "gem" {
+			return "/usr/bin/gem", nil
+		}
+		return "", exec.ErrNotFound
+	}
+	if runtime.GOOS != "darwin" {
+		if len(detected()) != 1 {
+			t.Errorf("gem at /usr/bin on %s = %d managers, want it read", runtime.GOOS, len(detected()))
+		}
+		return
+	}
+	if len(detected()) != 0 {
+		t.Errorf("macOS's own gem was detected as a manager")
+	}
+	for _, row := range managersTable(context.Background()).Rows {
+		if row[0] == "gem" && !strings.HasPrefix(row[5], "skipped — macOS's own Ruby") {
+			t.Errorf("pkg.managers says gem is %q, want it skipped with the reason", row[5])
+		}
+	}
+	_, err := runUpgradeCapability(context.Background(), req(t, "pkg.upgrade", map[string]any{"target": "gem"}))
+	if ve := view.AsError(err, "x"); ve.Code != "pkg.manager.system" {
+		t.Errorf("upgrading macOS's own gem = %+v, want pkg.manager.system", ve)
+	}
+	for _, ran := range f.ran {
+		if ran == "gem outdated" {
+			t.Error("macOS's own gem was asked what is outdated")
 		}
 	}
 }

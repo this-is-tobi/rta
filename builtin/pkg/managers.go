@@ -51,7 +51,11 @@ func managersTable(ctx context.Context) view.Table {
 			t.Add(view.Plain(m.name), view.Plain(m.bin), view.Plain("-"), view.Plain("-"), view.Plain(root), view.Plain("absent"))
 			continue
 		}
-		t.Add(view.Plain(m.name), view.Plain(m.bin), view.Plain(path), view.Plain(managerVersion(ctx, m)), view.Plain(root), view.Plain("ok"))
+		status := "ok"
+		if why := m.osOwned(path); why != "" {
+			status = "skipped — " + why
+		}
+		t.Add(view.Plain(m.name), view.Plain(m.bin), view.Plain(path), view.Plain(managerVersion(ctx, m)), view.Plain(root), view.Plain(status))
 	}
 	t.Total = len(t.Rows)
 	return t

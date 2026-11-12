@@ -56,6 +56,19 @@ type manager struct {
 	// name when something about it needs saying — that it needs root, or
 	// that it cannot upgrade everything at once.
 	note string
+	// ownedByOS says why the manager found at path belongs to the operating
+	// system rather than to the person, and "" when it does not: such a
+	// manager is not asked what is behind, nor upgraded, and pkg.managers
+	// says why. nil for every manager but gem (see gemManager).
+	ownedByOS func(path string) string
+}
+
+// osOwned is why the manager found at path is the operating system's, or "".
+func (m manager) osOwned(path string) string {
+	if m.ownedByOS == nil {
+		return ""
+	}
+	return m.ownedByOS(path)
 }
 
 // managers is the inventory, in the order the table shows them: the OS's own
@@ -68,11 +81,12 @@ func managers() []manager {
 	}
 }
 
-// detected is every manager whose binary is on $PATH, in inventory order.
+// detected is every manager whose binary is on $PATH and is the person's, in
+// inventory order.
 func detected() []manager {
 	var out []manager
 	for _, m := range managers() {
-		if _, err := lookPath(m.bin); err == nil {
+		if p, err := lookPath(m.bin); err == nil && m.osOwned(p) == "" {
 			out = append(out, m)
 		}
 	}
