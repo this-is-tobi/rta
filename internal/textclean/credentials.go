@@ -3,6 +3,8 @@ package textclean
 import (
 	"regexp"
 	"strings"
+
+	"github.com/this-is-tobi/rta/internal/credname"
 )
 
 // Credentials masks what in a piece of text is a credential by its shape: the
@@ -27,8 +29,21 @@ func Credentials(s string) string {
 		return s
 	}
 	s = urlUserinfo.ReplaceAllString(s, "${1}"+Masked+"@")
-	s = secretParam.ReplaceAllString(s, "${1}"+Masked)
-	return secretHeader.ReplaceAllString(s, "${1}"+Masked)
+	s = maskNamed(s, queryParam, credname.Param)
+	return maskNamed(s, headerLine, credname.Header)
+}
+
+// maskNamed masks the value of every match of re whose name, re's second
+// group, is one a credential is kept under; the first group is everything
+// before the value, and stays.
+func maskNamed(s string, re *regexp.Regexp, credential func(string) bool) string {
+	return re.ReplaceAllStringFunc(s, func(m string) string {
+		sub := re.FindStringSubmatch(m)
+		if !credential(sub[2]) {
+			return m
+		}
+		return sub[1] + Masked
+	})
 }
 
 // Masked stands where a credential was.
@@ -102,16 +117,20 @@ var (
 	// last one (url.Parse reads it so).
 	urlUserinfo = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.\-]*://)[^/?#\s]*@`)
 
-	// A parameter whose name says it is one, in a query or a form body. The
+	// A parameter in a query or a form body, whose name is held to credname's
+	// list: the one the http dry run and the completion history read. This
+	// kept a list of its own, of exact names, and the sealed record wrote down
+	// the `?private_token=`, `?api_token=` and `?session=` the history forgot.
+	// The list matches words inside a name, so a `?tokenize=` loses its value
+	// too, which is the side to be wrong on in a record kept for good. The
 	// value ends where a URL does in prose — at a quote, a backtick, an angle
 	// or round bracket, a semicolon — so the quote that closes a command or a
 	// message around the URL is not taken with it.
-	secretParam = regexp.MustCompile(`(?i)([?&;](?:access[_-]?token|id[_-]?token|refresh[_-]?token|token|api[_-]?key|apikey|` +
-		`access[_-]?key|key|secret|client[_-]?secret|password|passwd|pwd|signature|sig|auth|` +
-		`x-amz-signature|x-amz-credential|x-amz-security-token)=)[^&#\s"'\x60<>);]*`)
+	queryParam = regexp.MustCompile(`([?&;]([^=&#?;\s"'\x60<>()]+)=)[^&#\s"'\x60<>);]*`)
 
-	// A header whose name says it carries one, at the start of a value or of a
-	// line: the value of every header in a list of them is one string.
-	secretHeader = regexp.MustCompile(`(?im)(^[ \t]*(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|` +
-		`x-auth-token|x-amz-security-token)[ \t]*:[ \t]*)[^\r\n]*`)
+	// A header at the start of a value or of a line, the value of every header
+	// in a list of them being one string, its name held to the same list:
+	// GitLab's PRIVATE-TOKEN, Vault's X-Vault-Token and Google's X-Goog-Api-Key
+	// were masked by the dry run and kept in clear by the record.
+	headerLine = regexp.MustCompile(`(?m)(^[ \t]*([!#$%&'*+.^_\x60|~0-9A-Za-z-]+)[ \t]*:[ \t]*)[^\r\n]*`)
 )
