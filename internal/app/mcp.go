@@ -725,9 +725,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// is the file as it is now, so an environment the operator
 				// edits takes effect without a restart — and the grant they
 				// issue against it is compared to the same connection it will
-				// reach. A read that fails answers the snapshot above, not no
-				// profiles: an empty set lifted the rule that keeps a call
-				// that names none off the base connection (mcp.Options.Reload).
+				// reach. A read that fails answers the last read that
+				// succeeded, not no profiles: an empty set lifted the rule
+				// that keeps a call that names none off the base connection
+				// (mcp.Options.Reload).
 				Reload: config.Load,
 				// The store, opened from this server's own environment and
 				// never by prompting. Wired here and not inside internal/mcp so
