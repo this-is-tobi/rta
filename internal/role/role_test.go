@@ -63,7 +63,7 @@ func write(t *testing.T, path, body string) {
 // operator's own from their config. Both are listed, and each says which.
 func TestRolesComeFromBothFilesAndSayWhich(t *testing.T) {
 	_, configDir, repo := isolate(t)
-	write(t, filepath.Join(repo, ".rta-policy.yaml"), "maxTTL: 8h\nroles:\n  dev:\n    ttl: 4h\n    grants:\n      - kv.get\n      - note.add\n")
+	write(t, filepath.Join(repo, ".rta-policy.yaml"), "max-ttl: 8h\nroles:\n  dev:\n    ttl: 4h\n    grants:\n      - kv.get\n      - note.add\n")
 	write(t, filepath.Join(configDir, "config.yaml"), "roles:\n  mine:\n    grants: [sys.load]\n")
 	all, verr := Available()
 	if verr != nil {

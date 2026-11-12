@@ -281,7 +281,7 @@ func TestRenewOfAPluginTakesEveryGrantInsideIt(t *testing.T) {
 // and never say the ceiling bit.
 func TestRenewIsCappedByTheTeamCeilingAndSaysSo(t *testing.T) {
 	setup(t)
-	withPolicy(t, "maxTTL: 20m\n")
+	withPolicy(t, "max-ttl: 20m\n")
 	now := time.Now()
 	if verr := core.Save([]core.Grant{{
 		Target: "kv.get", Scope: "db", Issued: now.Add(-10 * time.Minute), Expires: now.Add(5 * time.Minute), TTL: "15m",

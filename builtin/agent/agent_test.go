@@ -350,7 +350,7 @@ func TestAllowWithATTLOnAPluginCapabilityIssuesAGrantThatCoversTheNextCall(t *te
 // promised, with nothing saying so.
 func TestAllowWithATTLAppliesTheTeamCeilingAndSaysSo(t *testing.T) {
 	isolate(t)
-	withPolicy(t, "maxTTL: 15m\n")
+	withPolicy(t, "max-ttl: 15m\n")
 	r := park(t, "kv.get", "db-password")
 
 	v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "4h"})
@@ -408,12 +408,12 @@ func TestAllowIsRefusedWhenTheTeamCeilingForbidsTheTarget(t *testing.T) {
 
 // The team's ceiling holds a call by each record it names, as it holds a
 // grant. A call naming two — every kv.rename, whose destination is a record
-// too — was checked as naming none, so `requireScope: [kv.rename]` read the
+// too — was checked as naming none, so `require-scope: [kv.rename]` read the
 // answer as a grant naming no record and refused a call that named two.
 // A record the ceiling forbids still refuses the call, whichever it is.
 func TestAOneShotAllowHoldsEachRecordToTheCeiling(t *testing.T) {
 	isolate(t)
-	withPolicy(t, "requireScope:\n  - kv.rename\n")
+	withPolicy(t, "require-scope:\n  - kv.rename\n")
 	r := park(t, "kv.rename", "db-password", "db-password-old")
 	v, err := run(t, "agent.approve", map[string]any{"id": r.ID})
 	if err != nil {
@@ -423,7 +423,7 @@ func TestAOneShotAllowHoldsEachRecordToTheCeiling(t *testing.T) {
 		t.Errorf("answered %+v", pairs)
 	}
 
-	withPolicy(t, "neverProfile:\n  - prod\n")
+	withPolicy(t, "never-profile:\n  - prod\n")
 	p, err := consent.Ask(consent.Call{
 		Cap: "kv.rename", Safety: "write", Scopes: []string{"a", "b"}, Profile: "prod",
 		Args: map[string]any{"key": "a"}, Why: "no active grant",
@@ -443,7 +443,7 @@ func TestAOneShotAllowHoldsEachRecordToTheCeiling(t *testing.T) {
 // remote "yes" to its own policy, record by record, as it holds a local one.
 func TestARemoteAllowHoldsEachRecordToTheCeiling(t *testing.T) {
 	isolate(t)
-	withPolicy(t, "requireScope:\n  - kv.rename\n")
+	withPolicy(t, "require-scope:\n  - kv.rename\n")
 	p, err := consent.Ask(consent.Call{
 		Cap: "kv.rename", Safety: "write", Scopes: []string{"db-password", "db-password-old"}, Agent: "lab",
 		Args: map[string]any{"key": "db-password"}, Why: "no active grant",

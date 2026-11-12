@@ -79,8 +79,8 @@ func TestPolicyInitOverAnExistingFileIsACodedRefusal(t *testing.T) {
 // every axis: a five-minute cap, three targets nobody may be granted, a
 // connection nobody may name and a target that may only be granted for one
 // record.
-const teamCeiling = "maxTTL: 5m\nnever: [pg.dump, vault.snapshot, kv.get]\n" +
-	"neverProfile: [production]\nrequireScope: [kv.get]\n"
+const teamCeiling = "max-ttl: 5m\nnever: [pg.dump, vault.snapshot, kv.get]\n" +
+	"never-profile: [production]\nrequire-scope: [kv.get]\n"
 
 // writePolicyHere puts body where `rta policy init` looks, in the directory
 // the test is in.
@@ -121,8 +121,8 @@ func TestPolicyInitForceNeverWritesAStarterLooserThanTheCeilingThatStands(t *tes
 				if !errors.As(err, &ve) || ve.Code != "core.policy.loosens" {
 					t.Fatalf("err = %#v, want core.policy.loosens", err)
 				}
-				for _, axis := range []string{"maxTTL 5m would become 1h", "never: pg.dump, vault.snapshot, kv.get",
-					"neverProfile: production", "requireScope: kv.get"} {
+				for _, axis := range []string{"max-ttl 5m would become 1h", "never: pg.dump, vault.snapshot, kv.get",
+					"never-profile: production", "require-scope: kv.get"} {
 					if !strings.Contains(ve.Message, axis) {
 						t.Errorf("the refusal does not name %q: %s", axis, ve.Message)
 					}
@@ -147,7 +147,7 @@ func TestPolicyInitForceNeverWritesAStarterLooserThanTheCeilingThatStands(t *tes
 // what stands; with nobody there it is a refusal, and only --yes answers it
 // for a script.
 func TestPolicyInitForceAsksBeforeReplacingAFileThatIsNotTheStarter(t *testing.T) {
-	const looser = "# our cap\nmaxTTL: 2h\n"
+	const looser = "# our cap\nmax-ttl: 2h\n"
 
 	t.Run("without a terminal --force alone refuses", func(t *testing.T) {
 		t.Chdir(t.TempDir())
@@ -198,7 +198,7 @@ func TestPolicyInitForceAsksBeforeReplacingAFileThatIsNotTheStarter(t *testing.T
 		if len(*asked) != 1 || !strings.Contains((*asked)[0], "[y/N]") {
 			t.Errorf("asked %q, want one y/N question", *asked)
 		}
-		if !strings.Contains(errOut, "maxTTL") || !strings.Contains(errOut, "2h") || !strings.Contains(errOut, policy.RepoFile) {
+		if !strings.Contains(errOut, "max-ttl") || !strings.Contains(errOut, "2h") || !strings.Contains(errOut, policy.RepoFile) {
 			t.Errorf("the ceiling that stands was not shown before the question:\n%s", errOut)
 		}
 		if got := policyHere(t); got != looser {
@@ -314,8 +314,8 @@ func TestPolicyInitAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 	if err != nil || string(written) != starterPolicy {
 		t.Fatalf("wrote = %q, which does not hold the starter policy: %v", pairs["wrote"], err)
 	}
-	if !strings.Contains(pairs["ceiling"], "maxTTL "+starterTTL) || !strings.Contains(string(written), "\nmaxTTL: "+starterTTL+"\n") {
-		t.Errorf("ceiling = %q, want the maxTTL the file sets", pairs["ceiling"])
+	if !strings.Contains(pairs["ceiling"], "max-ttl "+starterTTL) || !strings.Contains(string(written), "\nmax-ttl: "+starterTTL+"\n") {
+		t.Errorf("ceiling = %q, want the max-ttl the file sets", pairs["ceiling"])
 	}
 	if !strings.Contains(pairs["next"], "rta policy require") {
 		t.Errorf("next = %q, want the command that makes the file required", pairs["next"])
@@ -345,7 +345,7 @@ func TestPolicyRequireAnswersWithAViewNamingWhetherThisDirectoryMeetsIt(t *testi
 		t.Fatalf("%v %q", err, errOut)
 	}
 	pairs := answerPairs(t, out)
-	if pairs["would write"] != own || pairs["requireRepoPolicy"] != "yes" || !strings.Contains(pairs["next"], "--dry-run") {
+	if pairs["would write"] != own || pairs["require-repo-policy"] != "yes" || !strings.Contains(pairs["next"], "--dry-run") {
 		t.Errorf("a dry run answered %v", pairs)
 	}
 	if _, err := os.Stat(own); !os.IsNotExist(err) {
@@ -357,7 +357,7 @@ func TestPolicyRequireAnswersWithAViewNamingWhetherThisDirectoryMeetsIt(t *testi
 		t.Fatalf("%v %q", err, errOut)
 	}
 	pairs = answerPairs(t, out)
-	if pairs["wrote"] != own || pairs["requireRepoPolicy"] != "yes" {
+	if pairs["wrote"] != own || pairs["require-repo-policy"] != "yes" {
 		t.Errorf("answered %v, want the file written and the setting it holds", pairs)
 	}
 	if here := pairs["this directory"]; !strings.Contains(here, "no "+policy.RepoFile+" found") {
@@ -367,7 +367,7 @@ func TestPolicyRequireAnswersWithAViewNamingWhetherThisDirectoryMeetsIt(t *testi
 		t.Errorf("next = %q, want the command that writes one", pairs["next"])
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, policy.RepoFile), []byte("maxTTL: 1h\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, policy.RepoFile), []byte("max-ttl: 1h\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	out, errOut, err = run("policy", "require", "-o", "json")
@@ -387,7 +387,7 @@ func TestPolicyRequireAnswersWithAViewNamingWhetherThisDirectoryMeetsIt(t *testi
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	readsOnATerminal(t, out, "wrote", "requireRepoPolicy", "next")
+	readsOnATerminal(t, out, "wrote", "require-repo-policy", "next")
 	if strings.Contains(out, "this directory") {
 		t.Errorf("turning the requirement off reported on this directory:\n%s", out)
 	}
@@ -406,10 +406,10 @@ func TestPolicyShowNamesOnlyTheRepositorysFilesAsTheRepositoryPolicy(t *testing.
 	if err := os.MkdirAll(filepath.Dir(own), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(own, []byte("maxTTL: 2h\n"), 0o600); err != nil {
+	if err := os.WriteFile(own, []byte("max-ttl: 2h\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, policy.RepoFile), []byte("maxTTL: 1h\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, policy.RepoFile), []byte("max-ttl: 1h\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	out, errOut, err := run("policy", "show", "-o", "json")

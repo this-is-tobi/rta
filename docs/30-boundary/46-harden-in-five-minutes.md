@@ -44,7 +44,7 @@ rta policy require
 rta policy show
 ```
 
-`policy init` writes a `.rta-policy.yaml` in this directory with `maxTTL: 1h`: no grant made under it stands longer, whatever it is asked for, and the file can only ever subtract, so it is safe to commit. `policy require` records, outside the repository, that a directory without one is a refusal and not a silence, which is the case a deleted file would otherwise slip through. `policy show` says what is in force and where rta looked. Add what your team never grants (`never: [pg.dump]`), the connections nobody names (`neverProfile: [production]`) and what may only be granted against one record (`requireScope: [kv.get]`). [Team policy](./50-team-policy.md) is the page.
+`policy init` writes a `.rta-policy.yaml` in this directory with `max-ttl: 1h`: no grant made under it stands longer, whatever it is asked for, and the file can only ever subtract, so it is safe to commit. `policy require` records, outside the repository, that a directory without one is a refusal and not a silence, which is the case a deleted file would otherwise slip through. `policy show` says what is in force and where rta looked. Add what your team never grants (`never: [pg.dump]`), the connections nobody names (`never-profile: [production]`) and what may only be granted against one record (`require-scope: [kv.get]`). [Team policy](./50-team-policy.md) is the page.
 
 ## 5. Keep grants small, and put a passphrase in front of them
 

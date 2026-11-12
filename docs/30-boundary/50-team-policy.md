@@ -4,13 +4,13 @@ A grant is one person's decision on one machine. A **policy** is the boundary th
 
 ```yaml
 # .rta-policy.yaml
-maxTTL: 15m
+max-ttl: 15m
 never:
   - pg.dump
   - vault.snapshot
-neverProfile:
+never-profile:
   - production
-requireScope:
+require-scope:
   - kv.get
 ```
 
@@ -51,12 +51,12 @@ rta policy require
 
 ```
 wrote              /home/you/.config/rta/policy.yaml
-requireRepoPolicy  yes
+require-repo-policy  yes
 this directory     has one: /home/you/project/.rta-policy.yaml
 next               a directory without one is refused, naming the directory rta searched from
 ```
 
-That writes `requireRepoPolicy: true` into **your own** policy file, beside your config and outside every repository, and says whether the directory you ran it in meets it — under `-o json` as well, as the `this directory` pair. From then on, a missing or empty `.rta-policy.yaml` is a refusal that names the directory rta searched:
+That writes `require-repo-policy: true` into **your own** policy file, beside your config and outside every repository, and says whether the directory you ran it in meets it — under `-o json` as well, as the `this directory` pair. From then on, a missing or empty `.rta-policy.yaml` is a refusal that names the directory rta searched:
 
 ```
 ERROR policy.repo.missing  no .rta-policy.yaml found from /home/you/project, and this machine requires one
@@ -74,8 +74,8 @@ Your own policy file is a policy file. Anything you put in it intersects with th
 
 ```yaml
 # ~/.config/rta/policy.yaml — yours, not the team's
-maxTTL: 1h
-neverProfile:
+max-ttl: 1h
+never-profile:
   - production
 ```
 
@@ -85,12 +85,12 @@ Now the repository can tighten those and cannot loosen them, and if `.rta-policy
 
 | Key | Effect |
 | --- | --- |
-| `maxTTL` | Caps how long any grant may stand. A `--ttl` above it is clamped, and the operator is told which rule did it |
+| `max-ttl` | Caps how long any grant may stand. A `--ttl` above it is clamped, and the operator is told which rule did it |
 | `never` | Targets — capability IDs or plugin names — that may not be granted at all |
-| `neverProfile` | Connections no grant may name. The blunt instrument for "not production, ever" |
-| `requireScope` | Targets that may only be granted against a named record, never wholesale |
+| `never-profile` | Connections no grant may name. The blunt instrument for "not production, ever" |
+| `require-scope` | Targets that may only be granted against a named record, never wholesale |
 
-`requireScope` is the subtle one and the most useful. `rta grant allow kv.get` covers the entire store; `rta grant allow kv.get db-password` covers one key. Listing `kv.get` under `requireScope` makes the first form an error, so a hurried grant cannot accidentally be the broad one.
+`require-scope` is the subtle one and the most useful. `rta grant allow kv.get` covers the entire store; `rta grant allow kv.get db-password` covers one key. Listing `kv.get` under `require-scope` makes the first form an error, so a hurried grant cannot accidentally be the broad one.
 
 ## Roles: what a session issues
 
@@ -105,7 +105,7 @@ roles:
       - pg.query --profile staging
 ```
 
-`rta grant issue dev --agent claude` issues every line, under one passphrase, and every line is capped by the ceiling above it — a role cannot exceed the policy it sits in, by construction; `rta grant roles` says what window each role will really get under it, since the starter file's one-hour `maxTTL` caps an eight-hour role to one. See [roles](./35-roles-consent-and-the-guard.md#roles-a-day-of-grants-under-one-word) for the commands.
+`rta grant issue dev --agent claude` issues every line, under one passphrase, and every line is capped by the ceiling above it — a role cannot exceed the policy it sits in, by construction; `rta grant roles` says what window each role will really get under it, since the starter file's one-hour `max-ttl` caps an eight-hour role to one. See [roles](./35-roles-consent-and-the-guard.md#roles-a-day-of-grants-under-one-word) for the commands.
 
 This is the one block in the file that a hostile edit could use to widen something rather than narrow it: not by granting — nothing here grants — but by changing the list a person issues with one word. So a role from this file is issued at the command line only: `grant issue` prints the lines before the guard's passphrase asks for them, and with the guard off it wants `--yes`, after `rta grant roles <name>`. A role in your own config or policy file, or in a file you named with `RTA_POLICY`, asks nothing extra. The same name in two files is refused, not resolved by precedence. And a key the file does not have — `nevr:` for `never:` — refuses the whole file rather than silently dropping a bound.
 
@@ -118,10 +118,10 @@ Three sources, all optional, and **every one that is found intersects** — none
 3. `.rta-policy.yaml`, walking up from the working directory.
 
 ```
-repo/.rta-policy.yaml          maxTTL: 15m   never: [pg.dump]
-repo/services/api/.rta-policy.yaml   maxTTL: 24h   never: [vault.snapshot]
+repo/.rta-policy.yaml          max-ttl: 15m   never: [pg.dump]
+repo/services/api/.rta-policy.yaml   max-ttl: 24h   never: [vault.snapshot]
 
-  → effective:  maxTTL 15m,  never: [pg.dump, vault.snapshot]
+  → effective:  max-ttl 15m,  never: [pg.dump, vault.snapshot]
 ```
 
 A subdirectory may tighten and must not loosen. The inner file's `24h` is ignored because it is looser; its extra prohibition is honoured because it is tighter. Strictest wins on every axis, which needs no separate mechanism — it is the subtract-only property again.
@@ -161,7 +161,7 @@ rta policy require     # and this machine now refuses to run without one
 rta policy show        # what is in force, and where rta looked
 ```
 
-`policy init` writes all four axes with one active, so tightening it later is an edit rather than a trip back to this page. Commit it. It does not write over a file that is there: `--force` replaces one with the starter, but never one the starter would loosen, which is a cap shorter than an hour or anything in `never`, `neverProfile` or `requireScope`, and the refusal names the axes. Loosening a ceiling on purpose is an edit of the file. A file the starter keeps every bound of is shown to you and you are asked first; with no terminal to ask at, `--yes` answers for a script.
+`policy init` writes all four axes with one active, so tightening it later is an edit rather than a trip back to this page. Commit it. It does not write over a file that is there: `--force` replaces one with the starter, but never one the starter would loosen, which is a cap shorter than an hour or anything in `never`, `never-profile` or `require-scope`, and the refusal names the axes. Loosening a ceiling on purpose is an edit of the file. A file the starter keeps every bound of is shown to you and you are asked first; with no terminal to ask at, `--yes` answers for a script.
 
 ## Checking what is in force
 
@@ -173,9 +173,9 @@ rta policy show
 searched from      /home/you/project
 repository policy  /home/you/project/.rta-policy.yaml
 your own policy    /home/you/.config/rta/policy.yaml
-maxTTL             15m
+max-ttl             15m
 never              pg.dump, vault.snapshot
-requireRepoPolicy  yes
+require-repo-policy  yes
 ```
 
 `rta doctor` carries the same fact in one line — **including when there is nothing in force**, which is the case that needs saying:
@@ -209,7 +209,7 @@ If that line reads `none in force`, the policy you committed is not the one boun
 
 **It is not [RBAC](../95-reference/10-glossary.md#acronyms).** There are no subjects and no allow rules, and that is a deliberate refusal: a role here is a list a person issues, under the ceiling, never a rule that grants. A policy engine that can grant has to be trusted, distributed and verified; one that can only refuse needs none of that. The cost is that it cannot express "these five people may do this" — and the benefit is everything in the table at the top of this page.
 
-**It is not a control over a machine somebody else owns.** An operator owns their binary, their config and their filesystem, so they can always unset `requireRepoPolicy` and delete the file. Saying so is the point rather than a caveat: a bound that reports itself without being enforced is worse than no bound at all.
+**It is not a control over a machine somebody else owns.** An operator owns their binary, their config and their filesystem, so they can always unset `require-repo-policy` and delete the file. Saying so is the point rather than a caveat: a bound that reports itself without being enforced is worse than no bound at all.
 
 What all of this defends against is the failure teams actually have — the 3am "allow everything for twenty-four hours so it stops failing", and the quieter version where a ceiling somebody committed months ago stopped applying and nobody noticed. Neither of those is an attacker. Both of them are Tuesday.
 

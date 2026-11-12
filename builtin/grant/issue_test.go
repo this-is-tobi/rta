@@ -297,7 +297,7 @@ func TestARoleFromAFileTheOperatorNamedIsTheirs(t *testing.T) {
 
 func TestRolesSayTheWindowEachWillReallyGet(t *testing.T) {
 	configDir, repo := roleSetup(t)
-	teamPolicy(t, repo, "maxTTL: 1h\n")
+	teamPolicy(t, repo, "max-ttl: 1h\n")
 	ownRole(t, configDir, "  dev:\n    ttl: 8h\n    grants: [kv.env]\n  quick:\n    ttl: 30m\n    grants: [kv.env]\n")
 	v := run(t, rolesH, nil)
 	rows := v.(view.Table).Rows

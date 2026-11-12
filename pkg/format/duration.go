@@ -14,7 +14,7 @@ import (
 // a tile's pace, an agent's JSON. "30s", "5m", "2h", "1d", "1w", "1h30m".
 //
 // **One, because the same sentence had to be learned again in every place.** A
-// profile's `ttl:`, a role's, a grant's `--ttl` and a policy's `maxTTL` were read
+// profile's `ttl:`, a role's, a grant's `--ttl` and a policy's `max-ttl` were read
 // by Go's time.ParseDuration, which has no day, so `ttl: 1d` was refused in a
 // config file where `rta lock add --ttl 1d` and a Duration input took it, and a
 // grant told the person who typed `1d` that "there is no day unit". A rule that

@@ -241,7 +241,7 @@ func TestAnEnvironmentWithTwoInstancesOfAPluginListsBoth(t *testing.T) {
 // would make the ceiling a reason not to use the command.
 func TestACapabilityTheCeilingForbidsIsSkippedAndNamed(t *testing.T) {
 	_, repo := envSetup(t)
-	teamPolicy(t, repo, "never: [db.query]\nneverProfile: [staging/analytics]\nrequireScope: [vault.get]\n")
+	teamPolicy(t, repo, "never: [db.query]\nnever-profile: [staging/analytics]\nrequire-scope: [vault.get]\n")
 
 	s := bundleIssue(t, map[string]any{"profile": "staging", "safety": "write"})
 	r := receipt(s)
@@ -274,7 +274,7 @@ func TestACapabilityTheCeilingForbidsIsSkippedAndNamed(t *testing.T) {
 // Refused only when nothing is left, and then with the ceiling's own words.
 func TestABundleTheCeilingForbidsEntirelyIsRefused(t *testing.T) {
 	for name, body := range map[string]string{
-		"the environment":   "neverProfile: [staging]\n",
+		"the environment":   "never-profile: [staging]\n",
 		"both its plugins":  "never: [db, vault]\n",
 		"everything it has": "never: [db.query, db.status, vault.list]\n",
 	} {
@@ -524,7 +524,7 @@ func TestWithNoBoundTheReceiptStillSaysWhatTheyWouldBind(t *testing.T) {
 // The ceiling's clamp is one fact about the whole bundle, said once.
 func TestACappedWindowIsSaidOnceNotOncePerRow(t *testing.T) {
 	_, repo := envSetup(t)
-	teamPolicy(t, repo, "maxTTL: 1h\n")
+	teamPolicy(t, repo, "max-ttl: 1h\n")
 	r := receipt(bundleIssue(t, map[string]any{"profile": "staging"}))
 	if got := pair(r, "note"); strings.Count(got, "capped at 1h by your team's policy") != 1 {
 		t.Errorf("note = %q, want the clamp said once", got)

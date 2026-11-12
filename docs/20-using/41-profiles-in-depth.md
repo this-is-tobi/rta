@@ -39,7 +39,7 @@ The resolution rules are small and fail closed:
 
 Two things follow from an instance being *one connection*:
 
-- **Grants name exactly one.** `rta grant allow pg.query --profile staging/analytics` consents to the analytics database and nothing else; asking for a bare `--profile staging` when several pg instances exist is refused with the same list, because "analytics, not the main database" is precisely the decision consent is recording. A policy `neverProfile: [prod]` covers every instance inside prod. `rta use staging` still switches — and bounds — the whole environment, instances included.
+- **Grants name exactly one.** `rta grant allow pg.query --profile staging/analytics` consents to the analytics database and nothing else; asking for a bare `--profile staging` when several pg instances exist is refused with the same list, because "analytics, not the main database" is precisely the decision consent is recording. A policy `never-profile: [prod]` covers every instance inside prod. `rta use staging` still switches — and bounds — the whole environment, instances included.
 - **A labeled instance's credentials come from `secrets:` references** (`kv:` or `kube:`), not from `RTA_PROFILE_*` variables — that channel belongs to the default instance only, because a variable name for `staging/analytics` would be forgeable by a carefully-named profile.
 
 ## What a fence holds, exactly

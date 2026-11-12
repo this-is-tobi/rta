@@ -15,7 +15,7 @@ func TestDoctorSaysTheWindowARoleWillReallyGet(t *testing.T) {
 	repo := t.TempDir()
 	t.Setenv("RTA_POLICY", "")
 	t.Chdir(repo)
-	if err := os.WriteFile(filepath.Join(repo, ".rta-policy.yaml"), []byte("maxTTL: 1h\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".rta-policy.yaml"), []byte("max-ttl: 1h\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte("roles:\n  dev:\n    ttl: 8h\n    grants: [kv.get]\n"), 0o600); err != nil {

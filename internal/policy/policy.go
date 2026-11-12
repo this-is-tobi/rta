@@ -33,7 +33,7 @@ package policy
 
 import (
 	"fmt"
-	"github.com/this-is-tobi/rta/pkg/format"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,7 +44,9 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/yamlguard"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -70,19 +72,19 @@ type Ceiling struct {
 	// than over it: this can only bring the day down.
 	MaxTTL time.Duration `yaml:"-"`
 	// RawTTL is what the file said, kept for the refusal to quote back.
-	RawTTL string `yaml:"maxTTL,omitempty"`
+	RawTTL string `yaml:"max-ttl,omitempty"`
 	// Never lists targets — capability IDs or plugin names — that may not be
 	// granted at all. `pg.dump` on a team that has decided a whole-database
 	// dump is never an agent's business.
 	Never []string `yaml:"never,omitempty"`
 	// NeverProfile lists connections no grant may name. The blunt instrument
 	// for "agents do not touch production", and blunt is the point.
-	NeverProfile []string `yaml:"neverProfile,omitempty"`
+	NeverProfile []string `yaml:"never-profile,omitempty"`
 	// RequireScope lists targets that may only be granted against a named
 	// record. This is the "every secret at once" grant, refused: `kv.get`
 	// with no scope authorizes the whole store, which is exactly the pressure
 	// folder scopes exist to relieve.
-	RequireScope []string `yaml:"requireScope,omitempty"`
+	RequireScope []string `yaml:"require-scope,omitempty"`
 	// RequireRepo says a repository policy must have been found, and is the
 	// answer to the one attack the subtract-only property does not cover.
 	//
@@ -103,7 +105,7 @@ type Ceiling struct {
 	//
 	// It only ever causes more refusals, so it keeps the property that makes
 	// the rest of this package safe.
-	RequireRepo bool `yaml:"requireRepoPolicy,omitempty"`
+	RequireRepo bool `yaml:"require-repo-policy,omitempty"`
 	// RawRoles is the file's `roles:` block; Roles is the same list with
 	// each role naming its file, which is what a session shows before it
 	// issues one. Not a ceiling axis and not an allow key: a role grants
@@ -136,10 +138,40 @@ type Ceiling struct {
 // Empty reports whether this ceiling constrains nothing, which is the answer
 // on a machine with no policy file — and the answer that must leave every
 // existing behaviour exactly as it was.
+// respelled are the keys a policy file once spelled in camelCase, by their
+// spelling now: every key rta reads is kebab-case. Wording only — a file still
+// stating one is refused like any key nothing reads, since the bound it carried
+// would otherwise be gone — and deleted once nobody holds the old spelling.
+var respelled = map[string]string{
+	"maxTTL": "max-ttl", "neverProfile": "never-profile", "requireScope": "require-scope",
+	"requireRepoPolicy": "require-repo-policy",
+}
+
+// unknownKey refuses a policy file stating key, which no policy reads, naming
+// the spelling it has now or the key it was likely meant as.
+//
+// **A respelled key is a team's to change together.** The policy file is the
+// one settings file a team commits, and an rta that reads one spelling refuses
+// the other, so the hint says so rather than letting one member's upgrade read
+// as the file breaking.
+func unknownKey(path, key string) *view.Error {
+	refusal := view.Errorf("policy.unknownkey", "%s: %q is not a key a policy file has", path, key)
+	if now, ok := respelled[key]; ok {
+		return refusal.WithHint("`" + key + "` is spelled `" + now + "` now, like every key rta reads; a team that " +
+			"shares this file upgrades rta together, since an rta that reads one spelling refuses the other")
+	}
+	hint := "max-ttl, never, never-profile, require-scope, require-repo-policy, roles — a key rta does not read " +
+		"would be a bound that is not there"
+	if guess := near.Word(key, slices.Sorted(maps.Keys(policyKeys))); guess != "" {
+		hint = "did you mean `" + guess + "`? " + hint
+	}
+	return refusal.WithHint(hint)
+}
+
 // policyKeys is every top-level key a policy file may carry.
 var policyKeys = map[string]bool{
-	"maxTTL": true, "never": true, "neverProfile": true, "requireScope": true,
-	"requireRepoPolicy": true, "roles": true,
+	"max-ttl": true, "never": true, "never-profile": true, "require-scope": true,
+	"require-repo-policy": true, "roles": true,
 }
 
 // NamedRole is one role and the file it came from. Team says the file was
@@ -191,7 +223,7 @@ func (c Ceiling) Forbids(target, scope, profile string) string {
 	if profile != "" {
 		for _, p := range c.NeverProfile {
 			// A ceiling naming an environment covers every instance inside
-			// it: `neverProfile: [prod]` must forbid `prod/analytics`, or
+			// it: `never-profile: [prod]` must forbid `prod/analytics`, or
 			// the ceiling is bypassable by one slash. The exact match stays
 			// first so a ceiling may also name a single instance.
 			if p == profile || p == config.RefName(profile) {
@@ -203,7 +235,7 @@ func (c Ceiling) Forbids(target, scope, profile string) string {
 		for _, t := range c.RequireScope {
 			// Same containment in both directions as Never above: a
 			// namespace grant on "kv" reaches "kv.get", so
-			// `requireScope: [kv.get]` must forbid the unscoped namespace
+			// `require-scope: [kv.get]` must forbid the unscoped namespace
 			// grant too, not only an unscoped "kv.get" grant.
 			if t == target || t == plugin.Namespace(target) || plugin.Namespace(t) == target {
 				return fmt.Sprintf("a grant on %q must name a record", t)
@@ -309,8 +341,8 @@ func Load() (Ceiling, *view.Error) {
 		return out, view.Errorf("policy.repo.empty",
 			"the %s found from %s constrains nothing, and this machine requires a ceiling",
 			RepoFile, start).
-			WithHint("a policy file holding no limits is not a ceiling — set maxTTL, never, " +
-				"neverProfile or requireScope in it, or unset requireRepoPolicy in your own " +
+			WithHint("a policy file holding no limits is not a ceiling — set max-ttl, never, " +
+				"never-profile or require-scope in it, or unset require-repo-policy in your own " +
 				"policy file")
 	}
 	if requireRepo && len(repo) == 0 {
@@ -323,7 +355,7 @@ func Load() (Ceiling, *view.Error) {
 			"no %s found from %s, and this machine requires one", RepoFile, start).
 			WithHint("either you are not in the repository you meant to be in — an MCP client " +
 				"launches rta from a directory it chooses, not one you do — or the file was " +
-				"removed. `rta policy show` says where rta looked; unset requireRepoPolicy in " +
+				"removed. `rta policy show` says where rta looked; unset require-repo-policy in " +
 				"your own policy file if this machine no longer needs one")
 	}
 	return out, nil
@@ -335,7 +367,7 @@ func Load() (Ceiling, *view.Error) {
 // directly, because RTA_CONFIG moves the config and this used not to follow
 // it. On a default install the two are identical; on a portable or managed
 // setup they were not, so "beside their config" was false in exactly the
-// deployments most likely to be relying on a policy — and requireRepoPolicy
+// deployments most likely to be relying on a policy — and require-repo-policy
 // set there would have been written to a file rta never reads.
 func OperatorPath() string {
 	dir := filepath.Dir(config.Path())
@@ -406,23 +438,21 @@ func Parse(path string, data []byte) (Ceiling, *view.Error) {
 	// unrecognised key without a word, and here that is the one failure
 	// this package exists to prevent: `nevr:` for `never:` deleted a bound
 	// while the file still looked like it constrained — the vanishing
-	// ceiling requireRepoPolicy was written against, arriving by typo. A
+	// ceiling require-repo-policy was written against, arriving by typo. A
 	// file with a stray key refuses every gated call until fixed, which is
 	// loud, local and recoverable.
 	var raw map[string]any
 	_ = yaml.Unmarshal(data, &raw)
-	for key := range raw {
+	for _, key := range slices.Sorted(maps.Keys(raw)) {
 		if !policyKeys[key] {
-			return Ceiling{}, view.Errorf("policy.unknownkey", "%s: %q is not a key a policy file has", path, key).
-				WithHint("maxTTL, never, neverProfile, requireScope, requireRepoPolicy, roles — a key rta does not read " +
-					"would be a bound that is not there")
+			return Ceiling{}, unknownKey(path, key)
 		}
 	}
 	if c.RawTTL != "" {
 		d, err := format.ParseDuration(c.RawTTL)
 		if err != nil || d <= 0 {
 			return Ceiling{}, view.Errorf("policy.badttl",
-				"%s: maxTTL %q is not a duration", path, c.RawTTL).
+				"%s: max-ttl %q is not a duration", path, c.RawTTL).
 				WithHint("15m, 1h, 30s")
 		}
 		c.MaxTTL = d
@@ -458,7 +488,7 @@ func Parse(path string, data []byte) (Ceiling, *view.Error) {
 // plugin covers every capability in it, and one naming a connection covers
 // each of its instances, so `pg` kept in place of `pg.dump` loosens nothing
 // and `pg.dump` kept in place of `pg` loosens the rest of the plugin.
-// requireRepoPolicy and roles are not compared: the first is honoured only
+// require-repo-policy and roles are not compared: the first is honoured only
 // from the operator's own file, and a role grants nothing by being written.
 func Loosens(standing, next Ceiling) []string {
 	var out []string
@@ -467,7 +497,7 @@ func Loosens(standing, next Ceiling) []string {
 		if next.MaxTTL > 0 {
 			to = format.Duration(next.MaxTTL)
 		}
-		out = append(out, fmt.Sprintf("maxTTL %s would become %s", format.Duration(standing.MaxTTL), to))
+		out = append(out, fmt.Sprintf("max-ttl %s would become %s", format.Duration(standing.MaxTTL), to))
 	}
 	targetCovers := func(kept, dropped string) bool {
 		return kept == dropped || kept == plugin.Namespace(dropped)
@@ -481,8 +511,8 @@ func Loosens(standing, next Ceiling) []string {
 		covers            func(kept, dropped string) bool
 	}{
 		{"never", "would be grantable", standing.Never, next.Never, targetCovers},
-		{"neverProfile", "could be named by a grant", standing.NeverProfile, next.NeverProfile, profileCovers},
-		{"requireScope", "could be granted without naming a record", standing.RequireScope, next.RequireScope, targetCovers},
+		{"never-profile", "could be named by a grant", standing.NeverProfile, next.NeverProfile, profileCovers},
+		{"require-scope", "could be granted without naming a record", standing.RequireScope, next.RequireScope, targetCovers},
 	} {
 		var dropped []string
 		for _, s := range axis.standing {
