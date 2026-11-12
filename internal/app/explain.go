@@ -427,6 +427,13 @@ func oneOf(c plugin.Capability, name string) string {
 // source. The way on is spelled as the command rather than the config key,
 // because the command is what a person can type from here.
 func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
+	// A capability that reveals a stored value is above Read for the value it
+	// hands over, not for a change it makes: kv.get's card said "reveals …
+	// nothing is changed" and then "this mutates" a few lines down.
+	if c.Safety != plugin.Read && c.Reveals {
+		return view.Pair{Key: "dashboard",
+			Value: "never a tile — a tile runs on a timer with no confirmation, and this reveals a stored value"}
+	}
 	if c.Safety != plugin.Read {
 		return view.Pair{Key: "dashboard",
 			Value: "never a tile — a tile runs on a timer with no confirmation, and this mutates"}

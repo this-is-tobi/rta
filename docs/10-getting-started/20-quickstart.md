@@ -131,7 +131,13 @@ Answer it yourself, in your own terminal. An agent cannot answer for itself, and
 rta agent approve 0a5df861
 ```
 
+It shows you the call first and asks; `y` releases it:
+
 ```
+note.add — claude asked 35 seconds ago
+  arguments   title="remember the milk"
+  would do    no preview — a write call, so the capability and arguments above are all of it
+Approve once? [y/N] y
 approved  note.add
 for       this call only
 ```

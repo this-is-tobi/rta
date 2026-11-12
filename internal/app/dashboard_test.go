@@ -277,6 +277,25 @@ func TestDashboardAddRefusesWhatATileCannotBe(t *testing.T) {
 // credential, and no profile fills it. Refused as it was before, with a hint
 // that does not send the reader to a `--set` refusing the same thing, and
 // the card no longer offers the command.
+// A capability that reveals a stored value is kept off the dashboard for what it
+// hands over, and its card says that: kv.get's said "nothing is changed" and
+// then "this mutates". One that changes something says it mutates.
+func TestTheCardSaysWhyARevealIsNeverATile(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{"kv.get": "reveals a stored value", "kv.rm": "mutates"} {
+		c, ok := reg.Capability(id)
+		if !ok {
+			t.Fatalf("no %s in the built-ins", id)
+		}
+		if got := dashboardRow(reg, c).Value; !strings.HasSuffix(got, want) {
+			t.Errorf("%s: card says %q, want it to end %q", id, got, want)
+		}
+	}
+}
+
 func TestDashboardAddRefusesACredentialATileCannotBeGiven(t *testing.T) {
 	reg, err := NewRegistry()
 	if err != nil {
