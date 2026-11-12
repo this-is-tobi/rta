@@ -1216,8 +1216,12 @@ func logColumns(shown []agentlog.Entry, terse, detail bool) []logColumn {
 			func(e agentlog.Entry, _ string) string { return resultPhrase(e) }})
 	}
 
+	// The rows a log shipper reads, so each field has one spelling of nothing,
+	// the em dash the roster gives a name nobody set, and seq is a number: the
+	// shipping recipe's `jq '.records[]'` met "—" in two fields, "" in profile
+	// and "-" in revealed, and a seq of "1" it had to cast before comparing.
 	cols := []logColumn{
-		{view.Column{Name: "seq"}, func(e agentlog.Entry, _ string) string { return strconv.FormatInt(e.Seq, 10) }},
+		{view.Column{Name: "seq", Kind: view.KindNumber}, func(e agentlog.Entry, _ string) string { return strconv.FormatInt(e.Seq, 10) }},
 		atUTC, capability, agent,
 	}
 	// What the client called itself, beside the name the operator gave it: the
@@ -1236,7 +1240,7 @@ func logColumns(shown []agentlog.Entry, terse, detail bool) []logColumn {
 		// there as the bare one.
 		record,
 		logColumn{view.Column{Name: "arguments"}, func(e agentlog.Entry, _ string) string { return argsLine(e.Args) }},
-		logColumn{view.Column{Name: "profile"}, func(e agentlog.Entry, _ string) string { return e.Profile }},
+		logColumn{view.Column{Name: "profile"}, func(e agentlog.Entry, _ string) string { return dashed(e.Profile) }},
 		logColumn{view.Column{Name: "outcome", Kind: view.KindStatus},
 			func(e agentlog.Entry, _ string) string { return string(e.Outcome) }},
 		logColumn{view.Column{Name: "authorized"}, func(e agentlog.Entry, _ string) string { return string(e.Auth) }},
@@ -1245,7 +1249,7 @@ func logColumns(shown []agentlog.Entry, terse, detail bool) []logColumn {
 			if e.Revealed {
 				return "yes"
 			}
-			return "-"
+			return "no"
 		}},
 		// New rows carry the code exactly, which is the cell a shipped copy of
 		// this table gets matched on; old rows keep their glued "code: message"
