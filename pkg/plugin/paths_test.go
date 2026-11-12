@@ -32,6 +32,28 @@ func TestExpandHomeResolvesOnlyALeadingTilde(t *testing.T) {
 	}
 }
 
+// ShortHome is ExpandHome's inverse, and only for a path that is the home or
+// under it. audit.agents' copy took any path that began with the home's
+// letters: /home/tobi-work beside a home of /home/tobi became ~-work, and a
+// home of /, which Docker gives a --user with no passwd entry, put ~ in front
+// of every absolute path, ~usr/local/bin/rta.
+func TestShortHomeSpellsOnlyTheHomeAndWhatIsUnderItWithATilde(t *testing.T) {
+	for _, tc := range []struct{ path, home, want string }{
+		{"/home/tobi/.mcp.json", "/home/tobi", "~/.mcp.json"},
+		{"/home/tobi", "/home/tobi", "~"},
+		{"/home/tobi/x", "/home/tobi/", "~/x"},
+		{"/home/tobi-work/.mcp.json", "/home/tobi", "/home/tobi-work/.mcp.json"},
+		{"/home/tobiias/x", "/home/tobi", "/home/tobiias/x"},
+		{"/usr/local/bin/rta", "/", "/usr/local/bin/rta"},
+		{"/home/tobi/x", "", "/home/tobi/x"},
+		{"relative/x", "/home/tobi", "relative/x"},
+	} {
+		if got := ShortHome(tc.path, tc.home); got != tc.want {
+			t.Errorf("ShortHome(%q, %q) = %q, want %q", tc.path, tc.home, got, tc.want)
+		}
+	}
+}
+
 // AbsPath is ExpandHome made absolute: a relative path names the file under
 // the working directory, a ~ one the file under the home, and an absolute
 // one itself, cleaned.
