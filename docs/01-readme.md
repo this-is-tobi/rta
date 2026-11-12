@@ -1,4 +1,4 @@
-# Start here
+# RTA :ring:
 
 **RTA**, short for *Rule Them All* and written `rta` on the command line, is one binary over the tools you already juggle: databases, object storage, secrets, networking, certificates, host telemetry, HTTP APIs. Every capability is written once and rendered on three surfaces: a scriptable CLI, an interactive TUI, and an [MCP](./95-reference/10-glossary.md#acronyms) server for AI agents.
 

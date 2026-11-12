@@ -186,7 +186,7 @@ The rows that need you come first (`error`, then `warn`, then `info`, then `ok`)
 | Add postgres, S3, Vault, Kubernetes | [Using plugins](../40-plugins/10-plugins.md) |
 | See it all working together | [Recipes](../90-recipes/01-readme.md) |
 | Start from your job rather than a feature | [For a security team](../90-recipes/10-for-security-teams.md) · [For a developer](../90-recipes/20-for-developers.md) |
-| See every track laid out | [Start here](../01-readme.md) |
+| See every track laid out | [Introduction](../01-readme.md) |
 
 ## Next
 

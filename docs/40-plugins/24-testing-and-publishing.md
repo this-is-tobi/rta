@@ -186,4 +186,4 @@ Install is where claims meet evidence: rta fetches the artifact, hashes it, laun
 
 ## Next
 
-[Start here](../01-readme.md) — pick another track.
+[Introduction](../01-readme.md) — pick another track.
