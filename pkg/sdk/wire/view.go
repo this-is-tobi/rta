@@ -186,6 +186,7 @@ func ErrorToProto(e *view.Error) *rtav1.Error {
 		Refusal:   e.Refusal,
 		Advisory:  e.Advisory,
 		Input:     e.Input,
+		Presented: e.Presented,
 	}
 }
 
@@ -202,6 +203,7 @@ func ErrorFromProto(e *rtav1.Error) *view.Error {
 		Refusal:   e.GetRefusal(),
 		Advisory:  e.GetAdvisory(),
 		Input:     e.GetInput(),
+		Presented: e.GetPresented(),
 	}
 }
 

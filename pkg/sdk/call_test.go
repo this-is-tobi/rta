@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -145,7 +146,7 @@ func TestAFailureWithNothingInItCrossesCodedAndWorded(t *testing.T) {
 					before, what, *got, code, message, tc.hint)
 			}
 		}
-		if *returned != before {
+		if !reflect.DeepEqual(*returned, before) {
 			t.Errorf("the handler's own error was changed to %+v", *returned)
 		}
 	}
@@ -260,6 +261,35 @@ func TestAnExternalPluginsHandlerIsToldItsProfile(t *testing.T) {
 		if profile != tc.wantProfile || tunnel != tc.wantTunnel {
 			t.Errorf("sent %v: the handler saw profile %q, tunnel %q", tc.sent, profile, tunnel)
 		}
+	}
+}
+
+// What the operator trusted for the server a call reaches is handed to its
+// handler, and what the server presented when its check failed is handed back,
+// both whole: the host remembers what crosses and nothing else.
+func TestTrustCrossesToAHandlerAndWhatAServerPresentedCrossesBack(t *testing.T) {
+	trusted, presented := [][]byte{[]byte("first"), []byte("its CA")}, [][]byte{[]byte("leaf"), []byte("issuer")}
+	var seen [][]byte
+	p := plugin.Plugin{
+		Name: "demo", Summary: "d",
+		Capabilities: []plugin.Capability{{
+			ID: "demo.dump", Summary: "d", Safety: plugin.Read,
+			Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+				seen = req.Trusted()
+				return nil, view.Errorf("demo.tls.untrusted", "nothing trusts it").WithPresented(presented)
+			},
+		}},
+	}
+	resp, err := newServer(p).Call(context.Background(),
+		roundTrip(t, &rtav1.CallRequest{CapabilityId: "demo.dump", Trusted: trusted}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(seen, trusted) {
+		t.Errorf("the handler was handed %q, want %q", seen, trusted)
+	}
+	if got := wire.ErrorFromProto(roundTrip(t, resp).GetError()); got == nil || !reflect.DeepEqual(got.Presented, presented) {
+		t.Errorf("the refusal crossed back as %+v, want it presenting %q", got, presented)
 	}
 }
 

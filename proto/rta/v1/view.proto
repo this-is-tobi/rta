@@ -46,6 +46,11 @@ message Error {
   // argument to send again. A host acts on it only when it names an input the
   // capability declares.
   string input = 7;
+  // The certificates a server presented, leaf first and DER, when this is
+  // its TLS check failing and no CA the operator named was the judge: what
+  // the host remembers for the operator to trust on first use. The host's
+  // to read and nobody's to be shown, and empty on every other error.
+  repeated bytes presented = 8;
 }
 
 // Text is free-form text, optionally markdown for the host to render.

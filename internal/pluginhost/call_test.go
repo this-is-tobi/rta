@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/sdk/spelling"
 	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
@@ -37,6 +39,37 @@ func TestACallCarriesItsProfileAndTunnelToThePlugin(t *testing.T) {
 			got.GetValues()["host"].GetStringValue() != "127.0.0.1" {
 			t.Errorf("the rest of the call went missing: %v", got)
 		}
+	}
+}
+
+// What the operator trusted for the server a call reaches is sent to the
+// plugin, and the coordinate of the forward it reaches that server through is
+// not: the plugin is told the profile's name and never where it points.
+func TestACallCarriesWhatWasTrustedAndNeverTheCoordinate(t *testing.T) {
+	coordinate := "kube:homelab/vault/svc/vault:8200"
+	req := plugin.ResolveRequest(plugin.Capability{ID: "vault.kv.get"}, plugin.Inputs{
+		Caller: map[string]any{"url": "https://127.0.0.1:5000"}, ProfileName: "homelab", Tunnel: plugin.TunnelKube,
+		Coordinate: coordinate,
+	}, false, false).WithSurface(plugin.SurfaceMCP).WithTrusted([][]byte{[]byte("trusted")})
+	if req.Coordinate() != coordinate {
+		t.Fatalf("the request lost its coordinate: %q", req.Coordinate())
+	}
+	got := callRequest("vault.kv.get", req)
+	if len(got.GetTrusted()) != 1 || string(got.GetTrusted()[0]) != "trusted" {
+		t.Errorf("sent trusted %q", got.GetTrusted())
+	}
+	wired, err := proto.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wired), "homelab/vault") {
+		t.Errorf("the coordinate crossed to the plugin: %q", wired)
+	}
+	// A coordinate without a forward is none: nothing was opened on it.
+	direct := plugin.ResolveRequest(plugin.Capability{ID: "vault.kv.get"}, plugin.Inputs{
+		ProfileName: "homelab", Coordinate: coordinate}, false, false)
+	if direct.Coordinate() != "" {
+		t.Errorf("a direct call carried coordinate %q", direct.Coordinate())
 	}
 }
 

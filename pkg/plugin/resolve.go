@@ -42,6 +42,12 @@ type Inputs struct {
 	// handler that names the connection again (Request.Profile).
 	Tunnel Tunnel
 
+	// Coordinate is the `kube:` or `ssh:` coordinate Tunnel's forward was
+	// opened on, scheme and all (Request.Coordinate): the host's, never sent to
+	// the plugin. Read only beside a tunnel and a profile, since the host opens
+	// a forward only on a profile's connection.
+	Coordinate string
+
 	// Fence is the allowlist the profile's connection states, keyed by
 	// Field.Config key. Not a layer, though it sits in this struct: it never
 	// overrides a value anybody supplied. It does two things, and Resolve does
@@ -145,6 +151,9 @@ func ResolveRequest(c Capability, in Inputs, dryRun, yes bool) Request {
 	values, from := resolve(c, in)
 	req := NewRequest(values, dryRun, yes).WithProfile(in.ProfileName, in.Tunnel)
 	req.origins = from
+	if req.Tunnel() != TunnelNone {
+		req.coordinate = in.Coordinate
+	}
 	return req
 }
 

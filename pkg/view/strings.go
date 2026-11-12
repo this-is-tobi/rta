@@ -140,7 +140,7 @@ func mapStrings(v View, f func(string) string) (View, bool) {
 		if t == nil {
 			return v, false
 		}
-		if e := mapError(*t, f); e != *t {
+		if e := mapError(*t, f); !sameStrings(e, *t) {
 			return &e, true
 		}
 	}
@@ -291,7 +291,7 @@ func mapErrors(in []Error, f func(string) string) ([]Error, bool) {
 	out := make([]Error, len(in))
 	for i, e := range in {
 		out[i] = mapError(e, f)
-		if out[i] != e {
+		if !sameStrings(out[i], e) {
 			changed = true
 		}
 	}
@@ -306,6 +306,14 @@ func mapError(e Error, f func(string) string) Error {
 	return e
 }
 
+// sameStrings reports whether two errors hold the same strings mapError maps,
+// which is what "f left it alone" means: the rest of an error is not f's to
+// change, and a chain of certificates (Presented) makes Error a value == cannot
+// compare.
+func sameStrings(a, b Error) bool {
+	return a.Code == b.Code && a.Message == b.Message && a.Hint == b.Hint && a.Input == b.Input
+}
+
 // MapErrorStrings is MapStrings for the pointer form the error surfaces carry.
 // An error f leaves alone keeps its identity, so a caller comparing pointers
 // still sees the error it was given.
@@ -314,7 +322,7 @@ func MapErrorStrings(e *Error, f func(string) string) *Error {
 		return nil
 	}
 	c := mapError(*e, f)
-	if c == *e {
+	if sameStrings(c, *e) {
 		return e
 	}
 	return &c

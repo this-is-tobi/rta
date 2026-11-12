@@ -460,6 +460,14 @@ message CallRequest {
   // older than them ignores them.
   string profile = 6;
   Tunnel tunnel = 7;
+  // The certificates the operator trusted for the server this call reaches,
+  // DER, as a server presented them on first use: a TLS check that fails
+  // against this machine's roots accepts the server presenting one of them,
+  // or a chain signed by one that is a CA. Filled by the host from what it
+  // remembers and never from a value a caller or a config file states, so
+  // nothing a call carries can widen what it trusts. Empty for a server
+  // nothing was trusted for, and ignored by a plugin older than the field.
+  repeated bytes trusted = 8;
 }
 
 message CallResponse {
@@ -478,6 +486,10 @@ message CallResponse {
 message PrefillRequest {
   string capability_id = 1;
   map<string, Value> values = 2;
+  // What the operator trusted for the server this reaches, as a call's
+  // (CallRequest.trusted): a form reads the record from the server its call
+  // will write to, and is not refused a server the call is not.
+  repeated bytes trusted = 3;
 }
 
 message PrefillResponse {
@@ -502,6 +514,10 @@ message SuggestRequest {
   // the precise opposite of a tab key. Built-ins were told, and every
   // external plugin could not tell a keystroke from a unit test.
   Surface surface = 4;
+  // What the operator trusted for the server this reaches, as a call's
+  // (CallRequest.trusted), so a completion lists what a call there would
+  // find. Only what is trusted already: a keystroke remembers nothing.
+  repeated bytes trusted = 5;
 }
 
 message SuggestResponse {

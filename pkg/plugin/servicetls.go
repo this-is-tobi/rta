@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -22,7 +23,11 @@ type TLSPlan struct {
 	// of the system's roots, as Surface.CAHint tells the operator — and the
 	// client pair. verify-ca checks the chain in VerifyConnection, without
 	// the name; require and prefer check nothing, which only a mode the
-	// operator stated asks for.
+	// operator stated asks for. With certificates the operator trusted for
+	// the server on first use (Request.Trusted), VerifyConnection makes Go's
+	// own check and, only when it fails, takes what was trusted
+	// (verifyTrusting) — so a driver handed the files rather than this Config
+	// cannot take a trusted certificate.
 	Config *tls.Config
 	// The files as named, ~ expanded and each read once already, and the name,
 	// for a driver that takes paths rather than a tls.Config.
@@ -68,8 +73,126 @@ func (s Service) TLS(req Request) (*TLSPlan, *view.Error) {
 	case TLSRequire, TLSPrefer:
 		cfg.InsecureSkipVerify = true //nolint:gosec // checking nothing is what require and prefer say, and only the operator states either
 	}
+	if trusted := s.trustedFor(req, mode, set); len(trusted) > 0 {
+		name, renewal, verr := s.trustNames(req, mode, set)
+		if verr != nil {
+			return nil, verr
+		}
+		cfg.InsecureSkipVerify = true //nolint:gosec // VerifyConnection makes Go's own check first, and the trusted one only after it fails
+		cfg.VerifyConnection = verifyTrusting(roots, name, renewal, trusted)
+	}
 	plan.Config = cfg
 	return plan, nil
+}
+
+// trustedFor is the certificates the operator trusted for the server this
+// call reaches (Request.Trusted), parsed, when they are the ones to stand in
+// for this machine's roots: under a mode that checks the server's
+// certificate, and with no CA named for it. Nil otherwise. A CA the operator
+// named is the only issuer they vouch for on that connection, so a server it
+// does not vouch for is refused as ever, and a mode that checks nothing has
+// nothing for a trusted certificate to stand in for.
+func (s Service) trustedFor(req Request, mode string, set tlsSettings) []*x509.Certificate {
+	if set.ca != "" || (mode != TLSVerifyFull && mode != TLSVerifyCA) {
+		return nil
+	}
+	var trusted []*x509.Certificate
+	for _, der := range req.Trusted() {
+		if c, err := x509.ParseCertificate(der); err == nil {
+			trusted = append(trusted, c)
+		}
+	}
+	return trusted
+}
+
+// trusts reports whether certificates the operator trusted stood in for
+// this machine's roots on this call (trustedFor), for the refusal of a
+// server that presented none of them.
+func (s Service) trusts(req Request) bool {
+	set := s.tlsSettings(req)
+	mode, verr := s.mode(req, set)
+	return verr == nil && len(s.trustedFor(req, mode, set)) > 0
+}
+
+// trustNames is the name Go's own check holds a certificate to — none under
+// verify-ca, which checks the chain alone — and the one a renewal signed by a
+// trusted CA is held to: the same name, except through a forward with no
+// tls-server-name, where the host is 127.0.0.1 and which server answers is the
+// coordinate's to say, which nothing at the far end can change.
+//
+// The name is spelled here rather than left to the transport, which fills a
+// tls.Config's ServerName from the host it dials only when it checks the
+// certificate itself, and with a trusted certificate VerifyConnection does.
+func (s Service) trustNames(req Request, mode string, set tlsSettings) (name, renewal string, verr *view.Error) {
+	if mode == TLSVerifyCA {
+		return "", "", nil
+	}
+	name = set.name
+	if name == "" {
+		target, verr := s.Target(req)
+		if verr != nil {
+			return "", "", verr
+		}
+		name = target.Hostname()
+	}
+	if set.name == "" && req.Tunnel() != TunnelNone {
+		return name, "", nil
+	}
+	return name, name, nil
+}
+
+// verifyTrusting is the check a call makes once the operator trusted
+// certificates for its server on first use.
+//
+// **Go's own check first**, against roots — the system's when nil — and name,
+// so a server this machine vouches for is vouched for exactly as it was, and a
+// trusted certificate never narrows what verified before. Only when that
+// fails, the server presenting what was trusted:
+//
+//   - the very certificate, whatever its dates and names say, since the
+//     operator trusted those bytes and not an issuer — which is how an
+//     appliance's expired self-signed certificate is still reachable, and why
+//     `rta doctor` says when a trusted one has expired;
+//   - or one a CA among the trusted certificates signed, held to its dates and
+//     to renewal's name, which is how a server renewed by the CA it was trusted
+//     with is still the server it was.
+//
+// Anything else is refused with the chain it presented and Go's own verdict
+// on it, which Service.Refusal reads as a certificate that changed.
+func verifyTrusting(roots *x509.CertPool, name, renewal string, trusted []*x509.Certificate) func(tls.ConnectionState) error {
+	issuers, signed := x509.NewCertPool(), false
+	for _, c := range trusted {
+		if c.BasicConstraintsValid && c.IsCA {
+			issuers.AddCert(c)
+			signed = true
+		}
+	}
+	return func(cs tls.ConnectionState) error {
+		peers := cs.PeerCertificates
+		if len(peers) == 0 {
+			return errors.New("tls: the server sent no certificate")
+		}
+		intermediates := x509.NewCertPool()
+		for _, c := range peers[1:] {
+			intermediates.AddCert(c)
+		}
+		_, err := peers[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, DNSName: name})
+		if err == nil {
+			return nil
+		}
+		for _, c := range trusted {
+			if bytes.Equal(c.Raw, peers[0].Raw) {
+				return nil
+			}
+		}
+		if signed {
+			opts := x509.VerifyOptions{Roots: issuers, Intermediates: intermediates, DNSName: renewal}
+			if _, renewed := peers[0].Verify(opts); renewed == nil {
+				return nil
+			}
+		}
+		return &tls.CertificateVerificationError{UnverifiedCertificates: peers, Err: err}
+	}
 }
 
 // tlsSettings are the TLS settings a call names, paths ~ expanded.

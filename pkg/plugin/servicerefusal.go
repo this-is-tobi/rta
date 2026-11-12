@@ -27,8 +27,10 @@ import (
 //
 // In the order the plugins settled on, each reading only what it names: a
 // refused redirect; a deadline; a name that did not resolve; a certificate
-// nothing here trusts, one for another name — through a forward,
-// ForwardNameRefusal — and any other verdict; the proxy the call goes through
+// other than the one trusted for the server on first use, one nothing here
+// trusts, one for another name — through a forward, ForwardNameRefusal — and
+// any other verdict, each carrying the chain the server presented when no CA
+// the operator named was the judge (presenting); the proxy the call goes through
 // not taking it; no route; nothing listening; a timeout; plain HTTP to a
 // server that speaks only TLS. The certificate is asked before the dial,
 // since the dial's questions read words where no errno is, and a
@@ -67,6 +69,16 @@ func (s Service) Refusal(req Request, err error) *view.Error {
 		return view.Errorf(s.Namespace+".host.unknown", "no address for %q", name).
 			WithHint(sf.DNSHint(name) + through(proxy, target))
 	}
+	// The handshake's verdict, when there is one, carries what the server
+	// presented, which each refusal of a certificate below hands the host
+	// (presenting). A server that presented none of the certificates trusted
+	// for it is that before it is anything else: Go's own verdict on it is no
+	// news, since what was trusted stood in for exactly that.
+	var verifyErr *tls.CertificateVerificationError
+	errors.As(err, &verifyErr)
+	if verifyErr != nil && s.trusts(req) {
+		return s.changed(req, endpoint, verifyErr)
+	}
 	// The CA named as where it belongs, not as something to pass: over MCP
 	// ca-file is the operator's setting, and an agent told to pass it has no
 	// such argument to give. Only for a verdict that means an issuer nothing
@@ -79,8 +91,8 @@ func (s Service) Refusal(req Request, err error) *view.Error {
 			hint += "; the call goes through the proxy at " + proxy.Host + ", and a proxy that inspects TLS presents " +
 				"a certificate of its own"
 		}
-		return view.Errorf(s.Namespace+".tls.untrusted", "%s presented a certificate nothing here trusts",
-			req.Reached(endpoint)).WithHint(hint)
+		return s.presenting(req, view.Errorf(s.Namespace+".tls.untrusted", "%s presented a certificate nothing here trusts",
+			req.Reached(endpoint)).WithHint(hint), verifyErr)
 	}
 	// A certificate that is not for the end of a forward is no fault of the
 	// server's: the host fills the endpoint with 127.0.0.1, which a server's
@@ -89,7 +101,8 @@ func (s Service) Refusal(req Request, err error) *view.Error {
 	var hostErr x509.HostnameError
 	if errors.As(err, &hostErr) {
 		if req.Tunnel() != TunnelNone && !named {
-			return ForwardNameRefusal(req, s.Namespace+".tls.forward", endpoint, "server", hostErr)
+			return s.presenting(req, ForwardNameRefusal(req, s.Namespace+".tls.forward", endpoint, "server", hostErr),
+				verifyErr)
 		}
 		hint := sf.SettingName("tls-server-name") + " checks it for one of those names in place of " + hostErr.Host +
 			", as strictly; or reach the server by one of them"
@@ -97,24 +110,23 @@ func (s Service) Refusal(req Request, err error) *view.Error {
 			hint = "the certificate is checked for the name in " + sf.SettingName("tls-server-name") +
 				": name one it is for, or have it reissued for " + hostErr.Host
 		}
-		return view.Errorf(s.Namespace+".tls.name", "the certificate behind %s is for %s, not for %s",
-			req.Reached(endpoint), CertNames(hostErr.Certificate), hostErr.Host).WithHint(hint)
+		return s.presenting(req, view.Errorf(s.Namespace+".tls.name", "the certificate behind %s is for %s, not for %s",
+			req.Reached(endpoint), CertNames(hostErr.Certificate), hostErr.Host).WithHint(hint), verifyErr)
 	}
 	// Every other verdict is its own reason, in the verifier's words, and
 	// never "could not reach": the server was reached, and answered.
-	var verifyErr *tls.CertificateVerificationError
-	if errors.As(err, &verifyErr) {
+	if verifyErr != nil {
 		rejected := view.Errorf(s.Namespace+".tls.rejected", "%s presented a certificate that does not verify: %v",
 			req.Reached(endpoint), verifyErr.Err)
 		if hint := CertPolicyHint(err); hint != "" {
-			return rejected.WithHint(hint)
+			return s.presenting(req, rejected.WithHint(hint), verifyErr)
 		}
 		checked := "the host in " + sf.SettingName(setting)
 		if named {
 			checked = "the name in " + sf.SettingName("tls-server-name")
 		}
-		return rejected.WithHint("a certificate is checked for " + checked + ", its dates and the use it was " +
-			"issued for, as well as for who issued it")
+		return s.presenting(req, rejected.WithHint("a certificate is checked for "+checked+", its dates and the use "+
+			"it was issued for, as well as for who issued it"), verifyErr)
 	}
 	unroutable, refused := DialUnroutable(err), DialRefused(err)
 	// Through a proxy, a dial that failed is the proxy's: the server is the
@@ -155,6 +167,35 @@ func (s Service) Refusal(req Request, err error) *view.Error {
 			req.Reached(endpoint)).WithHint(s.toTLS(req))
 	}
 	return nil
+}
+
+// presenting is verr carrying the chain the server presented (view.Error.
+// Presented), for the host to remember so the operator can trust that server
+// on first use. Not when a CA the operator named was the judge: that CA is the
+// only issuer they vouch for on the connection, and a server it does not vouch
+// for is theirs to fix rather than to trust past it.
+func (s Service) presenting(req Request, verr *view.Error, verifyErr *tls.CertificateVerificationError) *view.Error {
+	if verifyErr == nil || len(verifyErr.UnverifiedCertificates) == 0 || s.tlsSettings(req).ca != "" {
+		return verr
+	}
+	chain := make([][]byte, 0, len(verifyErr.UnverifiedCertificates))
+	for _, c := range verifyErr.UnverifiedCertificates {
+		chain = append(chain, c.Raw)
+	}
+	return verr.WithPresented(chain)
+}
+
+// changed is the refusal of a server that presented a certificate other than
+// the ones trusted for it on first use, with what it presented: a renewal by
+// another CA, a new self-signed certificate and another server answering at
+// that address are one answer from here, and only somebody who knows the
+// server tells them apart. The host says when what it replaces was trusted,
+// and how the operator looks at both.
+func (s Service) changed(req Request, endpoint string, verifyErr *tls.CertificateVerificationError) *view.Error {
+	return s.presenting(req, view.Errorf(s.Namespace+".tls.changed",
+		"%s presented a certificate other than the one trusted for it", req.Reached(endpoint)).
+		WithHint("a renewal by another CA, a new self-signed certificate and another server answering there all look "+
+			"like this, and only somebody who knows the server can tell them apart"), verifyErr)
 }
 
 func (s Service) timedOut(endpoint string, proxy, target *url.URL) *view.Error {

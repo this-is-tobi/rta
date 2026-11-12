@@ -82,7 +82,8 @@ func (s *server) Call(ctx context.Context, req *rtav1.CallRequest) (resp *rtav1.
 	surface := wire.SurfaceFromProto(req.GetSurface())
 	pr := plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), req.GetDryRun(), req.GetYes()).
 		WithSurface(surface).
-		WithProfile(req.GetProfile(), wire.TunnelFromProto(req.GetTunnel()))
+		WithProfile(req.GetProfile(), wire.TunnelFromProto(req.GetTunnel())).
+		WithTrusted(req.GetTrusted())
 	if surface == plugin.SurfaceMCP {
 		pr = pr.WithConfinement(refuseDerived).WithLinkTargets(untoldTarget)
 	}
@@ -150,7 +151,8 @@ func (s *server) Prefill(ctx context.Context, req *rtav1.PrefillRequest) (resp *
 		}
 	}()
 
-	values, prefillErr := c.Prefill(ctx, plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), false, false))
+	values, prefillErr := c.Prefill(ctx, plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), false, false).
+		WithTrusted(req.GetTrusted()))
 	if prefillErr = plugin.Failure(prefillErr); prefillErr != nil {
 		return &rtav1.PrefillResponse{Error: wire.ErrorToProto(plugin.HandlerFailure(prefillErr, c.ID+"'s prefill", c.ID+".prefill.failed"))}, nil
 	}
@@ -179,7 +181,8 @@ func (s *server) Suggest(ctx context.Context, req *rtav1.SuggestRequest) (resp *
 			continue
 		}
 		pr := plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), false, false).
-			WithSurface(wire.SurfaceFromProto(req.GetSurface()))
+			WithSurface(wire.SurfaceFromProto(req.GetSurface())).
+			WithTrusted(req.GetTrusted())
 		return &rtav1.SuggestResponse{Values: f.Suggest(ctx, pr)}, nil
 	}
 	return &rtav1.SuggestResponse{}, nil
