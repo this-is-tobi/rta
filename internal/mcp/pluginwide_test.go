@@ -45,7 +45,7 @@ func TestARefusedReadOverAProfileOffersThePluginSecond(t *testing.T) {
 	}
 	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
 	s := connectWith(t, reg, Options{
-		Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: config.Load, Agent: "auditbot",
+		Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: (&config.Loader{}).Load, Agent: "auditbot",
 	})
 
 	res := callTool(t, s, "prom_overview", map[string]any{"profile": "scratch"})

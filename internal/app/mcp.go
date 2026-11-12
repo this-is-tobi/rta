@@ -119,9 +119,10 @@ func completeAreas(reg *registry.Registry) cobra.CompletionFunc {
 // That is a server that looks up and answers every agent with a refusal, so it
 // is not one to send traffic to: the probe says so, with the file's own reason,
 // to whoever describes the pod, and the first read that succeeds (a ConfigMap
-// put right) ends it without a restart.
-func serverReady() error {
-	if _, err := config.Load(); err != nil {
+// put right) ends it without a restart. load is the server's own reader, so a
+// probe every few seconds costs a parse only when the file has changed.
+func serverReady(load func() (config.Config, error)) error {
+	if _, err := load(); err != nil {
 		return fmt.Errorf("the config does not read, so a call to a capability a profile could change is refused: %w", err)
 	}
 	return recordWritable()
@@ -437,7 +438,14 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// (mcp.Options.ProfilesErr), because with no snapshot the rule
 			// that keeps an unprofiled call off the base connection has
 			// nothing to hold; the first read that succeeds lifts it.
-			profileCfg, cfgErr := config.Load()
+			//
+			// Through the server's own Loader, which every later read of the
+			// file goes through too (Reload, the readiness probe): it reads
+			// the files each time and parses them again only when their bytes
+			// have changed, and this first read is the parse the next call
+			// reuses.
+			loader := &config.Loader{}
+			profileCfg, cfgErr := loader.Load()
 			if cfgErr != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), "rta: the config did not read, so a call to a plugin that profiles govern is refused until it does:", cfgErr)
 				profileCfg = config.Config{}
@@ -728,8 +736,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// reach. A read that fails answers the last read that
 				// succeeded, not no profiles: an empty set lifted the rule
 				// that keeps a call that names none off the base connection
-				// (mcp.Options.Reload).
-				Reload: config.Load,
+				// (mcp.Options.Reload). Every file is read for every call; a
+				// parse is reused only for the bytes it was made from
+				// (config.Loader).
+				Reload: loader.Load,
 				// The store, opened from this server's own environment and
 				// never by prompting. Wired here and not inside internal/mcp so
 				// that "this server may read the operator's store" is a line
@@ -840,7 +850,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				if observeLn != nil {
 					observeHandler = mcp.NewObserveHandler(mcp.ObserveConfig{
 						Verifier: verifier,
-						Ready:    serverReady,
+						Ready:    func() error { return serverReady(loader.Load) },
 						Metrics:  func() (string, error) { return agentcap.Exposition(reg.Artifact) },
 					})
 					fmt.Fprintf(cmd.ErrOrStderr(),

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/agentlog"
+	"github.com/this-is-tobi/rta/internal/config"
 )
 
 // A server whose config does not read still starts and still answers, with a
@@ -16,20 +17,20 @@ func TestReadinessFailsWhileTheConfigDoesNotRead(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", dir)
 	cfg := filepath.Join(dir, "config.yaml")
 	t.Setenv("RTA_CONFIG", cfg)
-	if err := serverReady(); err != nil {
+	if err := serverReady(config.Load); err != nil {
 		t.Fatalf("no config at all reported not ready: %v", err)
 	}
 	if err := os.WriteFile(cfg, []byte("profiles: [this is: not : yaml\n  - {\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := serverReady()
+	err := serverReady(config.Load)
 	if err == nil || !contains(err.Error(), "profile could change is refused") {
 		t.Fatalf("a config that does not parse reported ready, or without its cost: %v", err)
 	}
 	if err := os.WriteFile(cfg, []byte("output: json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := serverReady(); err != nil {
+	if err := serverReady(config.Load); err != nil {
 		t.Fatalf("a config put right is still reported not ready: %v", err)
 	}
 }

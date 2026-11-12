@@ -66,7 +66,7 @@ func agreeServer(t *testing.T) *sdk.ClientSession {
 		t.Fatal(err)
 	}
 	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
-	return connectWith(t, reg, Options{Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: config.Load})
+	return connectWith(t, reg, Options{Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: (&config.Loader{}).Load})
 }
 
 // Whether a tool takes a profile is one fact, and every place that says
