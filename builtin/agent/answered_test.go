@@ -79,7 +79,7 @@ func TestARefusalNothingAnsweredStaysPending(t *testing.T) {
 		t.Fatal(verr)
 	}
 	got := overviewPairs(t)
-	if want := "pending 3"; !strings.HasPrefix(got["needs your grant"], want) {
+	if want := "warn — 3 refused"; !strings.HasPrefix(got["needs your grant"], want) {
 		t.Fatalf("needs your grant = %q, want it to begin %q", got["needs your grant"], want)
 	}
 }
