@@ -362,6 +362,33 @@ func (r *Resolver) Without(namespace string) *Resolver {
 	return out
 }
 
+// InDevRun is problems as a `rta plugin dev` run that registered a build under
+// namespace states them: each one about a section of namespace says that the
+// build, o, reads none of it, and every other is left as it was. problems
+// itself is not changed.
+//
+// A section is judged once, at startup, against what answered to its namespace
+// then: nothing, for a plugin that is not installed, or the installed copy the
+// build now runs in place of. A call of the build that failed quoted that
+// judgment, and about a plugin it had not run: "no plugin named "weather" is
+// registered", of the plugin that had just answered, with a hint pointing at
+// `rta plugin list`, which does not list it. What holds of every such section
+// in the run is one thing, whatever startup made of it — the build reads none
+// of it, since a dev run reaches a service with what it is passed — and the
+// problem says that instead. A build that is the installed artifact byte for
+// byte keeps what is pinned to it, and is not given these.
+func InDevRun(problems []Problem, namespace string, o registry.Origin) []Problem {
+	out := make([]Problem, len(problems))
+	for i, p := range problems {
+		if ns, _, _ := strings.Cut(p.Section, "@"); ns == namespace {
+			p = Problem{Section: p.Section, Reason: o.Called(namespace) + " reads none of it",
+				Hint: "a dev run reaches a service with what you pass it"}
+		}
+		out[i] = p
+	}
+	return out
+}
+
 // Section returns the heading For's values were written under — `pg@1a2b3c4d`
 // as the operator wrote the pin, `sys` for a built-in — or "" when nothing
 // was matched. A refusal of one of those values names it

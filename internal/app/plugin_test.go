@@ -1506,6 +1506,82 @@ func TestPluginDevSaysThatTheInstalledCopysPinsDoNotApplyToTheBuild(t *testing.T
 	}
 }
 
+// A section for a plugin nothing installed answers to is set aside at startup
+// as no plugin's, and a call of the build `rta plugin dev` then registered
+// under that name, failing, quoted it: "no plugin named "weather" is
+// registered", of the plugin that had just answered, with a hint sending the
+// author to `rta plugin list`, which does not list it. The run says what is
+// true of the section instead, and still runs without it.
+func TestPluginDevSaysItsBuildReadsNoSectionOfAPluginNotInstalled(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { SetPluginConfig(nil, nil) })
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
+		"weather": {"city": "Lyon"},
+	}}), reg))
+	dev := plugin.Plugin{Name: "weather", Summary: "weather", Capabilities: []plugin.Capability{{
+		ID: "weather.now", Summary: "the weather now", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+	}}}
+	var stderr bytes.Buffer
+	if verr := registerDev(reg, devClientFor(dev, "fedcba9876543210fedcba"), &stderr); verr != nil {
+		t.Fatal(verr)
+	}
+	now := dev.Capabilities[0]
+	if got := PluginConfig(now); got != nil {
+		t.Errorf("the build is handed a section with no digest: %v", got)
+	}
+	if verr := ConfigWithheld(now); verr != nil {
+		t.Errorf("the build's calls are refused over a section it does not read: %v", verr)
+	}
+	said := ConfigNotApplied(now)
+	for _, want := range []string{"`plugins.weather`", `the "weather" this run built from a directory reads none of it`,
+		"so this ran without it", "a dev run reaches a service with what you pass it"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("a failing call says %q, not %q", said, want)
+		}
+	}
+	for _, stale := range []string{"is registered", "rta plugin list"} {
+		if strings.Contains(said, stale) {
+			t.Errorf("a failing call still says %q of the build that answered: %q", stale, said)
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("a run that took no installed copy's place printed a notice: %q", stderr.String())
+	}
+}
+
+// A failing call of the build does not quote what startup made of the installed
+// copy's sections either: a stale pin beside the one that applied was refused
+// as not matching the installed pg, with `rta config repin` to fix it, which is
+// advice about bytes the run is not using.
+func TestPluginDevSaysTheInstalledCopysSectionsAreNotTheBuilds(t *testing.T) {
+	reg, installedOrigin := configCapability(t)
+	t.Cleanup(func() { SetPluginConfig(nil, nil) })
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
+		"pg@" + installedOrigin.Short(): {"host": "db.internal"},
+		"pg@000000000000":               {"host": "old.internal"},
+	}}), reg))
+	dev := plugin.Plugin{Name: "pg", Summary: "postgres, edited", Capabilities: []plugin.Capability{{
+		ID: "pg.query", Summary: "run a query", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+	}}}
+	if verr := registerDev(reg, devClientFor(dev, "fedcba9876543210fedcba"), io.Discard); verr != nil {
+		t.Fatal(verr)
+	}
+	said := ConfigNotApplied(dev.Capabilities[0])
+	if !strings.Contains(said, `the "pg" this run built from a directory reads none of it`) {
+		t.Errorf("a failing call says %q", said)
+	}
+	for _, stale := range []string{"the installed", "repin"} {
+		if strings.Contains(said, stale) {
+			t.Errorf("a failing call speaks of the installed copy's pin (%q): %q", stale, said)
+		}
+	}
+}
+
 // A namespace compiled into rta is refused, and the hint is the one that fits
 // it: the old hint spoke of another installed plugin, which is not what is in
 // the way of `rta plugin dev` in a plugin named sys. The run changes nothing

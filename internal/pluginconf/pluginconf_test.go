@@ -451,3 +451,33 @@ func TestAProblemInADevRunNamesTheBuildTheRunUsesAndNotTheInstalledOne(t *testin
 		}
 	}
 }
+
+// What startup made of a section of the namespace a dev run took — no plugin
+// registered under it, or a pin the installed copy did not match — is said in
+// the run as the one thing true of it there: the build reads none of it.
+// Another namespace's problems are left as they were, and so is the slice
+// handed in.
+func TestADevRunSaysItsBuildReadsNoneOfItsNamespacesSections(t *testing.T) {
+	build := registry.Origin{Path: "/tmp/rta-plugin-dev-1/rta-plugin-dev", Digest: "fedcba9876543210", Dev: true}
+	in := []Problem{
+		{Section: "weather", Reason: `no plugin named "weather" is registered`, Hint: "`rta plugin list` shows what is installed"},
+		{Section: "weather@1a2b3c4d5e6f", Key: "city", Reason: `nothing in "weather" reads "city"`, Hint: "did you mean?"},
+		{Section: "pg@1a2b3c4d5e6f", Reason: `this pin does not match the installed "pg"`, Hint: "the installed one is `pg@0123`"},
+	}
+	out := InDevRun(in, "weather", build)
+	for _, p := range out[:2] {
+		if p.Reason != `the "weather" this run built from a directory reads none of it` || p.Key != "" ||
+			p.Hint != "a dev run reaches a service with what you pass it" {
+			t.Errorf("%s: %+v", p.Section, p)
+		}
+	}
+	if out[0].Section != "weather" || out[1].Section != "weather@1a2b3c4d5e6f" {
+		t.Errorf("the headings as written are lost: %q, %q", out[0].Section, out[1].Section)
+	}
+	if out[2] != in[2] {
+		t.Errorf("another plugin's problem changed: %+v", out[2])
+	}
+	if in[0].Reason != `no plugin named "weather" is registered` {
+		t.Error("the problems handed in were changed")
+	}
+}
