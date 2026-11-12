@@ -42,7 +42,7 @@ What each one buys you:
 ```go
 {Name: "host", Type: plugin.String, Required: true, Config: "host"},
 {Name: "port", Type: plugin.Int, Default: 5432, Config: "port"},
-{Name: "mode", Type: plugin.String, Default: "prefer", Config: "tls.mode"},
+{Name: "limit", Type: plugin.Int, Default: 100, Min: 1, Max: 1000, Config: "query.limit"}, // on weather.query
 ```
 
 The operator writes it under your plugin's own section, which is pinned to the binary they installed rather than to the namespace you declare — anything on `$PATH` can claim a namespace, and their stated values must not go to whoever won that race:
@@ -55,6 +55,8 @@ plugins:
 ```
 
 A dotted key is one key however it is written: as one key, the way `rta explain` prints it (`query.limit: 500`), or nested a block per segment (`query: {limit: 500}`). `rta config set` and the TUI write it as one key, and a section that states one key both ways is refused, since nothing can tell which value was meant. So a plugin may declare `database` beside `database.list.limit`.
+
+**A key means one thing.** One value in the operator's file answers every capability that reads its key, so a plain key means the same to each: the same type, a single value or a list of one kind counting as one, the same default, bounds and options. A setting that means one thing to one capability and another to the next is each capability's own, spelled with the capability's ID without your namespace: `query.limit` under `weather.query`, `history.limit` under `weather.history`. A dotted key is always one capability's own that way, so it reads as where it applies, and the day a second capability reads the same setting it becomes a plain key both share. `Serve` refuses a declaration that breaks either rule before your plugin starts, `sdktest` fails it, and rta holds its own built-ins to the same rules.
 
 **A key nothing reads stops your plugin.** The section is withheld and every call of your plugin refused until it is fixed, with the key it was likely meant as in the hint: a key that silently did nothing was a setting the operator believed in effect, a mistyped host sent the call to your default destination, and a renamed [TLS](../95-reference/10-glossary.md#acronyms) key turned into your default mode. So when you rename a key, say what it became in `Renamed` on your `plugin.Plugin`, `Renamed: map[string]string{"sslmode": "tls"}`, and a file still stating the old key is told `pg reads "tls" in its place` with the new key's help instead of a guess. It is wording only: the old key does nothing, and an entry is used only while the old key is read by no input and the new one by some. Delete it once nobody holds the old name.
 

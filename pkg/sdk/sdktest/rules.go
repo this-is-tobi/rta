@@ -42,6 +42,12 @@ func checkDeclaration(t reporter, p plugin.Plugin) bool {
 		t.Errorf("sdktest: %s: %v", RuleDeclaration, err)
 		return false
 	}
+	// Serve refuses the same declaration (plugin.ValidateKeys), so a suite
+	// that passed it would pass a plugin that never starts.
+	if err := p.ValidateKeys(); err != nil {
+		t.Errorf("sdktest: %s: %v", RuleDeclaration, err)
+		return false
+	}
 	return true
 }
 

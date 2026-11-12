@@ -41,6 +41,13 @@ func ServeErr(p plugin.Plugin) error {
 	if err := p.ValidateOutOfProcess(); err != nil {
 		return err
 	}
+	// The rules a config key follows, met by the author on the first `go run`
+	// rather than by an operator whose file reads one key two ways. Here and
+	// never on the host's load path, which takes a plugin built on an older
+	// SDK as it is.
+	if err := p.ValidateKeys(); err != nil {
+		return err
+	}
 	goplugin.Serve(&goplugin.ServeConfig{
 		HandshakeConfig: Handshake,
 		Plugins:         goplugin.PluginSet{PluginSetName: &grpcPlugin{decl: p}},
