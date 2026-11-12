@@ -72,7 +72,7 @@ func TestEveryConfigBlockTheDocsShowLoadsAsWritten(t *testing.T) {
 						t.Errorf("%s, %s: states both kube and ssh, which a call cannot open at once", where, key)
 					}
 					if conn.TunnelTLS && !conn.Tunnelled() {
-						t.Errorf("%s, %s: tunnelTLS with no forward to describe", where, key)
+						t.Errorf("%s, %s: tunnel-tls with no forward to describe", where, key)
 					}
 				}
 			}
@@ -118,7 +118,7 @@ var configKeys = map[string]bool{
 // connectionOnlyKeys are the keys of a profile's plugin entry that a plugin's
 // own configuration section never carries.
 var connectionOnlyKeys = map[string]bool{
-	"kube": true, "ssh": true, "tunnelTLS": true, "secrets": true, "secrets-from": true,
+	"kube": true, "ssh": true, "tunnel-tls": true, "secrets": true, "secrets-from": true,
 }
 
 var topLevelKey = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_-]*):`)

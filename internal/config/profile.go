@@ -313,7 +313,7 @@ type Connection struct {
 	// the overwhelming majority of tunnelled services are the plaintext-behind
 	// TLS-transport case that default already reasons about correctly, and
 	// flipping the default would ask every one of them to state
-	// `tunnelTLS: false` instead of the minority stating `tunnelTLS: true`.
+	// `tunnel-tls: false` instead of the minority stating `tunnel-tls: true`.
 	//
 	// Verifies the certificate rta actually receives — this is not
 	// InsecureSkipVerify, and does not become it. A self-signed or
@@ -328,7 +328,7 @@ type Connection struct {
 	// speak TLS through a forward take a `tls-server-name` setting, the name
 	// to check the certificate for instead (docs/20-using/42-reaching-private-services.md), so
 	// the check stays whole rather than being given up for the hop.
-	TunnelTLS bool `yaml:"tunnelTLS,omitempty" json:"tunnelTLS,omitempty"`
+	TunnelTLS bool `yaml:"tunnel-tls,omitempty" json:"tunnel-tls,omitempty"`
 
 	// unknown is every key in this connection no field above claims. Same
 	// argument as Profile.unknown, one level down — and the level a migration
@@ -438,7 +438,7 @@ var (
 	profileKeys = map[string]bool{"plugins": true, "note": true, "ttl": true,
 		"color": true, "dashboard": true, "theme": true}
 	connectionKeys = map[string]bool{"set": true, "only": true, "secrets": true, "kube": true, "ssh": true,
-		"secrets-from": true, "tunnelTLS": true}
+		"secrets-from": true, "tunnel-tls": true}
 )
 
 // unclaimed lists the keys of a raw block that no field of the shape claims,

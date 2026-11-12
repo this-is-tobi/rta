@@ -224,7 +224,7 @@ func Lookup(cfg config.Config, c plugin.Capability, ref string, inst Installed) 
 		return none, view.Errorf("core.profile.unknownkey",
 			"profile %q, under %s, has %s, which nothing reads",
 			name, key, strings.Join(unknown, ", ")).
-			WithHint("a plugin entry takes set, only, secrets, secrets-from, kube, ssh and tunnelTLS")
+			WithHint(connectionKeysHint(unknown))
 	}
 	if twice := conn.Twice(); len(twice) > 0 {
 		return none, view.Errorf("core.profile.twice",
@@ -266,6 +266,11 @@ func Lookup(cfg config.Config, c plugin.Capability, ref string, inst Installed) 
 	// and refuses just the same, so nothing is loosened by declining to
 	// guess here.
 	fillable, declRead := tunnellable(config.PluginNamespace(key), inst)
+	if conn.TunnelTLS && declRead && !takesURL(config.PluginNamespace(key), inst) {
+		return none, view.Errorf("core.profile.tunnel.tls.unused",
+			"profile %q, under %s: %s", name, key, tunnelTLSUnused(config.PluginNamespace(key))).
+			WithHint(tunnelTLSUnusedHint)
+	}
 	if conn.Tunnelled() && declRead && !fillable {
 		return none, view.Errorf("core.profile.untunnellable",
 			"profile %q: %s declares no input a tunnel can fill, so the forward would "+
@@ -1107,7 +1112,7 @@ func CheckConnection(name, key string, conn config.Connection, inst Installed) [
 	}
 	if unknown := conn.UnknownKeys(); len(unknown) > 0 {
 		at("has "+strings.Join(unknown, ", ")+", which nothing reads",
-			"a plugin entry takes set, only, secrets, secrets-from, kube, ssh and tunnelTLS")
+			connectionKeysHint(unknown))
 		return problems
 	}
 	if twice := conn.Twice(); len(twice) > 0 {
@@ -1142,6 +1147,10 @@ func CheckConnection(name, key string, conn config.Connection, inst Installed) [
 	// Only when there was a declaration to read; otherwise checkPin below
 	// says what is actually wrong.
 	fillable, declRead := tunnellable(config.PluginNamespace(key), inst)
+	if conn.TunnelTLS && declRead && !takesURL(config.PluginNamespace(key), inst) {
+		at(tunnelTLSUnused(config.PluginNamespace(key)), tunnelTLSUnusedHint)
+		return problems
+	}
 	if conn.Tunnelled() && declRead && !fillable {
 		at(config.PluginNamespace(key)+" declares no input a tunnel can fill, "+
 			"so the forward would be opened and ignored",
@@ -1174,8 +1183,8 @@ func checkTunnel(conn config.Connection) *view.Error {
 	}
 	if conn.TunnelTLS && !conn.Tunnelled() {
 		return view.Errorf("core.profile.tunnel.tls",
-			"states `tunnelTLS: true` with neither `kube:` nor `ssh:` — there is no forward for it to describe").
-			WithHint("tunnelTLS: true tells the host the far side of a tunnel speaks TLS on its own; " +
+			"states `tunnel-tls: true` with neither `kube:` nor `ssh:` — there is no forward for it to describe").
+			WithHint("tunnel-tls: true tells the host the far side of a tunnel speaks TLS on its own; " +
 				"remove it, or add the `kube:`/`ssh:` line it belongs beside")
 	}
 	// Two statements about where this connection's Secrets come from, which is
@@ -1203,6 +1212,46 @@ func checkTunnel(conn config.Connection) *view.Error {
 		return tunnel.CheckSSH(conn.SSH)
 	}
 	return nil
+}
+
+// connectionKeysHint is what a plugin entry naming a key no field claims is
+// told: the keys an entry takes, or, for the one key that changed spelling,
+// what it is now. Wording only, as plugin.Plugin.Renamed is: the old key does
+// nothing, and the entry is refused like one naming any key nothing reads.
+func connectionKeysHint(unknown []string) string {
+	if slices.Contains(unknown, "tunnelTLS") {
+		return "`tunnelTLS` is spelled `tunnel-tls` now, like every other key"
+	}
+	return "a plugin entry takes set, only, secrets, secrets-from, kube, ssh and tunnel-tls"
+}
+
+// tunnelTLSUnused is the refusal of `tunnel-tls: true` for a plugin that takes
+// no URL, which is all the line fills: the forward's URL is https:// when it is
+// set, and a plugin that takes an address has nothing it changes. It was
+// ignored, and an operator who wrote it for a service that speaks TLS on its
+// own believed the call went over TLS.
+func tunnelTLSUnused(ns string) string {
+	return "`tunnel-tls: true` makes the forward's URL https://, and " + ns + " takes no URL, so it changes nothing"
+}
+
+// tunnelTLSUnusedHint is what that refusal says to do.
+const tunnelTLSUnusedHint = "remove it: a plugin that takes an address turns TLS on through a forward with its own " +
+	"settings, such as tls-server-name or ca-file on that connection"
+
+// takesURL reports whether any capability in ns declares an input that holds a
+// URL (plugin.EndpointURL), the one input `tunnel-tls` fills.
+func takesURL(ns string, inst Installed) bool {
+	for _, c := range capabilitiesOf(inst) {
+		if plugin.Namespace(c.ID) != ns {
+			continue
+		}
+		for _, f := range c.Inputs {
+			if f.Endpoint == plugin.EndpointURL {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // tunnellable reports whether any capability in the namespace declares an

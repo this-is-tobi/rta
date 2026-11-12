@@ -65,7 +65,7 @@ func ForwardNameRefusal(req Request, code, address, answerer string, hostErr x50
 // server that speaks only TLS on that port: the request went out in the
 // clear, and what came back was the server refusing it, which no change to
 // the server cures — the call's own scheme does (an https:// address, a TLS
-// setting, a profile's tunnelTLS through a forward).
+// setting, a profile's tunnel-tls through a forward).
 //
 // Read by the two shapes it arrives in, whichever a driver passes on. A TLS
 // server that does not speak HTTP answers with a TLS alert record, which

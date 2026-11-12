@@ -106,6 +106,11 @@ func ConnStamp(key string, c config.Connection) string {
 	// one word, and a grant issued against the first would otherwise keep
 	// authorizing calls made with the second. It changes where a call goes as
 	// surely as a host does, one layer further in.
+	//
+	// The labels are the stamp's own and not the file's keys: `tunnelTLS` stays
+	// as it was spelled when the key was, because a changed label changes every
+	// stamp, and every grant issued against a profile would ask again for a
+	// connection that did not move.
 	write("key", key, "kube", c.Kube, "ssh", c.SSH,
 		"secretsFrom", c.SecretsFrom, "tunnelTLS", fmt.Sprintf("%t", c.TunnelTLS))
 	for _, k := range slices.Sorted(maps.Keys(c.Set)) {

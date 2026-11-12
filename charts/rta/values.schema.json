@@ -52,7 +52,7 @@
               "description": "Jump-host target, [user@]host[:port]/desthost:destport \u2014 the head is an ~/.ssh/config alias or hostname. States at most one of kube: and ssh:.",
               "type": "string"
             },
-            "tunnelTLS": {
+            "tunnel-tls": {
               "description": "The far side of this connection's forward terminates TLS itself, so URL-role inputs are filled with https. A statement about the destination, never the hop; the certificate is still verified.",
               "type": "boolean"
             }
