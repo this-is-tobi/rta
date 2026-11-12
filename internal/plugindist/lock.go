@@ -20,7 +20,9 @@ import (
 // hashed, the time) or chosen by the operator (which index, which URL was
 // fetched). The version is the one
 // labelled exception: it is the index's claim, recorded *as* the claim so
-// upgrade can print "0.1.0 → 0.2.0", and nothing resolves through it.
+// upgrade can print "0.1.0 → 0.2.0" and notice a claim that went down
+// (compareClaims) — a reason to ask before moving a plugin back, never a
+// reason to trust anything — and nothing resolves through it.
 //
 // Plain JSON behind the same file lock plugintrust uses, and deliberately not
 // MAC-sealed, following trusted.json rather than the grant file: nothing

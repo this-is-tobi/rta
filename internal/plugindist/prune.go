@@ -28,15 +28,15 @@ type Pruned struct {
 // Prune removes every stored version of every managed plugin that nothing
 // runs, and reports what went.
 //
-// The store keeps a previous digest's directory so a rollback is a rename
-// rather than a re-download (store.go), and nothing ever took the older ones
-// out: an upgrade added a directory and removed none, so a machine that
-// followed a plugin through ten releases held ten copies of it — a gigabyte
-// and a half, measured, for twelve plugins. What stays is what runs: the
-// digest bin/ points at and the one rta.lock records. A version wanted back
-// is a re-install away, which is the distance upgrade's own help already
-// promises. Trust is withdrawn from each pruned digest the way remove
-// withdraws it: the approval was for those bytes, and the bytes are going.
+// The store keeps a previous digest's directory, with its trust entry, so an
+// index that moves back to it lands on bytes already approved (store.go), and
+// nothing ever took the older ones out: an upgrade added a directory and
+// removed none, so a machine that followed a plugin through ten releases held
+// ten copies of it — a gigabyte and a half, measured, for twelve plugins. What
+// stays is what runs: the digest bin/ points at and the one rta.lock records.
+// A move back fetches its bytes again in any case. Trust is withdrawn from
+// each pruned digest the way remove withdraws it: the approval was for those
+// bytes, and the bytes are going.
 func Prune() ([]Pruned, *view.Error) { return prune(false) }
 
 // PreviewPrune answers what Prune would do without touching the store or
@@ -110,7 +110,7 @@ func prune(dryRun bool) ([]Pruned, *view.Error) {
 //
 // The two are held off a forced exit together, one version at a time, as an
 // install's and a remove's writes are. An exit between them left a copy in
-// the store whose trust was gone — kept for a rollback it could no longer
+// the store whose trust was gone — kept for a move back it could no longer
 // serve, and holding its space until a prune ran again. Between versions an
 // exit leaves each one whole, gone or kept, which is all a prune promises:
 // the next one takes what this one did not reach.

@@ -579,28 +579,58 @@ type Upgraded struct {
 	// operator has not weighed. Only a guarded upgrade fills it, and when it
 	// is non-empty the upgrade was refused before anything landed.
 	Widenings []string
+	// Older is the index's claim being below the installed version by its
+	// first three numbers (compareClaims): a move back. Refused with
+	// CodeDowngrade, before anything is fetched, unless it is the move
+	// somebody agreed to (Downgrade), and then the move itself.
+	Older bool
 }
 
+// CodeDowngrade is the refusal of an index's claim older than the version
+// installed, which is taken only once somebody has agreed to that version.
+const CodeDowngrade = "plugin.upgrade.downgrade"
+
 // Upgrade moves one installed plugin to what its index now claims, printing
-// the declaration diff. The previous digest's store directory is kept, so
-// rollback stays a re-link rather than a re-download; its trust entry stands
-// with it, because the operator's approval named that artifact and the
-// artifact has not changed.
+// the declaration diff. The previous digest's store directory is kept, and its
+// trust entry with it, because the operator's approval named that artifact and
+// the artifact has not changed: an index that moves back to it lands on bytes
+// already approved, with what they were given. They are fetched again — a move
+// always fetches before it can know which digest it is moving to.
+//
+// A claim older than the installed version is refused before anything is
+// fetched (CodeDowngrade): moving back is Downgrade's, given the version a
+// person agreed to.
 func Upgrade(ctx context.Context, name string) (Upgraded, *view.Error) {
-	return upgrade(ctx, name, false, false)
+	return upgrade(ctx, name, false, false, "")
 }
 
 // PreviewUpgrade is Upgrade without the durable writes — see PreviewInstall,
 // which it shares installFrom's dryRun branch with.
 func PreviewUpgrade(ctx context.Context, name string) (Upgraded, *view.Error) {
-	return upgrade(ctx, name, true, false)
+	return upgrade(ctx, name, true, false, "")
+}
+
+// Downgrade is Upgrade for an index whose claim is older than the version
+// installed, given the version somebody agreed to move back to. The claim is
+// read again, and one older than the installed version but not to is refused,
+// so a yes is to the version it was given for and not to whatever the index
+// says by the time it is acted on; a claim that is newer by then is simply
+// upgraded to. The bytes are verified as any install's are.
+func Downgrade(ctx context.Context, name, to string) (Upgraded, *view.Error) {
+	return upgrade(ctx, name, false, false, to)
+}
+
+// PreviewDowngrade is Downgrade without the durable writes.
+func PreviewDowngrade(ctx context.Context, name, to string) (Upgraded, *view.Error) {
+	return upgrade(ctx, name, true, false, to)
 }
 
 // upgrade is Upgrade's body. guard asks it to refuse, before anything lands,
 // when the new declaration hands the plugin more than the old one had — what a
 // sweep needs and what an operator naming a single plugin does not, since they
-// are already reading the diff this would be protecting them from.
-func upgrade(ctx context.Context, name string, dryRun, guard bool) (Upgraded, *view.Error) {
+// are already reading the diff this would be protecting them from. agreed is
+// the older version somebody agreed to move back to, "" for none.
+func upgrade(ctx context.Context, name string, dryRun, guard bool, agreed string) (Upgraded, *view.Error) {
 	locked, held, verr := lockedForChange(name)
 	if verr != nil {
 		return Upgraded{}, verr
@@ -613,6 +643,17 @@ func upgrade(ctx context.Context, name string, dryRun, guard bool) (Upgraded, *v
 	listed, verr := Resolve(locked.Index + "/" + name)
 	if verr != nil {
 		return Upgraded{}, verr
+	}
+	// An older claim is decided here, before the old binary is launched and the
+	// new one fetched, so a held move back costs nothing and changes nothing.
+	claim := listed.Manifest.Version
+	order, ordered := compareClaims(claim, locked.Version)
+	older := ordered && order < 0
+	if older && claim != agreed {
+		return Upgraded{
+			Report:     Report{Name: name, Version: claim, Index: listed.Index},
+			FromDigest: locked.Digest, FromVersion: locked.Version, Older: true,
+		}, olderClaim(listed.Index, name, locked.Version, claim, agreed)
 	}
 
 	// The old declaration, read before anything changes — from the installed
@@ -661,12 +702,25 @@ func upgrade(ctx context.Context, name string, dryRun, guard bool) (Upgraded, *v
 	}
 	if report.Digest == locked.Digest {
 		return Upgraded{Report: report, UpToDate: true,
-			FromDigest: locked.Digest, FromVersion: locked.Version}, nil
+			FromDigest: locked.Digest, FromVersion: locked.Version, Older: older}, nil
 	}
 	return Upgraded{
 		Report: report, FromDigest: locked.Digest, FromVersion: locked.Version,
-		Diff: declarationDiff(oldDecl, report.Declared),
+		Diff: declarationDiff(oldDecl, report.Declared), Older: older,
 	}, nil
+}
+
+// olderClaim is the refusal of a claim below the installed version: the move
+// back nobody has agreed to, or one the index has changed since somebody did.
+func olderClaim(index, name, installed, claim, agreed string) *view.Error {
+	if agreed != "" {
+		return view.Errorf(CodeDowngrade, "index %s now claims %s %s, not the %s agreed to — nothing was changed",
+			index, name, claim, agreed).
+			WithHint("`rta plugin upgrade " + name + "` asks about what it claims now")
+	}
+	return view.Errorf(CodeDowngrade, "index %s now claims %s %s, older than the %s installed",
+		index, name, claim, installed).
+		WithHint("`rta plugin upgrade " + name + "` asks before it moves a plugin back; --yes answers")
 }
 
 // namesLocalFile reports whether one manifest URL will be read off this

@@ -615,7 +615,9 @@ func TestUpgradeMovesKeepsRollbackAndReportsUpToDate(t *testing.T) {
 	if verr != nil {
 		t.Fatalf("upgrade: %v", verr)
 	}
-	if up.UpToDate || up.FromDigest != first.Digest || up.Digest == first.Digest {
+	// A respin under the version already installed is a move like any other,
+	// never one back: the claim did not go down.
+	if up.UpToDate || up.Older || up.FromDigest != first.Digest || up.Digest == first.Digest {
 		t.Fatalf("upgrade = %+v", up)
 	}
 	if len(up.Diff) != 0 {
@@ -624,10 +626,11 @@ func TestUpgradeMovesKeepsRollbackAndReportsUpToDate(t *testing.T) {
 	if got, _ := CurrentDigest("hello"); got != up.Digest {
 		t.Fatalf("current = %s, want the new digest", got)
 	}
-	// Rollback stays a re-link: the old digest's directory and its trust both
-	// stand — the operator approved that artifact and it has not changed.
+	// The old digest's directory and its trust both stand — the operator
+	// approved that artifact and it has not changed — so an index that moves
+	// back to it lands on bytes already approved.
 	if _, err := os.Stat(filepath.Join(StoreDir(), "hello", first.Digest)); err != nil {
-		t.Error("the previous digest's store directory is gone; rollback is a re-download again")
+		t.Error("the previous digest's store directory is gone")
 	}
 	if !plugintrust.Load().Trusts(first.Digest) {
 		t.Error("the previous artifact's trust was withdrawn by an upgrade")

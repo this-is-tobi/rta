@@ -368,9 +368,10 @@ func newPluginPruneCommand(opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
 		Use:   "prune",
 		Short: "Drop the stored versions no plugin runs",
-		Long: "Every upgrade keeps the previous artifact in the store so a rollback is a\n" +
-			"re-install rather than a re-download, and nothing took the older ones out:\n" +
-			"a plugin followed through ten releases held ten copies. This removes every\n" +
+		Long: "Every upgrade keeps the previous artifact in the store, with your approval\n" +
+			"of it, so an index that moves back to it lands on bytes already approved —\n" +
+			"and nothing took the older ones out: a plugin followed through ten releases\n" +
+			"held ten copies. This removes every\n" +
 			"stored version that is neither the one bin/ points at nor the one rta.lock\n" +
 			"records, withdrawing trust from each the way remove does. A plugin whose\n" +
 			"store names no current version is left alone, and the row says so.",
@@ -443,7 +444,7 @@ func shortAll(digests []string) string {
 // command. The first made a person with no pin look for one; the second left
 // the one with forty profile entries to find the command in the docs after
 // each of them refused at its next --profile.
-func stalePinPairs(name, from, to string, dryRun bool) []view.Pair {
+func stalePinPairs(name, from, to string, dryRun bool, move string) []view.Pair {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil
@@ -473,7 +474,7 @@ func stalePinPairs(name, from, to string, dryRun bool) []view.Pair {
 		note := format.Count(n, "profile", "profiles") + " (" + strings.Join(profiles, ", ") + ") " +
 			format.Plural(n, "pins", "pin") + " " + name + "@" + shortDigest(from)
 		if dryRun {
-			note += ", and will refuse after the upgrade until `rta profile repin --all --plugin " + name +
+			note += ", and will refuse after the " + move + " until `rta profile repin --all --plugin " + name +
 				"` points " + them + " at " + newPin
 		} else {
 			note += " and now " + format.Plural(n, "refuses", "refuse") + " — `rta profile repin --all --plugin " +
@@ -490,7 +491,7 @@ func stalePinPairs(name, from, to string, dryRun bool) []view.Pair {
 		repin := "`rta config repin --plugin " + name + "` points it at " + newPin
 		note := pin + " no longer applies, and " + name + "'s calls are refused until " + repin
 		if dryRun {
-			note = pin + " still applies — after the upgrade " + name + "'s calls are refused until " + repin
+			note = pin + " still applies — after the " + move + " " + name + "'s calls are refused until " + repin
 		}
 		pairs = append(pairs, view.Pair{Key: "your pin", Value: note})
 	}
@@ -510,9 +511,13 @@ func stalePinPairs(name, from, to string, dryRun bool) []view.Pair {
 // its next call with kubectl's "operation not permitted", over a file it had
 // read before the upgrade, and nothing on the receipt said why.
 func leftBehind(up plugindist.Upgraded, dryRun bool) []view.Pair {
-	pairs := stalePinPairs(up.Name, up.FromDigest, up.Digest, dryRun)
-	pairs = append(pairs, lostAccessPairs(up, dryRun)...)
-	return append(pairs, replacedGrantPairs(up.Name, up.FromDigest, up.Digest, dryRun)...)
+	move := "upgrade"
+	if up.Older {
+		move = "downgrade"
+	}
+	pairs := stalePinPairs(up.Name, up.FromDigest, up.Digest, dryRun, move)
+	pairs = append(pairs, lostAccessPairs(up, dryRun, move)...)
+	return append(pairs, replacedGrantPairs(up.Name, up.FromDigest, up.Digest, dryRun, move)...)
 }
 
 // lostAccessPairs says what the operator let the old build read that the new
@@ -526,7 +531,7 @@ func leftBehind(up plugindist.Upgraded, dryRun bool) []view.Pair {
 // and the line would then be handing out, in the operator's name, a location
 // the old build was never given. A location the new build no longer declares
 // is left out too: giving it opens nothing.
-func lostAccessPairs(up plugindist.Upgraded, dryRun bool) []view.Pair {
+func lostAccessPairs(up plugindist.Upgraded, dryRun bool, move string) []view.Pair {
 	trust := plugintrust.Load()
 	had, has := trust.Allowed(up.FromDigest), trust.Allowed(up.Digest)
 	var lost []plugin.Need
@@ -545,7 +550,7 @@ func lostAccessPairs(up plugindist.Upgraded, dryRun bool) []view.Pair {
 	from, to := up.Name+"@"+shortDigest(up.FromDigest), up.Name+"@"+shortDigest(up.Digest)
 	said := func(what, command string) string {
 		if dryRun {
-			return from + " can read " + what + ", and after the upgrade " + to + " cannot until `" + command + "`"
+			return from + " can read " + what + ", and after the " + move + " " + to + " cannot until `" + command + "`"
 		}
 		return from + " could read " + what + ", and " + to + " cannot until `" + command + "`"
 	}
@@ -578,7 +583,7 @@ func lostAccessPairs(up plugindist.Upgraded, dryRun bool) []view.Pair {
 // its window, and authorizes nothing: the calls it was issued for are refused
 // in the words an ungranted call gets. `rta grant list` marks them and rta
 // doctor warns of them; this is where they became so.
-func replacedGrantPairs(name, from, to string, dryRun bool) []view.Pair {
+func replacedGrantPairs(name, from, to string, dryRun bool, move string) []view.Pair {
 	grants, verr := grant.Load()
 	if verr != nil {
 		return nil
@@ -599,7 +604,7 @@ func replacedGrantPairs(name, from, to string, dryRun bool) []view.Pair {
 	}
 	note := format.Count(n, "grant", "grants") + " issued against " + name + "@" + shortDigest(from)
 	if dryRun {
-		note += " will authorize nothing after the upgrade: "
+		note += " will authorize nothing after the " + move + ": "
 	} else {
 		note += " " + format.Plural(n, "authorizes", "authorize") + " nothing now: "
 	}
@@ -672,6 +677,92 @@ func upToDateValue(up plugindist.Upgraded) string {
 		"`rta plugin index update` fetches newer claims"
 }
 
+// The moves `rta plugin upgrade <name>` makes, variables so a test can stand
+// in for the index and the artifact.
+var (
+	upgradePlugin          = plugindist.Upgrade
+	previewUpgradePlugin   = plugindist.PreviewUpgrade
+	downgradePlugin        = plugindist.Downgrade
+	previewDowngradePlugin = plugindist.PreviewDowngrade
+)
+
+// upgradeNamed is `rta plugin upgrade <name>`: the move, and first, for an
+// index that now claims an older version than the one installed, the question.
+//
+// **An older claim is asked about, never taken unasked.** An upgrade used to
+// take it and say "upgraded pg 1.4.0 → 1.3.2", so a maintainer's revert, or an
+// index pointed back at a genuine release with a known hole in it, moved every
+// machine that ran `index update && upgrade` with nothing to stop on. Here a
+// person at a terminal is shown both versions and asked; --yes answers for a
+// script, and with nobody to ask it is refused as any unconfirmed change is,
+// before anything is fetched. --dry-run previews the move without asking. The
+// yes is to the version shown (plugindist.Downgrade).
+//
+// The versions are the index's claims: this notices an index that moves a
+// plugin back while telling the truth about it, and never trusts anything
+// because of a version (plugindist.compareClaims).
+func upgradeNamed(cmd *cobra.Command, opts *globalOpts, name string) (plugindist.Upgraded, error) {
+	ctx := cmd.Context()
+	upgrade, downgrade := upgradePlugin, downgradePlugin
+	if opts.dryRun {
+		upgrade, downgrade = previewUpgradePlugin, previewDowngradePlugin
+	}
+	up, verr := upgrade(ctx, name)
+	if verr != nil && verr.Code == plugindist.CodeDowngrade && up.Older {
+		if !opts.dryRun && !opts.yes {
+			if !confirmTerminal() {
+				return up, &view.Error{Code: CodeConfirmRequired,
+					Message: verr.Message + ", and moving it back needs confirmation",
+					Hint:    "re-run with --yes to confirm, or --dry-run to preview"}
+			}
+			w := cmd.ErrOrStderr()
+			fmt.Fprintf(w, "%s %s is installed, and index %s now claims %s — an older version.\n",
+				name, up.FromVersion, up.Index, up.Version)
+			if !askYes(ctx, w, "Move "+name+" back to "+up.Version+"? [y/N] ") {
+				return up, declinedConfirmation(w)
+			}
+		}
+		up, verr = downgrade(ctx, name, up.Version)
+	}
+	if verr != nil {
+		return up, verr
+	}
+	return up, nil
+}
+
+// upgradeAnswer is the receipt of one plugin's move: what moved, the
+// declaration diff, and what stays bound to the build it replaced.
+func upgradeAnswer(up plugindist.Upgraded, dryRun bool) view.KeyValue {
+	if up.UpToDate {
+		return view.KeyValue{Pairs: []view.Pair{{Key: "up to date", Value: upToDateValue(up)}}}
+	}
+	label := "upgraded"
+	switch {
+	case up.Older && dryRun:
+		label = "would downgrade"
+	case up.Older:
+		label = "downgraded"
+	case dryRun:
+		label = "would upgrade"
+	}
+	pairs := []view.Pair{
+		{Key: label, Value: fmt.Sprintf("%s %s → %s", up.Name, up.FromVersion, up.Version)},
+		{Key: "digest", Value: shortDigest(up.FromDigest) + " → " + shortDigest(up.Digest)},
+	}
+	if len(up.Diff) == 0 {
+		pairs = append(pairs, view.Pair{Key: "declaration", Value: "unchanged"})
+	}
+	for _, line := range up.Diff {
+		pairs = append(pairs, view.Pair{Key: "declaration", Value: line})
+	}
+	pairs = append(pairs, leftBehind(up, dryRun)...)
+	if up.Older && dryRun {
+		pairs = append(pairs, view.Pair{Key: "to move it back",
+			Value: "run it without --dry-run and answer yes, or pass --yes — an older version is never taken unasked"})
+	}
+	return view.KeyValue{Pairs: pairs}
+}
+
 func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 	var (
 		all   bool
@@ -684,14 +775,22 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			"a capability changing safety class, or a destructive one appearing, is\n" +
 			"the supply-chain event that matters, and precisely what a signature\n" +
 			"does not tell you: the same publisher signing a worse plugin verifies\n" +
-			"perfectly. The previous artifact stays in the store, so rolling back is\n" +
-			"a re-install away, not a re-download.\n\n" +
+			"perfectly. The previous artifact stays in the store with your approval\n" +
+			"of it, so an index that moves back to it lands on bytes already\n" +
+			"approved, fetched again.\n\n" +
 			"What \"now\" claims is the index as `rta plugin index update` last left it:\n" +
 			"an upgrade never fetches the index itself.\n\n" +
+			"An index that now claims an older version than the one installed is not\n" +
+			"followed unasked: the upgrade stops before fetching anything, says which\n" +
+			"two versions, and asks at a terminal — --yes answers. The versions are\n" +
+			"the index's claims, read by their first three numbers: this catches an\n" +
+			"index rolled back honestly, and one that lies about a version is not\n" +
+			"stopped by it.\n\n" +
 			"`--all` sweeps every installed plugin, and holds back any whose new\n" +
 			"declaration would hand it more than you last approved — nobody reads a\n" +
-			"diff going past in a sweep, so the diff stops the sweep instead. Name\n" +
-			"the plugin to upgrade it anyway once you have read what changed.\n\n" +
+			"diff going past in a sweep, so the diff stops the sweep instead — and\n" +
+			"any its index would move back, --yes or not. Name the plugin to move it\n" +
+			"anyway once you have read what changed.\n\n" +
 			"The receipt names what the upgrade left bound to the build it replaced —\n" +
 			"profile entries and a plugins: section pinned to it, what you let it\n" +
 			"read, grants issued against it — each with the command that moves it,\n" +
@@ -716,35 +815,11 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			if all {
 				return runPluginUpgradeAll(cmd, opts, index)
 			}
-			upgrade := plugindist.Upgrade
-			if opts.dryRun {
-				upgrade = plugindist.PreviewUpgrade
+			up, err := upgradeNamed(cmd, opts, name)
+			if err != nil {
+				return err
 			}
-			up, verr := upgrade(cmd.Context(), name)
-			if verr != nil {
-				return verr
-			}
-			if up.UpToDate {
-				return renderView(cmd, opts, view.KeyValue{Pairs: []view.Pair{
-					{Key: "up to date", Value: upToDateValue(up)},
-				}})
-			}
-			upgradedLabel := "upgraded"
-			if opts.dryRun {
-				upgradedLabel = "would upgrade"
-			}
-			pairs := []view.Pair{
-				{Key: upgradedLabel, Value: fmt.Sprintf("%s %s → %s", up.Name, up.FromVersion, up.Version)},
-				{Key: "digest", Value: shortDigest(up.FromDigest) + " → " + shortDigest(up.Digest)},
-			}
-			if len(up.Diff) == 0 {
-				pairs = append(pairs, view.Pair{Key: "declaration", Value: "unchanged"})
-			}
-			for _, line := range up.Diff {
-				pairs = append(pairs, view.Pair{Key: "declaration", Value: line})
-			}
-			pairs = append(pairs, leftBehind(up, opts.dryRun)...)
-			return renderView(cmd, opts, view.KeyValue{Pairs: pairs})
+			return renderView(cmd, opts, upgradeAnswer(up, opts.dryRun))
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false,
@@ -831,6 +906,20 @@ func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
 	return cmd
 }
 
+// outdatedRow is one row of `rta plugin outdated`. An index that now claims an
+// older version than the one installed is said to, in the cell that names the
+// claim: upgrading would move the plugin back, which it asks about first.
+func outdatedRow(r plugindist.OutdatedRow) []string {
+	available := r.AvailableVersion
+	switch {
+	case r.Problem != "":
+		available = r.Problem
+	case r.Older:
+		available += " (older)"
+	}
+	return []string{r.Name, r.InstalledVersion, available, r.Index}
+}
+
 // newPluginOutdatedCommand implements `rta plugin outdated`: search's own
 // "answers from the manifests alone" restraint, scoped to what is installed
 // and turned into a comparison instead of a listing.
@@ -873,11 +962,7 @@ func newPluginOutdatedCommand(opts *globalOpts) *cobra.Command {
 				t.Empty = "every plugin installed from " + index + " matches what it claims"
 			}
 			for _, r := range rows {
-				available := r.AvailableVersion
-				if r.Problem != "" {
-					available = r.Problem
-				}
-				t.Rows = append(t.Rows, []string{r.Name, r.InstalledVersion, available, r.Index})
+				t.Rows = append(t.Rows, outdatedRow(r))
 			}
 			return renderView(cmd, opts, t)
 		},

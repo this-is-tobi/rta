@@ -149,7 +149,7 @@ func TestAnUpgradeNamesWhatTheConfigPinnedAndHowToMoveIt(t *testing.T) {
 
 	pairs := func(dryRun bool) map[string]string {
 		out := map[string]string{}
-		for _, p := range stalePinPairs("hello", old, fresh, dryRun) {
+		for _, p := range stalePinPairs("hello", old, fresh, dryRun, "upgrade") {
 			out[p.Key] = p.Value
 		}
 		return out

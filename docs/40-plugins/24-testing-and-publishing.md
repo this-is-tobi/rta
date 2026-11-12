@@ -165,6 +165,8 @@ Two things to know before you publish:
 
   That is GoReleaser's own default ldflag, so a release stamps it for free, and an unstamped build says `dev` rather than claiming a version that was never cut. `--version` still overrides, for the case where the tag and the artifact genuinely disagree.
 
+  rta reads a version by its first three numbers, `1.2.0` or `v1.2.0`, to notice an index that moves a plugin back, which `rta plugin upgrade` asks about before taking. Anything after them — a pre-release, `git describe`'s `-3-gabc1234` — is shown and never ordered.
+
 Then attach your own index and take the round trip yourself, before anybody else does. `rta plugin manifest --index` writes into a plain directory, and attaching clones the repository, which holds only what was committed, so a directory that is not a repository yet needs these first:
 
 ```bash

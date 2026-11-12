@@ -69,9 +69,10 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, left []view.Pair, dryR
 		return view.Text{Body: "no plugin is installed"}, nil
 	}
 
-	moved, held := "upgraded", "held back — would gain authority"
+	moved, held, back := "upgraded", "held back — would gain authority", "held back — older than installed"
 	if dryRun {
-		moved, held = "would upgrade", "would be held back — would gain authority"
+		moved, held, back = "would upgrade", "would be held back — would gain authority",
+			"would be held back — older than installed"
 	}
 
 	t := view.Table{Columns: []view.Column{{Name: "Plugin"}, {Name: "Version"},
@@ -85,6 +86,19 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, left []view.Pair, dryR
 			failedNames = append(failedNames, o.Name)
 			t.Rows = append(t.Rows, []string{o.Name, "—", "—", "failed"})
 			warnings = append(warnings, *o.Problem)
+		case o.Older:
+			// Before the authority case: nothing was fetched, so there is no
+			// declaration to have widened, and a move back is asked about by
+			// name, never taken by a sweep.
+			heldNames = append(heldNames, o.Name)
+			t.Rows = append(t.Rows, []string{o.Name,
+				o.FromVersion + " → " + o.Version,
+				shortDigest(o.FromDigest) + " (kept)", back})
+			warnings = append(warnings, *view.Errorf(plugindist.CodeDowngrade,
+				"%s was not moved back: index %s now claims %s, older than the %s installed",
+				o.Name, o.Index, o.Version, o.FromVersion).
+				WithHint("`rta plugin upgrade " + o.Name + " --dry-run` shows what moving it back would " +
+					"change; the same command without it asks first"))
 		case o.Skipped():
 			heldNames = append(heldNames, o.Name)
 			t.Rows = append(t.Rows, []string{o.Name,
