@@ -781,3 +781,30 @@ func TestConfigNamesAWholeBlockAsABlock(t *testing.T) {
 		t.Errorf("unset plugins did not take the block and only it: %v\n%s", err, file)
 	}
 }
+
+// A pin that is the start of the installed digest but shorter than every
+// digest-prefix match accepts is too short to trust, which is what a profile
+// entry and a plugin's config section are told of it; `config set` said it
+// did not match, of a pin that does, and sent the reader to compare digests
+// that agree.
+func TestAPinTooShortToTrustIsSaidToBeShortNotStale(t *testing.T) {
+	reg := registry.New()
+	digest := "abcdef0123456789" + strings.Repeat("0", 48)
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	if err := reg.RegisterFrom(plugin.Plugin{Name: "far", Summary: "outside this binary",
+		Capabilities: []plugin.Capability{{ID: "far.thing.list", Summary: "list things", Safety: plugin.Read, Run: run}}},
+		registry.Origin{Path: "/usr/local/bin/rta-plugin-far", Digest: digest}); err != nil {
+		t.Fatal(err)
+	}
+	_, verr := resolveConfigKey(reg, "plugins.far@abcd.timeout")
+	if verr == nil || verr.Code != "core.config.key.shortpin" || !strings.Contains(verr.Message, "too short") {
+		t.Errorf("a four-character pin of the installed digest: %v, want it called too short", verr)
+	}
+	_, verr = resolveConfigKey(reg, "plugins.far@ffffffff.timeout")
+	if verr == nil || verr.Code != "core.config.key.stalepin" || !strings.Contains(verr.Message, "does not match") {
+		t.Errorf("a pin of another digest: %v, want it called stale", verr)
+	}
+	if _, verr = resolveConfigKey(reg, "plugins.far@abcdef01.timeout"); verr != nil && strings.Contains(verr.Code, "pin") {
+		t.Errorf("a pin at the floor that matches: %v, want the pin accepted", verr)
+	}
+}
