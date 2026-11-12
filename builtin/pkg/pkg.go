@@ -142,10 +142,9 @@ func (s status) failed(name string) *view.Error {
 
 // runStatus is run with the exit status handed back undecided, for the tools
 // that answer with it: dnf check-update's 100, npm outdated's 1, pacman -Qu's
-// 1 for nothing matched, needs-restarting's 1 for a reboot owed, and a
-// binary's own --version, whose output says what it says whatever the status.
-// A timeout, a missing binary and a process that never ran are failures
-// here too: none of them answered anything.
+// 1 for nothing matched, needs-restarting's 1 for a reboot owed. A timeout, a
+// missing binary and a process that never ran are failures here too: none of
+// them answered anything.
 func runStatus(ctx context.Context, name string, args ...string) (status, *view.Error) {
 	limit := budget(ctx, listTimeout)
 	ctx, cancel := context.WithTimeout(ctx, limit)

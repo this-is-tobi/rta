@@ -30,8 +30,8 @@ import (
 // entry grammar is the smallest that says everything: `bin=github:owner/repo`,
 // the binary's name on $PATH and the repository that releases it. The asset
 // is picked from the release by this machine's OS and architecture, the
-// installed version is what `bin --version` prints, and the latest is the
-// release's tag.
+// installed version is read from the binary (installedVersion), and the
+// latest is the release's tag.
 
 // toolsField is the config-backed list, Local so no remote caller can add a
 // source to it.
@@ -95,8 +95,11 @@ func toolsCapability() plugin.Capability {
 		Idempotent: true,
 		Description: "The binaries no package manager knows about. Each entry in `plugins: pkg: " +
 			"tools:` names a binary on $PATH and the GitHub repository that releases it; " +
-			"the installed version is what `<binary> --version` says, the latest is " +
-			"the repository's latest release, asked of github.com once in ten minutes: " +
+			"the installed version is what `<binary> --version` says, or, for a binary " +
+			"that does not answer it, the version in the name of the directory its link " +
+			"leads into (krew's store, Homebrew's Cellar) — never a `version` subcommand, " +
+			"which for kubectl and its kin asks a server. " +
+			"The latest is the repository's latest release, asked of github.com once in ten minutes: " +
 			"when it refuses, or cannot be reached, the first row says so and the rows " +
 			"after it say they were not checked. Binaries placed by `go install` need no " +
 			"entry — they carry their module path, and the Go module proxy knows the " +
@@ -154,7 +157,7 @@ func readTools(ctx context.Context, c *registryClient, raw []string) ([]toolStat
 		st := toolState{tool: t, Installed: "-"}
 		if p, err := lookPath(t.Bin); err == nil {
 			st.Where = p
-			st.Installed = installedVersion(ctx, t.Bin)
+			st.Installed = installedVersion(ctx, t.Bin, p)
 		} else {
 			st.Note = "not on $PATH"
 		}
@@ -203,23 +206,113 @@ func withRemedy(verr *view.Error) string {
 
 var versionRe = regexp.MustCompile(`v?(\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?)`)
 
-// installedVersion asks the binary itself, and `--version` only: the
-// convention nearly every Go and Rust tool follows, and the one a binary
-// answers alone. `version` is the other convention, and for kubectl, argocd,
-// istioctl, linkerd and docker it is the subcommand that also asks the server
-// in the current context, so every refresh of a tile reached a cluster or a
-// daemon that the tools list never named. The first thing that looks like a
-// version in the output is the answer, whatever the status, and output with
-// no version in it reads as unknown, never as current.
-func installedVersion(ctx context.Context, bin string) string {
-	st, verr := runStatus(ctx, bin, "--version")
-	if verr != nil {
-		return "-"
+// storeDirRe is a directory named for a version and nothing else: v1.30.1 in
+// krew's store, 1.34.0 in Homebrew's Cellar.
+var storeDirRe = regexp.MustCompile(`^` + versionRe.String() + `$`)
+
+// installedVersion is the version of the binary bin, found at path, from the
+// first of two readers that has one, and "-" when neither does, which reads
+// as unknown, never as current.
+//
+// The binary is asked first, with `--version` only: the convention nearly
+// every Go and Rust tool follows, and the one a binary answers alone.
+// `version` is the other convention, and for kubectl, argocd, istioctl,
+// linkerd, cmctl and docker it is the subcommand that also asks the server in
+// the current context, so every refresh of a tile reached a cluster or a
+// daemon that the tools list never named. That left every cobra command
+// without the flag unread, and those are most kubectl plugins: of seven that
+// krew had installed, stern was the one whose version showed.
+//
+// For a binary that does not answer, the second reader looks at where a
+// package store keeps it instead of running anything (storeVersion), which
+// reads all seven.
+func installedVersion(ctx context.Context, bin, path string) string {
+	if v := askedVersion(ctx, bin); v != "" {
+		return v
 	}
-	if m := versionRe.FindStringSubmatch(st.out); m != nil {
-		return m[1]
+	if v := versionOnDisk(path, bin); v != "" {
+		return v
 	}
 	return "-"
+}
+
+// askedVersion is the first thing that looks like a version in what the
+// binary prints for `--version`, and only when it exits zero.
+//
+// A failing exit is not an answer. It was read whatever the status, and a
+// binary that does not know the flag prints its usage, sometimes to stdout:
+// a number in one of its examples, a `--timeout 1.5` or an image's tag, read
+// as the installed version, and stood in front of the readers that find the
+// real one on disk.
+func askedVersion(ctx context.Context, bin string) string {
+	out, verr := run(ctx, bin, "--version")
+	if verr != nil {
+		return ""
+	}
+	if m := versionRe.FindStringSubmatch(out); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// versionOnDisk is the seam for reading the version from where the binary is
+// kept rather than by running it. A test's fake $PATH hands back paths like
+// /usr/local/bin/kubectl, which name files on whatever machine runs the test,
+// and the reader left in place would read that machine's kubectl.
+//
+// Go's build stamp (debug/buildinfo) would be a second reader here, for a Go
+// binary that is neither linked from a store nor answers --version. It was
+// left out on its weight: it added 316 KB to the linux/amd64 binary, for
+// binaries the store already reads in every case that asked for it.
+var versionOnDisk = storeVersion
+
+// storeVersion is the version in the name of the directory a package store
+// keeps the binary in, when the binary on $PATH is a link into one.
+//
+// krew, Homebrew and proto install each version into a directory of its own
+// and link it onto $PATH — ~/.krew/bin/kubectl-cnpg leads to
+// ~/.krew/store/cnpg/v1.30.1/kubectl-cnpg, /opt/homebrew/bin/stern to
+// ../Cellar/stern/1.34.0/bin/stern — so the version is in the path, and
+// nothing need run to learn it.
+//
+// Two conditions keep some other version in a path from being taken for the
+// binary's. The directory has to be one the link leads into, never one the
+// link sits in: a package installed under a runtime's version —
+// ~/.local/share/mise/installs/node/22.1.0/bin/ts-node — lives in node's
+// directory, which says nothing about ts-node. And the directory above the
+// version has to name the binary: a version manager's shim links to the
+// manager itself, and Cellar/mise/2026.1.0 is not kubectl's version. It names
+// it as the binary is called, or as the end of its name after a dash, which
+// is how a plugin is named for the command it extends (krew's cert-manager is
+// kubectl-cert_manager), with _ and - read alike.
+func storeVersion(path, bin string) string {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return ""
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return ""
+	}
+	into := strings.Split(filepath.ToSlash(target), "/")
+	from := strings.Split(filepath.ToSlash(dir), "/")
+	shared := 0
+	for shared < len(into) && shared < len(from) && into[shared] == from[shared] {
+		shared++
+	}
+	// The last element is the file; a version names a directory, and the
+	// deepest is the one nearest the binary.
+	for i := len(into) - 2; i > shared; i-- {
+		if m := storeDirRe.FindStringSubmatch(into[i]); m != nil && namesBinary(into[i-1], bin) {
+			return m[1]
+		}
+	}
+	return ""
+}
+
+func namesBinary(dir, bin string) bool {
+	dir, bin = strings.ReplaceAll(strings.ToLower(dir), "_", "-"), strings.ReplaceAll(strings.ToLower(bin), "_", "-")
+	return dir != "" && (dir == bin || strings.HasSuffix(bin, "-"+dir))
 }
 
 func runTools(ctx context.Context, req plugin.Request) (view.View, error) {
@@ -502,6 +595,12 @@ func fetchChecksums(ctx context.Context, name, u string) (map[string]string, *vi
 // installTool is the upgrade of one direct binary: claims first, evidence
 // second, nothing durable until they agree — plugin install's order.
 func installTool(ctx context.Context, sf plugin.Surface, c *registryClient, t tool, unverified, dryRun bool) (view.View, *view.Error) {
+	// Where it would go is decided before anything is asked of GitHub: a
+	// destination that is refused makes every request before it a wasted one.
+	dest, verr := toolDestination(t.Bin)
+	if verr != nil {
+		return nil, verr
+	}
 	rel, found, verr := c.latestRelease(ctx, t.Owner, t.Repo)
 	if verr != nil {
 		return nil, verr
@@ -525,10 +624,6 @@ func installTool(ctx context.Context, sf plugin.Surface, c *registryClient, t to
 		return nil, view.Errorf("pkg.tool.unverified", "github.com/%s/%s publishes no digest for %s", t.Owner, t.Repo, assetName).
 			WithHint("the release has neither an API digest nor a checksums file; " + sf.InputName("unverified") +
 				" installs it on your word alone")
-	}
-	dest, verr := toolDestination(t.Bin)
-	if verr != nil {
-		return nil, verr
 	}
 	if dryRun {
 		how := "verified against " + want[:min(12, len(want))]
@@ -633,19 +728,41 @@ func installTool(ctx context.Context, sf plugin.Surface, c *registryClient, t to
 }
 
 // toolDestination is where the binary already lives, so the upgrade replaces
-// it in place, or ~/.local/bin for a first install.
+// it in place, or ~/.local/bin for a first install — never a link.
+//
+// The upgrade renames its file over the destination, and over a link that
+// puts a plain file where the link was. A link on $PATH is somebody else's
+// bookkeeping: krew links each plugin into its store and keeps a receipt
+// naming the version it installed, Homebrew links each formula into its
+// Cellar. Replaced, the link was gone, the old version stayed in the store,
+// and krew's receipt named a version that was no longer the one on $PATH. So
+// a link is refused, and whatever made it upgrades what it points at.
 func toolDestination(bin string) (string, *view.Error) {
+	dest := ""
 	if p, err := lookPath(bin); err == nil {
-		abs, err := filepath.Abs(p)
-		if err == nil {
-			return abs, nil
+		if abs, err := filepath.Abs(p); err == nil {
+			dest = abs
 		}
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", view.Errorf("pkg.tool.place", "no home directory: %v", err)
+	if dest == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", view.Errorf("pkg.tool.place", "no home directory: %v", err)
+		}
+		dest = filepath.Join(home, ".local", "bin", bin)
 	}
-	return filepath.Join(home, ".local", "bin", bin), nil
+	if info, err := os.Lstat(dest); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		// Where it leads, resolved: Homebrew's links are relative, and
+		// ../Cellar/fd/10.5.2/bin/fd says less than the path it means.
+		target, err := filepath.EvalSymlinks(dest)
+		if err != nil {
+			target, _ = os.Readlink(dest)
+		}
+		return "", view.Errorf("pkg.tool.link", "%s is a link to %s, and rta does not replace a link", dest, target).
+			WithHint("what made the link upgrades what it points at: `kubectl krew upgrade` for a krew plugin, " +
+				"`brew upgrade` for a Homebrew formula; to have rta keep the binary instead, remove the link and run this again")
+	}
+	return dest, nil
 }
 
 // memberNamed finds the regular file in a .tar.gz whose base name is bin,

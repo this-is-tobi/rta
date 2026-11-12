@@ -121,8 +121,10 @@ profiles:
           # warn-days: 90   # flag a cycle this many days before its end of life
       pkg:
         set:
-          # <binary on $PATH>=github:<owner>/<repo>: rta runs `<binary> --version` and compares it with
-          # the repository's latest release. At most thirty entries, one request to github.com each, remembered for ten minutes, none of them spent from the GitHub API's hourly allowance.
+          # <binary on $PATH>=github:<owner>/<repo>: rta asks `<binary> --version`, or reads the version from the
+          # directory krew or Homebrew keeps the binary in, and compares it with the repository's latest release.
+          # At most thirty entries, one request to github.com each, remembered for ten minutes, none of them spent from the GitHub API's hourly allowance.
+          # These two came from krew: `kubectl krew upgrade` upgrades them, and `rta pkg upgrade` refuses krew's links.
           tools:
             - kubectl-cnpg=github:cloudnative-pg/cloudnative-pg
             - kubectl-stern=github:stern/stern
