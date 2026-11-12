@@ -78,7 +78,7 @@ func TestReplaceWritesWhenTheFileIsStillWhatTheEditorStartedFrom(t *testing.T) {
 	if err := os.WriteFile(path, []byte("output: json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := Replace([]byte("output: json\n"), []byte("# mine\noutput: yaml\n")); err != nil {
+	if err := ReplaceAt(Path(), []byte("output: json\n"), []byte("# mine\noutput: yaml\n")); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)
@@ -95,7 +95,7 @@ func TestReplaceRefusesWhenSomethingElseWroteWhileTheEditorWasOpen(t *testing.T)
 	if err := os.WriteFile(path, []byte("output: json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := Replace([]byte("output: csv\n"), []byte("output: yaml\n"))
+	err := ReplaceAt(Path(), []byte("output: csv\n"), []byte("output: yaml\n"))
 	if err == nil || !strings.Contains(err.Error(), "changed while the editor was open") {
 		t.Fatalf("err = %v", err)
 	}
@@ -107,7 +107,7 @@ func TestReplaceRefusesWhenSomethingElseWroteWhileTheEditorWasOpen(t *testing.T)
 func TestReplaceCreatesTheFileAndItsDirectoryWhenThereIsNone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "new", "config.yaml")
 	t.Setenv("RTA_CONFIG", path)
-	if err := Replace(nil, []byte("output: json\n")); err != nil {
+	if err := ReplaceAt(Path(), nil, []byte("output: json\n")); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(path); string(b) != "output: json\n" {

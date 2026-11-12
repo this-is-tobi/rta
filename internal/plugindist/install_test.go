@@ -454,7 +454,7 @@ func TestAnInstallThatCannotLinkFailsAndLeavesNothingCurrent(t *testing.T) {
 	if err := os.WriteFile(staged, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	digest, verr := digestFile(staged)
+	digest, verr := DigestFile(staged)
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -479,7 +479,7 @@ func TestAFileURLIsOpenedAsTheAbsolutePathItCarries(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dst.Close()
-	_, verr := fetchArtifact(context.Background(), "file:///a:/x", dst)
+	_, verr := Fetch(context.Background(), "file:///a:/x", dst)
 	if verr == nil || !strings.Contains(verr.Message, "open /a:/x:") {
 		t.Fatalf("fetch = %v, want the absolute path /a:/x to be the one opened", verr)
 	}
@@ -704,7 +704,7 @@ capabilities:
 	}
 }
 
-// extractMember takes exactly the named member and nothing else it could be
+// ExtractMember takes exactly the named member and nothing else it could be
 // talked into: a missing member is the index's claim failing, a symlink
 // member is refused, and ./-prefixed spellings still match.
 func TestExtractMemberIsExact(t *testing.T) {
@@ -722,7 +722,7 @@ func TestExtractMemberIsExact(t *testing.T) {
 		}
 		defer f.Close()
 		var out strings.Builder
-		_, verr := extractMember(f, member, &out)
+		_, verr := ExtractMember(f, member, &out)
 		if verr != nil {
 			return "", fmt.Errorf("%s", verr.Message)
 		}
@@ -759,7 +759,7 @@ func TestExtractMemberIsExact(t *testing.T) {
 	}
 	defer f.Close()
 	var sink strings.Builder
-	if _, verr := extractMember(f, "dist/tool", &sink); verr == nil ||
+	if _, verr := ExtractMember(f, "dist/tool", &sink); verr == nil ||
 		!strings.Contains(verr.Message, "regular file") {
 		t.Fatalf("a symlink member: %v", verr)
 	}

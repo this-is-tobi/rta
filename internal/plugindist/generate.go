@@ -251,7 +251,7 @@ func (req GenerateRequest) platform(ctx context.Context, src PlatformSource, mem
 		local = u.Path
 	}
 	if local != "" {
-		sum, verr := digestFile(local)
+		sum, verr := DigestFile(local)
 		if verr != nil {
 			return Platform{}, bad("%s/%s: hashing %s: %s", src.OS, src.Arch, local, verr.Message)
 		}
@@ -284,7 +284,7 @@ func memberExists(archive, member string) *view.Error {
 		return view.Errorf("plugin.manifest.platform", "%v", err)
 	}
 	defer func() { _ = f.Close() }()
-	if _, verr := extractMember(f, member, io.Discard); verr != nil {
+	if _, verr := ExtractMember(f, member, io.Discard); verr != nil {
 		return view.Errorf("plugin.manifest.platform", "%s: %s", path.Base(archive), verr.Message).
 			WithHint("checked while the artifact is in reach, so it cannot fail at " +
 				"somebody else's install instead; `--bin <path inside the archive>` names it")
