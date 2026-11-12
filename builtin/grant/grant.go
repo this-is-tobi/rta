@@ -1757,9 +1757,12 @@ func wideWarnings(sf plugin.Surface, catalog func() []plugin.Capability, grants 
 			msg += fmt.Sprintf(", and %s that reveal%s stored values (%s), each for every record it reaches",
 				strconv.Itoa(len(reveals)), format.Plural(len(reveals), "s", ""), strings.Join(reveals, ", "))
 		}
+		// The exact revoke: the target alone takes back every grant on it, the
+		// grant on one capability, named for one record, that this same
+		// sentence recommends among them, and without a question.
 		out = append(out, view.Error{Code: "grant.wide", Advisory: true, Message: msg,
-			Hint: "`" + sf.Call("grant.revoke", plugin.Arg{Name: "target", Value: g.Target, Positional: true}) +
-				"` takes it back, and a grant on one capability, named for one record, allows only that"})
+			Hint: "`" + sf.Call("grant.revoke", exactArgs(g)...) +
+				"` takes this grant back alone, and a grant on one capability, named for one record, allows only that"})
 	}
 	return out
 }

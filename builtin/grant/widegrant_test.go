@@ -51,8 +51,17 @@ func TestTheRosterSaysWhatAWholePluginGrantReaches(t *testing.T) {
 	if wide[0].Message != want {
 		t.Errorf("the warning reads\n %q\nwant\n %q", wide[0].Message, want)
 	}
-	if !strings.Contains(wide[0].Hint, "`rta grant revoke kv`") {
-		t.Errorf("the hint reads %q, want the command that takes it back", wide[0].Hint)
+	// The command that takes this grant back alone. `rta grant revoke kv` took
+	// the grant on kv.get deploy-key with it, the one the same sentence
+	// recommends, without a question.
+	if !strings.Contains(wide[0].Hint, "`rta grant revoke kv --agent claude --exact`") {
+		t.Errorf("the hint reads %q, want the exact revoke of this grant", wide[0].Hint)
+	}
+	if _, err := runRevoke(context.Background(), req(map[string]any{"target": "kv", "agent": "claude", "exact": true}), storeCatalog); err != nil {
+		t.Fatal(err)
+	}
+	if got := standingNames(t); len(got) != 1 || got[0] != "kv.get|deploy-key||claude" {
+		t.Errorf("after the hinted revoke the roster holds %v, want the grant on kv.get deploy-key alone", got)
 	}
 }
 
