@@ -56,6 +56,7 @@ var hostile = []struct{ name, value string }{
 	{"leading amp", "&not-an-anchor"},
 	{"leading bang", "!not-a-tag"},
 	{"colon space", "key: value"},
+	{"question space", "? not a complex key"},
 	{"block scalar", "|\n  not a block"},
 	{"empty", ""},
 	{"only spaces", "   "},
