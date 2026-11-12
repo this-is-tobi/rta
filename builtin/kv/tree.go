@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -57,14 +58,29 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 	// sentence beside it for a person: see view.Tree.Empty. It answered with
 	// that sentence as a Text view, which a parser met in place of the tree.
 	if len(names) == 0 {
-		return view.Tree{Roots: []view.Node{}, Empty: emptyList(req.Surface(), len(s.Entries), folder, "", "")}, nil
+		empty := emptyList(req.Surface(), len(s.Entries), folder, "", "")
+		// A key named where a folder goes holds no keys, and said so as an
+		// empty folder: `kv tree prod/db/password` answered "No key in
+		// prod/db/password/" about the key it had just been given.
+		if _, isKey := s.Entries[folder]; isKey && folder != "" {
+			empty = textclean.Record(folder) + " is a key, not a folder — " +
+				req.Surface().Call("kv.show", plugin.Arg{Name: "key", Value: folder, Positional: true}) + " describes it"
+		}
+		return view.Tree{Roots: []view.Node{}, Empty: empty}, nil
 	}
 	sort.Strings(names)
 
+	// Narrowed to a folder, the tree is rooted at it: `kv tree prod/db` drew
+	// "prod/ 2 keys" above db/, a count of prod/ that left out every key of
+	// prod/ outside db/, beside a `kv tree` that counts three there.
 	root := &treeNode{}
+	top := root
+	if folder != "" {
+		top = root.child(folder, true)
+	}
 	for _, k := range names {
-		parts := strings.Split(k, "/")
-		cur := root
+		parts := strings.Split(strings.TrimPrefix(k, folderPrefix(folder)), "/")
+		cur := top
 		for _, p := range parts[:len(parts)-1] {
 			cur = cur.child(p, true)
 		}
@@ -72,6 +88,14 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 		leaf.kind = s.Entries[k].Kind
 	}
 	return view.Tree{Roots: root.render()}, nil
+}
+
+// folderPrefix is folder as the start of a key under it, "" for the whole store.
+func folderPrefix(folder string) string {
+	if folder == "" {
+		return ""
+	}
+	return folder + "/"
 }
 
 // treeNode is a folder or a leaf while the tree is being built; the order

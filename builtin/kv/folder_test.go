@@ -39,9 +39,48 @@ func TestAFolderNameIsRecognisedAndItsKeysNamed(t *testing.T) {
 		}
 	}
 	for _, key := range []string{"d", "db-", "nothing"} {
-		if got := notFoundHint(t, plugin.SurfaceCLI, key); got != "`rta kv list` lists every key" {
+		if got := notFoundHint(t, plugin.SurfaceCLI, key); strings.Contains(got, "is a folder") ||
+			!strings.HasSuffix(got, "`rta kv list` lists every key") {
 			t.Errorf("%q is no folder, hint = %q", key, got)
 		}
+	}
+}
+
+// **A mistyped key is answered with the nearest one.** `kv get prod/db/pasword`
+// was told only that kv.list lists every key. The names are the ones kv.list
+// hands any caller.
+func TestAMistypedKeyIsAnsweredWithTheNearestOne(t *testing.T) {
+	setup(t)
+	setKeys(t, "prod/db/password", "prod/db/user", "prod/api/token")
+	if got, want := notFoundHint(t, plugin.SurfaceCLI, "prod/db/pasword"),
+		"did you mean prod/db/password? `rta kv list` lists every key"; got != want {
+		t.Errorf("hint = %q, want %q", got, want)
+	}
+	if got := notFoundHint(t, plugin.SurfaceCLI, "nothing/like/it"); strings.Contains(got, "did you mean") {
+		t.Errorf("a name near nothing was given a suggestion: %q", got)
+	}
+}
+
+// **A tree narrowed to a folder is rooted at it, and a key is not a folder.**
+// `kv tree prod/db` drew "prod/ 2 keys" above db/ when prod/ held three, and
+// `kv tree prod/db/password` answered that no key was in prod/db/password/.
+func TestATreeIsRootedAtTheFolderAskedFor(t *testing.T) {
+	setup(t)
+	setKeys(t, "prod/db/password", "prod/db/user", "prod/api/token")
+	v, err := runTree(context.Background(), req(map[string]any{"folder": "prod/db"}, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := v.(view.Tree).Roots
+	if len(roots) != 1 || roots[0].Label != "prod/db/" || roots[0].Detail != "2 keys" || len(roots[0].Children) != 2 {
+		t.Fatalf("the tree of prod/db is %+v, want one root prod/db/ of 2 keys", roots)
+	}
+	v, err = runTree(context.Background(), req(map[string]any{"folder": "prod/db/password"}, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty := v.(view.Tree).Empty; !strings.HasPrefix(empty, "prod/db/password is a key, not a folder") {
+		t.Errorf("a key given as a folder said %q", empty)
 	}
 }
 
