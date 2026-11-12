@@ -128,6 +128,13 @@ func checkInputNames(t reporter, c plugin.Capability) {
 		case isTime:
 			t.Logf("sdktest: %s: %s input %q is a length of time given as a bare %s; declare it plugin.Duration so "+
 				"the unit travels with the value and not in its help", RuleWording, c.ID, f.Name, f.Type)
+		// Text has its unit, and no grammar but the one a handler parses it
+		// with: Go's has no `d`, so `1d` fails a call that `--wait 1d` would
+		// pass, and nothing holds it to a bound before the service sees it.
+		case f.Type == plugin.String && slices.Contains(timeWords, words[len(words)-1]):
+			t.Logf("sdktest: %s: %s input %q is a length of time given as text; declare it plugin.Duration, "+
+				"which reads rta's one grammar (30s, 2h, 1d) and holds Min and Max before the call runs",
+				RuleWording, c.ID, f.Name)
 		case slices.Contains(limitSynonyms, f.Name):
 			t.Logf("sdktest: %s: %s input %q caps how many rows come back; rta spells that limit", RuleWording,
 				c.ID, f.Name)
