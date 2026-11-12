@@ -322,34 +322,13 @@ func dirtyForTerminal(s string) bool {
 func actsOn(r rune) bool { return isTerminalControl(r) || reorders(r) }
 
 // reorders is the Trojan Source set pkg/plugin refuses in a declaration: the
-// characters that make stored order and displayed order differ. The marks
-// U+200E and U+200F are not in it; they move only the neutral characters
-// beside them, and text copied out of right-to-left software is full of them.
-func reorders(r rune) bool {
-	return (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
-}
+// characters that make stored order and displayed order differ (glyph).
+func reorders(r rune) bool { return glyph.Reorders(r) }
 
-// isInvisible mirrors the set pkg/plugin refuses in a declaration, and for the
-// same reasons — including the reasons for the exclusions. U+200C ZWNJ and
-// U+200D ZWJ build emoji sequences and select letter forms in Persian and
-// Devanagari; a variation selector picks how the character before it is
-// drawn — an emoji's colour form, and in the supplement block the variant of
-// an ideograph a Japanese name is registered with. Dropping them from a
-// *result* would corrupt somebody's data, which is a worse outcome here than
-// in a declaration, since a result is a filename or a row and not a label its
-// author can rewrite. A run of selectors can also carry bytes nobody sees —
-// debug.ansi names and decodes one — but reading them takes a decoding step
-// the tag block, ASCII one character for one, does not, and a filter that
-// dropped every selector to stop a run would corrupt every name using one.
-func isInvisible(r rune) bool {
-	switch {
-	case r == 0x200b, // ZERO WIDTH SPACE
-		r == 0x200e, r == 0x200f, // LRM, RLM
-		r == 0xfeff,                  // ZWNBSP / BOM
-		reorders(r),                  // the bidi embeddings, overrides and isolates
-		r >= 0x2060 && r <= 0x2064,   // word joiner and the invisible operators
-		r >= 0xe0000 && r <= 0xe007f: // the tag block
-		return true
-	}
-	return false
-}
+// isInvisible is what pkg/plugin refuses in a declaration, taken out of a
+// result: the characters nobody sees and the ones that reorder the text around
+// them (glyph.Hidden, glyph.Reorders). What the sets leave out matters more
+// here than in a declaration — a result is a filename or a row and not a label
+// its author can rewrite, so dropping a ZWJ or a variation selector would
+// corrupt somebody's data — and glyph.Hidden says why each is left out.
+func isInvisible(r rune) bool { return glyph.Hidden(r) || glyph.Reorders(r) }

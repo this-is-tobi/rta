@@ -23,6 +23,58 @@ import (
 	"unicode/utf8"
 )
 
+// Reorders reports whether r makes the order a string is stored in and the
+// order it is displayed in differ: the bidi embeddings, overrides and isolates
+// (LRE RLE PDF LRO RLO, LRI RLI FSI PDI). These are the Trojan Source class
+// (CVE-2021-42574): what a reader sees and what is there differ, with no
+// invalid character anywhere for a control-character check to catch.
+//
+// pkg/plugin refuses them in a declaration and textclean takes them out of a
+// result, from this one set, so the two cannot disagree. The marks U+200E and
+// U+200F are not in it: they move only the neutral characters beside them,
+// and text copied out of right-to-left software is full of them (Hidden).
+func Reorders(r rune) bool {
+	return (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
+}
+
+// Hidden reports whether r occupies no space and carries meaning anyway, and
+// has no case in a short label or a value somebody is shown: zero-width space,
+// the directional marks that pair with the overrides (Reorders), the byte
+// order mark used mid-string, the word joiner and the invisible maths
+// operators, and the tag block.
+//
+// The sharp one is the tag block. U+E0000-U+E007F are a full invisible ASCII
+// alphabet that renders as nothing, survives copy and paste, and arrives at a
+// model as tokens: the standard way instructions are smuggled past a person
+// reviewing text they were shown.
+//
+// The set is deliberately narrower than "all the invisible ranges", because
+// the obvious wide version breaks text people write and values people keep:
+//
+//   - U+200C ZWNJ and U+200D ZWJ build emoji sequences and select letter forms
+//     in Persian, Hindi and Devanagari. Refusing them refuses a language, and
+//     dropping them from a result corrupts somebody's filename.
+//   - A variation selector picks how the character before it is drawn: an
+//     emoji's colour form, and in the supplement block the variant of an
+//     ideograph a Japanese name is registered with. A long run of them can
+//     carry bytes nobody sees — debug.ansi names and decodes one — but reading
+//     them takes a decoding step the tag block does not, and a rule that
+//     broke every name using one to stop a run is the wrong trade.
+//
+// pkg/plugin refuses these in a declaration and textclean takes them out of a
+// result, from this one set.
+func Hidden(r rune) bool {
+	switch {
+	case r == 0x200b, // ZERO WIDTH SPACE
+		r == 0x200e, r == 0x200f, // LRM, RLM — the marks beside the overrides
+		r == 0xfeff,                  // ZWNBSP / BOM, meaningless anywhere but the first byte
+		r >= 0x2060 && r <= 0x2064,   // word joiner, invisible times/separator/plus
+		r >= 0xe0000 && r <= 0xe007f: // the tag block
+		return true
+	}
+	return false
+}
+
 // Seen reports whether a reader sees r as itself: a letter, a mark, a
 // number, a punctuation mark, a symbol or the ASCII space (strconv.IsPrint),
 // and not one a renderer draws as nothing — a default-ignorable code point
