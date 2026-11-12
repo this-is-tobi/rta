@@ -7,7 +7,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -268,5 +270,44 @@ func runProfileRepin(cmd *cobra.Command, only string, all bool, reg *registry.Re
 		t.Rows = append(t.Rows, []string{r.profile, r.key, r.status})
 	}
 	t.Total = len(t.Rows)
+	t.Warnings = repinnedUnread(reg, config.PluginNamespace(want), rows)
 	return t, nil
+}
+
+// repinnedUnread is a warning for each key the set: or only: of an entry this
+// repin moved, or would move, states that the installed build does not read:
+// each refuses the profile until it is fixed, and a key an upgrade renamed is
+// told what it became, where the operator is moving the entry onto that build.
+func repinnedUnread(reg *registry.Registry, ns string, rows []repinRow) []view.Error {
+	cfg, err := config.LoadFile()
+	if reg == nil || err != nil {
+		return nil
+	}
+	var build plugin.Plugin
+	for _, p := range reg.Plugins() {
+		if p.Name == ns {
+			build = p
+		}
+	}
+	var out []view.Error
+	for _, r := range rows {
+		key, moved := strings.CutPrefix(r.status, "repinned to ")
+		if !moved {
+			if !strings.HasPrefix(r.status, "would repin to ") {
+				continue
+			}
+			key = r.key
+		}
+		p, ok := cfg.Profiles[r.profile]
+		if !ok {
+			continue
+		}
+		one := config.Config{Profiles: map[string]config.Profile{
+			r.profile: {Plugins: map[string]config.Connection{key: p.Plugins[key]}}}}
+		for _, u := range unreadKeysFor(one, ns, pluginconf.ReadersOf(build), build.Renamed) {
+			out = append(out, *view.Errorf("core.profile.unread", "%s", u.sentence("the installed "+ns, "does not read")).
+				WithHint("the profile is refused until it is fixed"))
+		}
+	}
+	return out
 }

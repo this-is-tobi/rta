@@ -498,6 +498,10 @@ func Readers(reg *registry.Registry, ns string) map[string][]plugin.Field {
 	return readersIn(reg.Capabilities(), ns)
 }
 
+// ReadersOf is Readers for one plugin's declaration, which need not be the one
+// registered: the build an upgrade moved to, before a run registers it.
+func ReadersOf(p plugin.Plugin) map[string][]plugin.Field { return readersIn(p.Capabilities, p.Name) }
+
 // readersIn is Readers over a list of capabilities, ns's among them.
 func readersIn(caps []plugin.Capability, ns string) map[string][]plugin.Field {
 	readers := map[string][]plugin.Field{}

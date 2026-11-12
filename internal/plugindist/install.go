@@ -575,6 +575,11 @@ type Upgraded struct {
 	// CodeDowngrade, before anything is fetched, unless it is the move
 	// somebody agreed to (Downgrade), and then the move itself.
 	Older bool
+	// FromDeclared is the declaration of the build moved off, read from the
+	// installed binary before anything changed. Its renamed keys, read
+	// backwards, are what a move back is told a key the newer build
+	// introduced was called before.
+	FromDeclared plugin.Plugin
 }
 
 // CodeDowngrade is the refusal of an index's claim older than the version
@@ -697,7 +702,7 @@ func upgrade(ctx context.Context, name string, dryRun, guard bool, agreed string
 	}
 	return Upgraded{
 		Report: report, FromDigest: locked.Digest, FromVersion: locked.Version,
-		Diff: declarationDiff(oldDecl, report.Declared), Older: older,
+		Diff: declarationDiff(oldDecl, report.Declared), Older: older, FromDeclared: oldDecl,
 	}, nil
 }
 
