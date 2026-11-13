@@ -451,7 +451,7 @@ func profileNames(refs []string) string {
 	if len(names) == 1 {
 		return "profile " + names[0]
 	}
-	return "profiles " + strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+	return "profiles " + format.And(names)
 }
 
 // shownNames is names as a person reads them in a list of names (plugin.ListedName).

@@ -122,3 +122,21 @@ func TestASibilantNounTakesEs(t *testing.T) {
 		}
 	}
 }
+
+// A list reads as a sentence lists it, with no comma before the and.
+func TestAndListsWordsAsASentenceDoes(t *testing.T) {
+	for _, c := range []struct {
+		words []string
+		want  string
+	}{
+		{nil, ""},
+		{[]string{"a"}, "a"},
+		{[]string{"a", "b"}, "a and b"},
+		{[]string{"a", "b", "c"}, "a, b and c"},
+		{[]string{"a", "b", "c", "d"}, "a, b, c and d"},
+	} {
+		if got := And(c.words); got != c.want {
+			t.Errorf("And(%q) = %q, want %q", c.words, got, c.want)
+		}
+	}
+}

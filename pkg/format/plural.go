@@ -77,3 +77,14 @@ func PluralOf(n int, noun string) string {
 func CountOf(n int, noun string) string {
 	return strconv.Itoa(n) + " " + PluralOf(n, noun)
 }
+
+// And joins words the way a sentence lists them: "a", "a and b", "a, b and
+// c", and "" for none. No comma before the and, which is how every list this
+// replaces was written. Six places had written it out — the SDK's naming of
+// settings among them — so a seventh had nothing to import.
+func And(words []string) string {
+	if len(words) < 2 {
+		return strings.Join(words, "")
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
+}

@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -152,8 +153,7 @@ func (cf *capForm) answerAgain(refused string, sent map[string]any) (note string
 	case 1:
 		return names[0] + " was cleared: give it again", true
 	}
-	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1] +
-		" were cleared: give them again", true
+	return format.And(names) + " were cleared: give them again", true
 }
 
 // wasGiven reports whether v is a value a box was given: text that is not only
