@@ -27,8 +27,7 @@ func TestARefusalOfOneInputNamesIt(t *testing.T) {
 	// A reading of the clock the zone skipped is refused only where the
 	// clocks went forward over it, and only with a tz database to say so.
 	if paris, err := stdtime.LoadLocation("Europe/Paris"); err == nil {
-		t.Cleanup(func(prev *stdtime.Location) func() { return func() { stdtime.Local = prev } }(stdtime.Local))
-		stdtime.Local = paris
+		inZone(t, paris)
 		cases["a time the clock skipped"] = refusal{map[string]any{"when": "2026-03-29 02:30"}, "time.at.skipped", "when"}
 	}
 	c := Plugin().Capabilities[0]

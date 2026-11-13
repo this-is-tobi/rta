@@ -2128,17 +2128,18 @@ func parseSince(raw string) (time.Time, string, *view.Error) {
 	if raw == "" {
 		return time.Time{}, "", nil
 	}
+	zone := timefmt.Zone()
 	// A day by its name starts at the midnight the clock showed, so the
 	// calls of yesterday evening are in "yesterday" and not in a span
 	// counted back from this minute. Built from the date and not by
 	// subtracting a day's hours, which a clock change makes an hour out.
 	switch strings.ToLower(raw) {
 	case "today", "yesterday":
-		y, m, d := time.Now().Date()
+		y, m, d := time.Now().In(zone).Date()
 		if strings.EqualFold(raw, "yesterday") {
 			d--
 		}
-		return time.Date(y, m, d, 0, 0, 0, 0, time.Local), "", nil
+		return time.Date(y, m, d, 0, 0, 0, 0, zone), "", nil
 	}
 	if d, err := format.ParseWindow(raw); err == nil {
 		if d < 0 {
@@ -2146,21 +2147,21 @@ func parseSince(raw string) (time.Time, string, *view.Error) {
 		}
 		return time.Now().Add(-d), "", nil
 	}
-	if t, ok := timefmt.ParseInstant(raw, time.Local); ok {
-		if wall, skipped := timefmt.SkippedWallClock(raw, time.Local); skipped {
+	if t, ok := timefmt.ParseInstant(raw, zone); ok {
+		if wall, skipped := timefmt.SkippedWallClock(raw, zone); skipped {
 			return time.Time{}, "", view.Errorf("agent.log.since",
 				"%q never showed on this machine's clock — the clocks went forward over it", raw).
 				WithHint("name the instant with an offset (" + timefmt.SkippedExample(wall, t) +
 					"), or write a time the clock did show")
 		}
-		if first, second, twice := timefmt.AmbiguousWallClock(raw, time.Local); twice {
+		if first, second, twice := timefmt.AmbiguousWallClock(raw, zone); twice {
 			return first, fmt.Sprintf("%q is a time the clock showed twice that day: listing from the earlier, %s, "+
 				"and the later one is %s — add an offset to name the one meant",
 				raw, first.Format(time.RFC3339), second.Format(time.RFC3339)), nil
 		}
 		return t, "", nil
 	}
-	if field := timefmt.OutOfRange(raw, time.Local); field != "" {
+	if field := timefmt.OutOfRange(raw, zone); field != "" {
 		return time.Time{}, "", view.Errorf("agent.log.since",
 			"%q is written as a date, but its %s is out of range", raw, field).WithHint(timefmt.RangeHint)
 	}

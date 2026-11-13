@@ -25,6 +25,18 @@ import (
 	"github.com/this-is-tobi/rta/pkg/format"
 )
 
+// Zone is the zone a reading of the clock that carries no offset is read in:
+// this machine's, time.Local.
+//
+// A variable, and the one place the built-ins ask, so that a test can put a
+// zone with clock changes in front of them without assigning time.Local. That
+// variable belongs to the whole process: every time.Now reads it, the runtime's
+// own timer goroutines among them, so a test that assigned it raced with any
+// timer still live in the binary, and failed the race detector whenever a
+// shuffled order ran it after a test that had left one. The linter's reassign
+// check refuses that assignment; a test assigns this instead.
+var Zone = func() *time.Location { return time.Local }
+
 // layouts are the exact spellings somebody types or pastes. RFC3339 is what a
 // machine wrote; the rest are what a person types when they do not want to
 // think about a timezone suffix, and are read in the caller's location.

@@ -112,7 +112,7 @@ func runAt(_ context.Context, req plugin.Request) (view.View, error) {
 
 	pairs := []view.Pair{
 		{Key: "utc", Value: t.UTC().Format(stdtime.RFC3339)},
-		{Key: "local", Value: withZone(t.In(stdtime.Local))},
+		{Key: "local", Value: withZone(t.In(timefmt.Zone()))},
 	}
 
 	if name := strings.TrimSpace(req.String("zone")); name != "" {
@@ -163,8 +163,9 @@ func resolve(raw string, now stdtime.Time) (stdtime.Time, timefmt.Unit, *view.Er
 	if t, unit, ok := timefmt.ParseEpoch(raw); ok {
 		return t, unit, nil
 	}
-	if t, ok := timefmt.ParseInstant(raw, stdtime.Local); ok {
-		if wall, skipped := timefmt.SkippedWallClock(raw, stdtime.Local); skipped {
+	zone := timefmt.Zone()
+	if t, ok := timefmt.ParseInstant(raw, zone); ok {
+		if wall, skipped := timefmt.SkippedWallClock(raw, zone); skipped {
 			return stdtime.Time{}, "", skippedClock(raw, wall, t)
 		}
 		return t, "", nil
@@ -178,7 +179,7 @@ func resolve(raw string, now stdtime.Time) (stdtime.Time, timefmt.Unit, *view.Er
 			"%q is a length of time, not an instant — in which direction?", raw).
 			WithHint("say which: `" + raw + " ago`, or `in " + raw + "`")
 	}
-	if field := timefmt.OutOfRange(raw, stdtime.Local); field != "" {
+	if field := timefmt.OutOfRange(raw, zone); field != "" {
 		return stdtime.Time{}, "", view.Errorf("time.at.unreadable",
 			"%q is written as a date, but its %s is out of range", raw, field).WithHint(timefmt.RangeHint)
 	}
@@ -208,7 +209,8 @@ func skippedClock(raw string, wall, moved stdtime.Time) *view.Error {
 // what was asked for half the time. Every other row is right for the instant
 // read, and the person who meant the other one needs the offset that names it.
 func ambiguousClock(raw string, t stdtime.Time) string {
-	first, second, ok := timefmt.AmbiguousWallClock(raw, stdtime.Local)
+	zone := timefmt.Zone()
+	first, second, ok := timefmt.AmbiguousWallClock(raw, zone)
 	if !ok {
 		return ""
 	}
@@ -217,7 +219,7 @@ func ambiguousClock(raw string, t stdtime.Time) string {
 		which, other = "later", first
 	}
 	return fmt.Sprintf("the clock showed this twice that day; read as the %s one, the other is %s (epoch %d), "+
-		"so add an offset to name the one meant", which, withZone(other.In(stdtime.Local)), other.Unix())
+		"so add an offset to name the one meant", which, withZone(other.In(zone)), other.Unix())
 }
 
 // relativeDuration reads the spellings that carry their own direction: `-90m`,
