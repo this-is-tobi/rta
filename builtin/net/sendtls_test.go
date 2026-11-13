@@ -208,17 +208,34 @@ func TestASendRefusesACertificateForAnotherNameUntilItIsCheckedForIt(t *testing.
 	}
 }
 
-// Any other verdict on the certificate, an expired one here, is refused with
-// the verifier's words, and the payload stays unwritten.
-func TestASendRefusesAnExpiredCertificate(t *testing.T) {
-	p := tlsPeer(t, time.Now().Add(-time.Hour), "127.0.0.1")
+// Any other verdict on the certificate, one not valid before tomorrow here, is
+// refused with the verifier's words, and the payload stays unwritten.
+func TestASendRefusesACertificateNotYetValid(t *testing.T) {
+	p := tlsPeer(t, time.Now().Add(72*time.Hour), "127.0.0.1")
 	_, err := sendPing(plugin.SurfaceCLI, p.port, false, map[string]any{"ca-file": p.caFile})
 	ve := view.AsError(err, "")
-	if ve == nil || ve.Code != "net.tls.rejected" || !strings.Contains(ve.Message, "expired") {
-		t.Fatalf("err = %v, want net.tls.rejected saying it expired", err)
+	if ve == nil || ve.Code != "net.tls.rejected" || !strings.Contains(ve.Message, "not yet valid") {
+		t.Fatalf("err = %v, want net.tls.rejected saying it is not yet valid", err)
 	}
 	if got := p.received(t); got != nil {
 		t.Fatalf("the peer was sent %q", got)
+	}
+}
+
+// A CA file whose every certificate has expired, the peer's own self-signed
+// one here, is refused before anything is dialled: no chain anchored at it
+// verifies, and the refusal says so by its date.
+func TestASendRefusesACAFileWhoseEveryCertificateHasExpired(t *testing.T) {
+	p := tlsPeer(t, time.Now().Add(-time.Hour), "127.0.0.1")
+	_, err := sendPing(plugin.SurfaceCLI, p.port, false, map[string]any{"ca-file": p.caFile})
+	ve := view.AsError(err, "")
+	if ve == nil || ve.Code != "net.tls.ca.expired" || ve.Input != "ca-file" {
+		t.Fatalf("err = %v, want net.tls.ca.expired naming ca-file", err)
+	}
+	select {
+	case got := <-p.got:
+		t.Fatalf("the peer was dialled (it read %q)", got)
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
