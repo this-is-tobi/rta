@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/timefmt"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -18,8 +19,11 @@ func TestSinceNamesAClockReadingTheZoneShowedTwiceOrNever(t *testing.T) {
 	if err != nil {
 		t.Skip("no tz database to read Europe/Paris from")
 	}
-	t.Cleanup(func(prev *time.Location) func() { return func() { time.Local = prev } }(time.Local))
-	time.Local = paris
+	// Through timefmt.Zone, not time.Local, which every timer live in the
+	// binary reads (see Zone).
+	was := timefmt.Zone
+	timefmt.Zone = func() *time.Location { return paris }
+	t.Cleanup(func() { timefmt.Zone = was })
 
 	_, _, verr := parseSince("2026-03-29 02:30")
 	if verr == nil || verr.Code != "agent.log.since" || !strings.Contains(verr.Hint, "2026-03-29T02:30:00+01:00") {

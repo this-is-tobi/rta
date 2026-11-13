@@ -31,7 +31,19 @@ linters:
     - prealloc
     - bodyclose
     - gosec
+    - reassign
   settings:
+    reassign:
+      # Another package's variable is that package's, and assigning it from
+      # here changes it for every goroutine in the process. Its own defaults
+      # (EOF, Err*), and time.Local: every time.Now reads it, the runtime's
+      # timer goroutines among them, so a test that assigned it raced with
+      # any timer still live in the binary. A test that needs a zone with
+      # clock changes assigns timefmt.Zone.
+      patterns:
+        - EOF
+        - Err.*
+        - Local
     errcheck:
       exclude-functions:
         # Writes to a terminal or a buffer, where a failed write has no

@@ -9,12 +9,23 @@ import (
 	"testing"
 	stdtime "time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/timefmt"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func req(values map[string]any) plugin.Request {
 	return plugin.NewRequest(values, false, false)
+}
+
+// inZone reads every clock reading without an offset in loc until the test
+// ends, through timefmt.Zone: assigning time.Local instead races with every
+// timer live in the binary (see Zone).
+func inZone(t *testing.T, loc *stdtime.Location) {
+	t.Helper()
+	was := timefmt.Zone
+	timefmt.Zone = func() *stdtime.Location { return loc }
+	t.Cleanup(func() { timefmt.Zone = was })
 }
 
 // reference is a fixed instant every relative assertion below hangs off, so
@@ -167,9 +178,7 @@ func TestTheUnreadableHintOffersOnlySpellingsThatParse(t *testing.T) {
 // ISO 8601's short spelling, with the T and without seconds, is the same minute
 // as the space form that was already read.
 func TestTheShortISOSpellingIsTheSameMinuteAsTheSpaceForm(t *testing.T) {
-	loc := stdtime.FixedZone("test", 2*3600)
-	t.Cleanup(func(prev *stdtime.Location) func() { return func() { stdtime.Local = prev } }(stdtime.Local))
-	stdtime.Local = loc
+	inZone(t, stdtime.FixedZone("test", 2*3600))
 	short, _, err := resolve("2026-09-04T12:30", reference)
 	if err != nil {
 		t.Fatalf("the T form without seconds was refused: %v", err)
@@ -188,8 +197,7 @@ func TestAWallClockTheZoneSkippedIsRefusedNotMoved(t *testing.T) {
 	if err != nil {
 		t.Skip("no tz database to read Europe/Paris from")
 	}
-	t.Cleanup(func(prev *stdtime.Location) func() { return func() { stdtime.Local = prev } }(stdtime.Local))
-	stdtime.Local = paris
+	inZone(t, paris)
 
 	_, _, verr := resolve("2026-03-29 02:30", reference)
 	if verr == nil || verr.Code != "time.at.skipped" {
@@ -216,8 +224,7 @@ func TestAWallClockTheZoneShowedTwiceNamesTheOtherInstant(t *testing.T) {
 	if err != nil {
 		t.Skip("no tz database to read Europe/Paris from")
 	}
-	t.Cleanup(func(prev *stdtime.Location) func() { return func() { stdtime.Local = prev } }(stdtime.Local))
-	stdtime.Local = paris
+	inZone(t, paris)
 
 	kv := at(t, map[string]any{"when": "2026-10-25 02:30"})
 	note := value(kv, "ambiguous")
@@ -244,6 +251,19 @@ func TestAWallClockTheZoneShowedTwiceNamesTheOtherInstant(t *testing.T) {
 		if v := value(at(t, map[string]any{"when": fine}), "ambiguous"); v != "" {
 			t.Errorf("%q said it was ambiguous: %q", fine, v)
 		}
+	}
+}
+
+// The local row is the instant as this machine's clock shows it, named by the
+// zone the machine is in, whatever zone the input was written in.
+func TestTheLocalRowIsThisMachinesClock(t *testing.T) {
+	paris, err := stdtime.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Skip("no tz database to read Europe/Paris from")
+	}
+	inZone(t, paris)
+	if got, want := value(at(t, map[string]any{"when": "2026-07-01T12:00:00Z"}), "local"), "2026-07-01T14:00:00+02:00 CEST"; got != want {
+		t.Errorf("local = %q, want %q", got, want)
 	}
 }
 
