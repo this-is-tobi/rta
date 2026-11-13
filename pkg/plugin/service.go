@@ -161,7 +161,7 @@ func (s Service) Fields() []Field {
 	}
 	fields = append(fields,
 		Field{Name: "ca-file", Type: String, Default: "", Config: "ca-file", Local: true, Group: "tls",
-			Suggest: SuggestPath("ca-file"),
+			File: FileCertificates, Suggest: SuggestPath("ca-file"),
 			Help: "PEM bundle of the CA the server's certificate is checked against, in place of this machine's own " +
 				"trust store" + caClause},
 		Field{Name: "tls-server-name", Type: String, Default: "", Config: "tls-server-name", Local: true, Group: "tls",

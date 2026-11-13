@@ -474,6 +474,11 @@ func fullDeclaration() plugin.Plugin {
 				// switch read past the input a profile fenced, with the
 				// plugin believing it had said so.
 				{Name: "all-buckets", Type: plugin.Bool, Help: "all", Widens: "bucket"},
+				// File crosses as data: a host that lost it would hand a
+				// certificate a profile reads from a Secret over as text where
+				// the plugin reads a path.
+				{Name: "ca-file", Type: plugin.String, Help: "CA", Local: true, Config: "ca-file",
+					File: plugin.FileCertificates},
 			},
 		}},
 	}
