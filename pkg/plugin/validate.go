@@ -426,6 +426,22 @@ func (c Capability) validate(ns string) error {
 				}
 			}
 		}
+		if f.File != FileNone {
+			if !slices.Contains(fileKinds, f.File) {
+				return fmt.Errorf("capability %q: input %q declares that its file holds %q, which the host "+
+					"does not recognise; the one kind is %q", c.ID, f.Name, f.File, FileCertificates)
+			}
+			// The shape of a setting the operator states: text, kept from a
+			// caller, and offered to configuration. A file a caller names is a
+			// Path, which no profile fills, and an input with no Config key is
+			// one no profile reaches, so on either the declaration would mean
+			// nothing.
+			if f.Type != String || !f.Local || f.Config == "" {
+				return fmt.Errorf("capability %q: input %q declares that its file holds %s and is not "+
+					"a Local String with a Config key; a setting the operator states a file for is all "+
+					"three", c.ID, f.Name, f.File)
+			}
+		}
 		if f.Config != "" {
 			if !configKeyRe.MatchString(f.Config) {
 				return fmt.Errorf("capability %q: input %q has config key %q; want dot-separated lowercase segments",

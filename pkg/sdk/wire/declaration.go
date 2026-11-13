@@ -81,6 +81,37 @@ func EndpointRoleFromProto(r rtav1.EndpointRole) plugin.EndpointRole {
 	return plugin.EndpointNone
 }
 
+var fileKinds = []struct {
+	go_ plugin.FileKind
+	pb  rtav1.FileKind
+}{
+	{plugin.FileNone, rtav1.FileKind_FILE_KIND_UNSPECIFIED},
+	{plugin.FileCertificates, rtav1.FileKind_FILE_KIND_CERTIFICATES},
+}
+
+// FileKindToProto encodes what the file a setting names holds.
+func FileKindToProto(k plugin.FileKind) rtav1.FileKind {
+	for _, m := range fileKinds {
+		if m.go_ == k {
+			return m.pb
+		}
+	}
+	return rtav1.FileKind_FILE_KIND_UNSPECIFIED
+}
+
+// FileKindFromProto decodes it, and a kind this host does not know decodes to
+// FileNone: the setting is then one the host knows nothing of, and a profile
+// mapping a reference onto it is refused rather than handed over as a file it
+// cannot check.
+func FileKindFromProto(k rtav1.FileKind) plugin.FileKind {
+	for _, m := range fileKinds {
+		if m.pb == k {
+			return m.go_
+		}
+	}
+	return plugin.FileNone
+}
+
 var actionSources = []struct {
 	go_ plugin.ActionSource
 	pb  rtav1.ActionSource
@@ -287,6 +318,7 @@ func FieldToProto(f plugin.Field) *rtav1.Field {
 		Widens:      f.Widens,
 		EnvFallback: f.EnvFallback,
 		Endpoint:    EndpointRoleToProto(f.Endpoint),
+		File:        FileKindToProto(f.File),
 		Config:      f.Config,
 		Options:     f.Options,
 		Min:         ValueToProto(f.Min),
@@ -324,6 +356,7 @@ func FieldFromProto(f *rtav1.Field) (plugin.Field, bool) {
 		Widens:      f.GetWidens(),
 		EnvFallback: f.GetEnvFallback(),
 		Endpoint:    EndpointRoleFromProto(f.GetEndpoint()),
+		File:        FileKindFromProto(f.GetFile()),
 		Config:      f.GetConfig(),
 		Options:     f.GetOptions(),
 		Min:         ValueFromProto(f.GetMin()),

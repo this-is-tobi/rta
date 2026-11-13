@@ -254,6 +254,28 @@ func tlsOffValue(f Field) string {
 	return ""
 }
 
+// FileKind is what the file a String setting names holds, for a setting that
+// names one (Field.File).
+//
+// The set is closed and the zero value is a member — FileNone, an input that
+// names no file the host knows of, which is every input of every plugin that
+// has not said otherwise.
+type FileKind string
+
+const (
+	// FileNone is an input that names no file the host knows of. The zero
+	// value.
+	FileNone FileKind = ""
+	// FileCertificates is a setting naming a file of PEM certificates — the
+	// bundle a server's certificate is checked against, a CA's or a
+	// self-signed server's own.
+	FileCertificates FileKind = "certificates"
+)
+
+// fileKinds is every legal kind, for validation and for the AST test that keeps
+// this block and that list from drifting.
+var fileKinds = []FileKind{FileNone, FileCertificates}
+
 // Field declares one capability input.
 type Field struct {
 	Name string
@@ -487,6 +509,32 @@ type Field struct {
 	// Zero value is EndpointNone: no input is filled from a tunnel, which is
 	// every plugin that has not opted in.
 	Endpoint EndpointRole
+	// File says what the file this setting names holds: FileCertificates for a
+	// CA bundle — the `ca-file` a server's certificate is checked against, pg's
+	// `sslrootcert`. Zero, FileNone, for every other input.
+	//
+	// **It lets a profile read the file from where the CA is kept.** A CA a
+	// cluster keeps renews itself in place, and the copy an operator exported
+	// to a file keeps the dates it was copied with — CloudNativePG's own lasts
+	// ninety days — so every call fails on the day the copy goes stale. With
+	// the setting declared, a profile maps it as it maps a credential,
+	// `secrets: {ca-file: kube:pg-ca/ca.crt}`, the host reads the Secret's
+	// certificates for each call, and the handler is given the path of a file
+	// holding them, written for the call in the plugin's own temporary
+	// directory and removed once the call returns (Request.Temporary). A
+	// handler reads the setting as it always did.
+	//
+	// **Declared by the plugin, and only able to narrow.** The mapping is the
+	// operator's, as every `secrets:` mapping is: this causes no fetch and names
+	// no source, and what the host hands over is certificates, which it checks
+	// before writing them — never a key, which rta writes to no file. Without
+	// it, a reference mapped onto the setting handed the plugin the PEM text
+	// where a path belongs, and the host refuses that now; with it, the same
+	// reference is a file. A String only, Local and Config-keyed, the shape a
+	// setting the operator states has, and refused at registration otherwise.
+	// A host older than the field does not know it, and hands such a mapping
+	// over as the text it holds, as every host did before.
+	File FileKind
 	// Suggest returns values that exist right now: the tags you have used,
 	// the keys in your store, the hostnames in your hosts file. Unlike
 	// Options it is not exhaustive — anything may still be typed — so it

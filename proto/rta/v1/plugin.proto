@@ -214,6 +214,21 @@ message Field {
   // refuses a declaration whose group is not. Empty means none declared, and a
   // connection input is then placed by its name and its type.
   string group = 23;
+  // What the file this setting names holds, for a setting naming one: a CA
+  // bundle, which a profile may then read from where the CA is kept — a
+  // cluster's Secret, the store — for each call, rather than from a copy. The
+  // mapping stays the operator's; this only says the setting is a file, so
+  // the host hands it a file. Only on a local string with a config key; a
+  // host refuses it anywhere else.
+  FileKind file = 24;
+}
+
+// FileKind is what the file a string setting names holds.
+enum FileKind {
+  // Names no file the host knows of. Every input that has not said otherwise.
+  FILE_KIND_UNSPECIFIED = 0;
+  // PEM certificates: the bundle a server's certificate is checked against.
+  FILE_KIND_CERTIFICATES = 1;
 }
 
 // EndpointRole is which part of a resolved tunnel an input takes.
