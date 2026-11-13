@@ -3,6 +3,7 @@ package keys
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,21 +68,11 @@ func TestPluginIsValid(t *testing.T) {
 // writeSSHKeypair test helper.
 func writeEd25519Keypair(t *testing.T, dir, name, passphrase string) (private, public string) {
 	t.Helper()
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var block *pem.Block
-	if passphrase == "" {
-		block, err = ssh.MarshalPrivateKey(priv, "")
-	} else {
-		block, err = ssh.MarshalPrivateKeyWithPassphrase(priv, "", []byte(passphrase))
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
+	pub, data := sshKey(t, "ed25519", passphrase, func() (crypto.PublicKey, crypto.PrivateKey, error) {
+		return ed25519.GenerateKey(rand.Reader)
+	})
 	private = filepath.Join(dir, name)
-	if err := os.WriteFile(private, pem.EncodeToMemory(block), 0o600); err != nil {
+	if err := os.WriteFile(private, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	sshPub, err := ssh.NewPublicKey(pub)
@@ -97,7 +89,56 @@ func writeEd25519Keypair(t *testing.T, dir, name, passphrase string) (private, p
 
 func writeRSAKeypair(t *testing.T, dir, name, passphrase string) (private string) {
 	t.Helper()
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	_, data := sshKey(t, "rsa", passphrase, func() (crypto.PublicKey, crypto.PrivateKey, error) {
+		priv, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return nil, nil, err
+		}
+		return priv.Public(), priv, nil
+	})
+	private = filepath.Join(dir, name)
+	if err := os.WriteFile(private, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return private
+}
+
+// lockedKeys holds what sshKey made under a passphrase, by type and
+// passphrase.
+var lockedKeys = struct {
+	sync.Mutex
+	made map[string]lockedKey
+}{made: map[string]lockedKey{}}
+
+type lockedKey struct {
+	pub crypto.PublicKey
+	pem []byte
+}
+
+// sshKey makes a key with generate, and returns its public half and its
+// private half in the format ssh-keygen writes, protected by the passphrase
+// when there is one.
+//
+// A protected key is made once for each type and passphrase, and handed to
+// every later test that asks for the same. x/crypto/ssh protects a key with
+// sixteen rounds of bcrypt_pbkdf, a count it fixes, and opening the key runs
+// them again. Under the race detector each run took more than a second on a
+// laptop, and nearly all of what this package's race pass spent went on
+// making and opening locked keys, a new one in every test that wanted one.
+// The opening is what those tests are about; the making is not. No test needs
+// its locked key to be new, only locked, and none needs two that share a type
+// and a passphrase. A key without a passphrase costs nothing to make, and is
+// made new each time, as it always was.
+func sshKey(t *testing.T, kind, passphrase string, generate func() (crypto.PublicKey, crypto.PrivateKey, error)) (crypto.PublicKey, []byte) {
+	t.Helper()
+	if passphrase != "" {
+		lockedKeys.Lock()
+		defer lockedKeys.Unlock()
+		if k, ok := lockedKeys.made[kind+" "+passphrase]; ok {
+			return k.pub, k.pem
+		}
+	}
+	pub, priv, err := generate()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,11 +151,11 @@ func writeRSAKeypair(t *testing.T, dir, name, passphrase string) (private string
 	if err != nil {
 		t.Fatal(err)
 	}
-	private = filepath.Join(dir, name)
-	if err := os.WriteFile(private, pem.EncodeToMemory(block), 0o600); err != nil {
-		t.Fatal(err)
+	data := pem.EncodeToMemory(block)
+	if passphrase != "" {
+		lockedKeys.made[kind+" "+passphrase] = lockedKey{pub, data}
 	}
-	return private
+	return pub, data
 }
 
 // errCode names the failure a call produced, and "" when it did not fail.
