@@ -15,19 +15,6 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// Secrets reads the credentials a target names and returns them keyed by the
-// *input* they fill.
-//
-// The mapping is the operator's, never the plugin's. That is the same rule
-// that made the local-credential environment variable derived rather than
-// declared: a plugin that could name the secret it wanted
-// would be a plugin that could name any secret in the namespace and have the
-// host fetch it. Here a plugin declares only that it has an input; which
-// secret key fills it is written in the operator's own file.
-//
-// The value reaches the plugin the way every other credential does — over the
-// AutoMTLS socket, resolved by the host — so nothing here is written to
-// configuration, exported into an environment, or visible in an argv.
 // secretSource resolves which cluster and namespace this target's Secret is
 // read from.
 //
@@ -44,6 +31,19 @@ func (t Target) secretSource() (kctx, ns string, verr *view.Error) {
 	return parseKubeNamespace(t.SecretsFrom)
 }
 
+// Secrets reads the credentials a target names and returns them keyed by the
+// *input* they fill.
+//
+// The mapping is the operator's, never the plugin's. That is the same rule
+// that made the local-credential environment variable derived rather than
+// declared: a plugin that could name the secret it wanted
+// would be a plugin that could name any secret in the namespace and have the
+// host fetch it. Here a plugin declares only that it has an input; which
+// secret key fills it is written in the operator's own file.
+//
+// The value reaches the plugin the way every other credential does — over the
+// AutoMTLS socket, resolved by the host — so nothing here is written to
+// configuration, exported into an environment, or visible in an argv.
 func Secrets(ctx context.Context, name string, t Target) (map[string]string, *view.Error) {
 	if t.Secret == "" || len(t.From) == 0 {
 		return nil, nil
