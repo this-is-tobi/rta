@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.61.0](https://github.com/this-is-tobi/rta/compare/v0.60.0...v0.61.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** view.Error holds the chain a server presented, so two errors no longer compare with ==; compare the fields a check needs.
+
+### Features
+
+* a server nothing vouches for is trusted on first use, through a forward or on your word ([6b32804](https://github.com/this-is-tobi/rta/commit/6b32804767f308d231217aa0acf27c36fa4c1f03))
+* **sdk:** a plugin reports the certificate a server presented, and is handed the ones trusted ([3abd850](https://github.com/this-is-tobi/rta/commit/3abd8501b770ca4d45b9f1db037f3a57f7b4e02c))
+
+
+### Bug Fixes
+
+* **config:** the hint for a key nothing reads names every spelling of it, not three ([1b41330](https://github.com/this-is-tobi/rta/commit/1b4133020e94ad9210bf9237c788d5f4d96018e4))
+* **plugin:** the README card and a dev run say a dev build reads no plugins: section ([236c8e8](https://github.com/this-is-tobi/rta/commit/236c8e824cc08821c65e1457b14af428e73f09c8))
+
 ## [0.60.0](https://github.com/this-is-tobi/rta/compare/v0.59.0...v0.60.0) (2026-11-12)
 
 
