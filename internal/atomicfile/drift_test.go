@@ -24,6 +24,9 @@ var allowed = map[string]string{
 	"internal/pathguard/pathswap/pathswap.go": "a test harness's fixtures in a test's temp " +
 		"directory, rewritten on purpose while a call races them: nothing persists, and a " +
 		"torn write is one of the states the race is there to show",
+	"pkg/sdk/server.go": "a certificate the host read for one call, into a private directory " +
+		"made for that call and RemoveAll'd when it returns, before the handler that reads it " +
+		"runs — scratch by construction, as kv's edit buffer is",
 }
 
 // Six places in rta grew their own copy of temp-file-plus-rename, and the

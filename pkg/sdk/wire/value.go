@@ -14,8 +14,10 @@
 package wire
 
 import (
-	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 	"math"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
 
 // ValueToProto encodes one request value, declared default, or bound.
@@ -70,6 +72,10 @@ func ValueToProto(v any) *rtav1.Value {
 		return &rtav1.Value{Kind: &rtav1.Value_StringListValue{
 			StringListValue: &rtav1.StringList{Values: n},
 		}}
+	case plugin.FileContent:
+		// The content alone: which Secret or store entry it was read from is
+		// the host's, and a plugin that never learns it cannot repeat it.
+		return &rtav1.Value{Kind: &rtav1.Value_FileContent{FileContent: &rtav1.FileContent{Content: n.Bytes()}}}
 	case []any:
 		// What an MCP client sends for a string-slice input, since JSON has
 		// no typed arrays. internal/mcp already accepts it and pkg/plugin's
@@ -150,6 +156,8 @@ func ValueFromProto(v *rtav1.Value) any {
 			return []string(nil)
 		}
 		return k.StringListValue.Values
+	case *rtav1.Value_FileContent:
+		return plugin.NewFileContent(k.FileContent.GetContent(), "")
 	}
 	return nil
 }

@@ -146,6 +146,23 @@ func (r *Registry) RegisterFrom(p plugin.Plugin, origin Origin) error {
 	if _, exists := r.plugins[p.Name]; exists {
 		return fmt.Errorf("namespace %q already registered", p.Name)
 	}
+	// A setting declared to name a file a profile may read for each call
+	// (plugin.Field.File) is given its file by the server of a plugin's own
+	// process, which the wire carries the content to (pkg/sdk). A built-in runs
+	// in this one, where nothing writes it, and its handler would read the
+	// setting as empty: refused here rather than met as a connection with no
+	// CA.
+	if !origin.External() {
+		for _, c := range p.Capabilities {
+			for _, f := range c.Inputs {
+				if f.File != plugin.FileNone {
+					return fmt.Errorf("registering plugin: built-in capability %q declares that input %q names "+
+						"a file a profile may read for each call, which only a plugin's own process is given",
+						c.ID, f.Name)
+				}
+			}
+		}
+	}
 	// Every capability runs behind the host's check of what its inputs
 	// declare — closed sets, numeric bounds — so no surface, nor a plugin's
 	// own handler, has to remember to make it.
