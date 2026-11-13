@@ -3,6 +3,9 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -80,10 +83,16 @@ func (s *server) Call(ctx context.Context, req *rtav1.CallRequest) (resp *rtav1.
 	}()
 
 	surface := wire.SurfaceFromProto(req.GetSurface())
-	pr := plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), req.GetDryRun(), req.GetYes()).
+	values, written, remove, err := writeFiles(wire.ValuesFromProto(req.GetValues()))
+	defer remove()
+	if err != nil {
+		return &rtav1.CallResponse{Result: &rtav1.CallResponse_Error{Error: wire.ErrorToProto(unwritable(c.ID, err))}}, nil
+	}
+	pr := plugin.NewRequest(values, req.GetDryRun(), req.GetYes()).
 		WithSurface(surface).
 		WithProfile(req.GetProfile(), wire.TunnelFromProto(req.GetTunnel())).
-		WithTrusted(req.GetTrusted())
+		WithTrusted(req.GetTrusted()).
+		WithTemporary(written...)
 	if surface == plugin.SurfaceMCP {
 		pr = pr.WithConfinement(refuseDerived).WithLinkTargets(untoldTarget)
 	}
@@ -95,6 +104,52 @@ func (s *server) Call(ctx context.Context, req *rtav1.CallRequest) (resp *rtav1.
 		}}, nil
 	}
 	return &rtav1.CallResponse{Result: &rtav1.CallResponse_View{View: wire.ViewToProto(v)}}, nil
+}
+
+// writeFiles writes each value the host sent as the content of a file a
+// setting names (plugin.FileContent) to a file of its own, and answers the
+// values with each replaced by that file's path, the inputs it replaced, and
+// the removal of what it wrote, which the caller defers whatever came of it.
+//
+// **In this process's own temporary directory, for the length of the call.**
+// Under `confine: strict` that directory is the one place a plugin may write,
+// private to its process, and its children inherit it with the rest of the
+// sandbox: pg_dump reads the CA pg named for it. Removed once the call
+// returns, so nothing of a CA an operator keeps in a cluster stays on disk past
+// the call that needed it; a process killed in the middle leaves it in a
+// directory the host removes whole when it reaps the process. Each file is
+// named for its input, so a refusal naming the file names the setting too.
+func writeFiles(values map[string]any) (map[string]any, []string, func(), error) {
+	var names []string
+	for name, v := range values {
+		if _, ok := v.(plugin.FileContent); ok {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return values, nil, func() {}, nil
+	}
+	dir, err := os.MkdirTemp("", "rta-file-")
+	if err != nil {
+		return nil, nil, func() {}, err
+	}
+	remove := func() { _ = os.RemoveAll(dir) }
+	out := maps.Clone(values)
+	for _, name := range names {
+		path := filepath.Join(dir, filepath.Base(name)+".pem")
+		if err := os.WriteFile(path, values[name].(plugin.FileContent).Bytes(), 0o600); err != nil {
+			return nil, nil, remove, err
+		}
+		out[name] = path
+	}
+	return out, names, remove, nil
+}
+
+// unwritable is the refusal of a call whose file could not be written.
+func unwritable(id string, err error) *view.Error {
+	return view.Errorf("plugin.file.unwritable", "%s could not write the file it was handed for this call: %v", id, err).
+		WithHint("a plugin writes it in its own temporary directory, under TMPDIR: a disk that is full, or a " +
+			"TMPDIR it cannot write to, stops it")
 }
 
 // refuseDerived is Request.Confine for a call an agent made: every path a
@@ -151,8 +206,13 @@ func (s *server) Prefill(ctx context.Context, req *rtav1.PrefillRequest) (resp *
 		}
 	}()
 
-	values, prefillErr := c.Prefill(ctx, plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), false, false).
-		WithTrusted(req.GetTrusted()))
+	given, written, remove, err := writeFiles(wire.ValuesFromProto(req.GetValues()))
+	defer remove()
+	if err != nil {
+		return &rtav1.PrefillResponse{Error: wire.ErrorToProto(unwritable(c.ID, err))}, nil
+	}
+	values, prefillErr := c.Prefill(ctx, plugin.NewRequest(given, false, false).
+		WithTrusted(req.GetTrusted()).WithTemporary(written...))
 	if prefillErr = plugin.Failure(prefillErr); prefillErr != nil {
 		return &rtav1.PrefillResponse{Error: wire.ErrorToProto(plugin.HandlerFailure(prefillErr, c.ID+"'s prefill", c.ID+".prefill.failed"))}, nil
 	}
@@ -180,9 +240,15 @@ func (s *server) Suggest(ctx context.Context, req *rtav1.SuggestRequest) (resp *
 		if f.Name != req.GetField() || f.Suggest == nil {
 			continue
 		}
-		pr := plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), false, false).
+		given, written, remove, err := writeFiles(wire.ValuesFromProto(req.GetValues()))
+		defer remove()
+		if err != nil {
+			return &rtav1.SuggestResponse{}, nil
+		}
+		pr := plugin.NewRequest(given, false, false).
 			WithSurface(wire.SurfaceFromProto(req.GetSurface())).
-			WithTrusted(req.GetTrusted())
+			WithTrusted(req.GetTrusted()).
+			WithTemporary(written...)
 		return &rtav1.SuggestResponse{Values: f.Suggest(ctx, pr)}, nil
 	}
 	return &rtav1.SuggestResponse{}, nil

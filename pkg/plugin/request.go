@@ -87,6 +87,9 @@ type Request struct {
 
 	pipedPrimary bool
 	confirm      func(card string) bool
+	// temporary is the inputs whose path names a file written for this call
+	// alone (Temporary).
+	temporary map[string]bool
 }
 
 // link is a symbolic link a caller named, which the surface resolved before
@@ -186,6 +189,30 @@ func (r Request) Trusted() [][]byte { return r.trusted }
 // plugin process's server does from what the host sent.
 func (r Request) WithTrusted(chain [][]byte) Request {
 	r.trusted = chain
+	return r
+}
+
+// Temporary reports whether the file the input name gives the path of was
+// written for this call alone, from what the host read for it (FileContent):
+// a CA the operator's profile reads from a cluster's Secret. The file is gone
+// once the call returns, so an answer that hands its reader a call to make
+// next leaves the input out of it rather than give a path that names nothing
+// by then. The profile the call ran under fills it again, from where it is
+// kept, and that is how a call made next reaches the same server.
+func (r Request) Temporary(name string) bool { return r.temporary[name] }
+
+// WithTemporary stamps names as inputs holding the path of a file written for
+// this call alone (Temporary). A plugin process's server does, for each value
+// the host sent as the content of a file.
+func (r Request) WithTemporary(names ...string) Request {
+	marked := make(map[string]bool, len(r.temporary)+len(names))
+	for k := range r.temporary {
+		marked[k] = true
+	}
+	for _, n := range names {
+		marked[n] = true
+	}
+	r.temporary = marked
 	return r
 }
 
@@ -433,6 +460,16 @@ func (r Request) With(values map[string]any) Request {
 			}
 		}
 		r.links = kept
+	}
+	// And of a file written for the call: the value no longer names it.
+	if len(r.temporary) > 0 {
+		kept := make(map[string]bool, len(r.temporary))
+		for k := range r.temporary {
+			if _, over := values[k]; !over {
+				kept[k] = true
+			}
+		}
+		r.temporary = kept
 	}
 	return r
 }

@@ -28,11 +28,21 @@ message Value {
     double float_value = 3;
     bool bool_value = 4;
     StringList string_list_value = 5;
+    // The content of the file a setting names (a field with a file kind),
+    // read by the host for this call from where the operator's profile says
+    // it is kept. The plugin's server writes it to a file of its own for the
+    // length of the call and hands the handler that file's path. The content
+    // alone crosses: where it was read from stays with the host.
+    FileContent file_content = 6;
   }
 }
 
 message StringList {
   repeated string values = 1;
+}
+
+message FileContent {
+  bytes content = 1;
 }
 
 // Safety is blast radius, not permission. It says what a capability does to

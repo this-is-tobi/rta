@@ -205,6 +205,13 @@ func checkShape(c Capability, f Field, v any, s Surface) (verr *view.Error, how 
 		if _, ok := v.(string); ok {
 			return nil, ""
 		}
+		// The content of the file a setting names, read by the host for this
+		// call (FileContent): the plugin's server hands the handler a path to
+		// it. Only on a setting declared to name one, which is the only input
+		// a profile reads one for.
+		if _, ok := v.(FileContent); ok && f.File == FileCertificates {
+			return nil, ""
+		}
 		want = "text"
 		give, how = "give it as text — in YAML, quoted, so it is not read as a number, a boolean or a date",
 			"quote it there"
