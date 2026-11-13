@@ -37,10 +37,10 @@ type TLSPlan struct {
 // TLS reads the call's TLS settings into a plan, every file they name read
 // and checked before anything is dialled, the dry run included: a refusal
 // then comes before the server is reached, rather than as a handshake that
-// failed for a reason it cannot say. <ns>.tls.ca.unreadable and .ca.invalid,
-// .cert.missing, .key.missing, .cert.unreadable, .key.unreadable and
-// .pair.invalid; and .ca.unused, .name.unused and .cert.unused for a setting
-// the mode would not read.
+// failed for a reason it cannot say. <ns>.tls.ca.unreadable, .ca.invalid,
+// .ca.expired, .cert.missing, .key.missing, .cert.unreadable, .key.unreadable
+// and .pair.invalid; and .ca.unused, .name.unused and .cert.unused for a
+// setting the mode would not read.
 func (s Service) TLS(req Request) (*TLSPlan, *view.Error) {
 	set := s.tlsSettings(req)
 	mode, verr := s.mode(req, set)

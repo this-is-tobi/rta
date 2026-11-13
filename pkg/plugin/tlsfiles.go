@@ -2,11 +2,13 @@ package plugin
 
 import (
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"syscall"
+	"time"
 
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -56,8 +58,9 @@ func readTLSFile(path string) ([]byte, error) {
 // checks its server's certificate against, in place of the system's roots,
 // or answers nil when the setting is empty: the system's roots. The setting is
 // a path on the machine running the call, ~ expanded. A file that does not
-// read is refused as <namespace>.tls.ca.unreadable, and one that holds no PEM
-// certificate as <namespace>.tls.ca.invalid, each naming the setting the way
+// read is refused as <namespace>.tls.ca.unreadable, one that holds no PEM
+// certificate as <namespace>.tls.ca.invalid, and one whose every certificate
+// has expired as <namespace>.tls.ca.expired, each naming the setting the way
 // the reader of req changes it.
 //
 // In place of the system's roots, never beside them: Go checks a certificate
@@ -90,5 +93,60 @@ func CAPool(req Request, namespace, setting string) (*x509.CertPool, *view.Error
 				"a private key or a DER-encoded certificate is not one").
 			WithInput(setting)
 	}
+	// **A copy outlives the CA it was taken from.** A CA a cluster keeps renews
+	// itself in place, and the copy on this machine keeps the dates it was
+	// copied with. Once every certificate in it has expired no chain anchored
+	// at it verifies — Go and OpenSSL both refuse an expired root — and the
+	// handshake said "a certificate nothing here trusts", with a hint to name
+	// the CA the operator had named. Refused before anything is dialled, by its
+	// date and not its subject: a CA's subject can name a cluster and a
+	// namespace, which a refusal handed to an agent does not.
+	if last := lastExpiry(pem); !last.IsZero() && time.Now().After(last) {
+		return nil, view.Errorf(namespace+".tls.ca.expired", "every certificate in %s has expired, the last on %s",
+			path, last.UTC().Format(time.DateOnly)).
+			WithHint(staleCopy(sf, setting)).WithInput(setting)
+	}
 	return pool, nil
+}
+
+// staleCopy is the way out of a CA copy that has gone stale: the copy is
+// exported again from where the CA is kept — or, when what expired is a
+// server's own self-signed certificate, which the setting holds as its own
+// CA, the certificate is renewed on the server, since exporting it again
+// would bring back the same expired one.
+func staleCopy(sf Surface, setting string) string {
+	return sf.SettingName(setting) + " names a copy, and a CA that renews in place leaves its copies behind: " +
+		"export the one in use again — or, when a server's own self-signed certificate is what expired, renew it there"
+}
+
+// lastExpiry is the latest end date among the certificates in a PEM bundle,
+// zero when it holds none that parse: the bundle is good for as long as one of
+// them is.
+func lastExpiry(bundle []byte) time.Time {
+	var last time.Time
+	for _, c := range certificatesIn(bundle) {
+		if c.NotAfter.After(last) {
+			last = c.NotAfter
+		}
+	}
+	return last
+}
+
+// certificatesIn is every certificate a PEM bundle holds that parses, in
+// order, skipping a block of any other type.
+func certificatesIn(bundle []byte) []*x509.Certificate {
+	var out []*x509.Certificate
+	for {
+		var block *pem.Block
+		block, bundle = pem.Decode(bundle)
+		if block == nil {
+			return out
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		if c, err := x509.ParseCertificate(block.Bytes); err == nil {
+			out = append(out, c)
+		}
+	}
 }

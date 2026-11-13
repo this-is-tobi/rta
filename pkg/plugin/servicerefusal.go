@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -84,7 +85,21 @@ func (s Service) Refusal(req Request, err error) *view.Error {
 	// such argument to give. Only for a verdict that means an issuer nothing
 	// here vouches for (CertUntrusted), never a revoked certificate, which a
 	// CA file would get past by checking less.
+	// A copy of the CA that signed the server's certificate, expired in the CA
+	// the operator named, whatever Go called it: an expired root is reported
+	// as the certificate that expired, which read as the server's own.
+	ca := s.tlsSettings(req).ca
+	if ca != "" {
+		if expired, ok := expiredSigner(ca, verifyErr); ok {
+			return view.Errorf(s.Namespace+".tls.ca.expired", "the CA in %s that signed the certificate behind %s expired on %s",
+				sf.SettingName("ca-file"), req.Reached(endpoint), expired.UTC().Format(time.DateOnly)).
+				WithHint(staleCopy(sf, "ca-file")).WithInput("ca-file")
+		}
+	}
 	if CertUntrusted(err) {
+		if ca != "" {
+			return s.unvouched(req, endpoint)
+		}
 		hint := "a " + s.Product + " behind an internal CA wants that CA rather than verification turned off: " +
 			sf.CAHint("ca-file")
 		if proxy != nil {
@@ -183,6 +198,43 @@ func (s Service) presenting(req Request, verr *view.Error, verifyErr *tls.Certif
 		chain = append(chain, c.Raw)
 	}
 	return verr.WithPresented(chain)
+}
+
+// unvouched is the refusal of a server the CA the operator named does not
+// vouch for. It said "a certificate nothing here trusts" and told them to
+// name the CA in ca-file, which they had: what the server presents was issued
+// by another CA, or by the same one renewed with a key of its own. (A copy
+// that expired is said as that before this is asked, by expiredSigner, and
+// CAPool refuses a bundle whose every certificate has expired before anything
+// is dialled.) Never with the server's chain to trust on first use: the named
+// CA is the only issuer the operator vouches for on the connection
+// (presenting).
+func (s Service) unvouched(req Request, endpoint string) *view.Error {
+	sf := req.Surface()
+	return view.Errorf(s.Namespace+".tls.untrusted", "%s presented a certificate the CA in %s does not vouch for",
+		req.Reached(endpoint), sf.SettingName("ca-file")).
+		WithHint("another CA issued it, or the one named renewed with a key of its own and left this copy behind: " +
+			"export the CA the server's certificate is issued by now").WithInput("ca-file")
+}
+
+// expiredSigner is the end date of an expired certificate in the bundle at
+// path that signed the certificate the server presented first, when there is
+// one.
+func expiredSigner(path string, verifyErr *tls.CertificateVerificationError) (time.Time, bool) {
+	if verifyErr == nil || len(verifyErr.UnverifiedCertificates) == 0 {
+		return time.Time{}, false
+	}
+	bundle, err := readTLSFile(path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	leaf := verifyErr.UnverifiedCertificates[0]
+	for _, c := range certificatesIn(bundle) {
+		if time.Now().After(c.NotAfter) && leaf.CheckSignatureFrom(c) == nil {
+			return c.NotAfter, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // changed is the refusal of a server that presented a certificate other than

@@ -72,6 +72,8 @@ profiles:
 
 Keep the `ca-file` outside rta's own directories (`~/.config/rta` and `~/.local/share/rta`): a plugin runs in a sandbox that cannot read them, and the call fails with the file unreadable.
 
+A copy keeps the dates it was copied with, and a [CA](../95-reference/10-glossary.md#acronyms) that renews in place — CloudNativePG's own lasts ninety days — leaves the copy behind. A plugin that declares its connection with the SDK's `plugin.Service` says so rather than calling the server untrusted: a `ca-file` whose every certificate has expired is refused before anything is dialled, and a server signed by a CA whose copy there has expired is refused by that copy's date, both as `<plugin>.tls.ca.expired`. Export the CA again from where it is kept.
+
 `tunnel-tls: true` says the far end terminates TLS itself, so the forward should be addressed as `https://` — refused if the connection states neither `kube:` nor `ssh:`, since there is then no forward for it to describe, and for a plugin that takes no URL, since a URL is all it changes: etcd, redis and the databases turn TLS on through a forward with their own `tls-server-name` or `ca-file`. It changes *scheme only*. Certificate verification still runs as normal, against whatever this machine already trusts or the `ca-file` the connection names, and `tunnel-tls: true` does not become `--insecure` under any configuration: a self-signed or cluster-internal [CA](../95-reference/10-glossary.md#acronyms) (an operator-generated root, a private issuer) is a certificate nothing here vouches for, which a plugin that declares its connection with the SDK's `plugin.Service` trusts on first use through a `kube:` forward, as [below](#a-certificate-nothing-here-vouches-for) says, and any other refuses.
 
 The name is checked too, and through a forward the address the plugin dials is `127.0.0.1`, which a server's certificate names only when it was issued to answer probes on loopback as well. A certificate made for the service — `vault.vault-operator-system.svc` above — is refused for its name, and the refusal says the forward is why. `tls-server-name` is the name to check it for instead, the one the service's certificate was issued under: `etcd`, `keycloak`, `qdrant`, `redis`, `s3` and `vault` take it, as a setting only an operator states, and an agent cannot change it. The chain is still checked in full, against the CA the profile names.
@@ -110,7 +112,7 @@ profiles:
         set:
           host: pg.example.internal
           sslmode: verify-ca
-          sslrootcert: ~/.config/rta/pg-ca.crt
+          sslrootcert: ~/.config/homelab/pg-ca.crt
 ```
 
 A client certificate and key are `sslcert` and `sslkey`, named the same way. `ssl-home: true` is the opt-in for the habit libpq has of looking under `~/.postgresql` for all three when they are not named: with it on, `pg` uses what is there, resolved once and handed both the driver and `pg_dump`, `psql` and `pg_restore`, so they cannot disagree; it is off by default so that no file is read that a setting did not name, and it is never fillable by an MCP caller.
