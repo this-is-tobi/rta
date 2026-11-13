@@ -9,6 +9,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/role"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -36,7 +37,7 @@ func roleHint(sf plugin.Surface, r consent.Request) string {
 		if used := covering(lines, r); len(used) > 0 {
 			which := "line " + used[0]
 			if len(used) > 1 {
-				which = "lines " + andList(used)
+				which = "lines " + format.And(used)
 			}
 			return fmt.Sprintf("%s of %s — `%s` issues the whole role, then this call", which, s.Name,
 				sf.Call("agent.approve", plugin.Arg{Name: "id", Value: r.ID, Positional: true},

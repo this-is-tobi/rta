@@ -1067,7 +1067,7 @@ func moreHint(sf plugin.Surface, total int) string {
 		hint += "all of them"
 	}
 	narrow := []string{sf.InputName("since"), sf.InputName("agent"), sf.InputName("refused")}
-	return hint + "; " + strings.Join(narrow[:len(narrow)-1], ", ") + " and " + narrow[len(narrow)-1] + " narrow it"
+	return hint + "; " + format.And(narrow) + " narrow it"
 }
 
 // unknownAgentClause says, when --agent matched nothing, which agents the
@@ -1833,16 +1833,8 @@ func noNarrowGrant(sf plugin.Surface, r consent.Request, ttl string) *view.Error
 	}
 	return view.Errorf("agent.approve.folder",
 		"%s %s in a slash, so a grant on it would cover every record under it, not this call's alone",
-		andList(folders), ends).
-		WithHint(andList(calls) + " " + issues + " that, if every record under it is what you mean")
-}
-
-// andList joins items as a sentence lists them: "a", "a and b", "a, b and c".
-func andList(items []string) string {
-	if len(items) < 2 {
-		return strings.Join(items, "")
-	}
-	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+		format.And(folders), ends).
+		WithHint(format.And(calls) + " " + issues + " that, if every record under it is what you mean")
 }
 
 // answerGrants builds the grants a --ttl answer issues: exactly the grants
@@ -1913,7 +1905,7 @@ func alsoGrant(prepared []grant.Grant, capped string, signer *guard.Signer) (str
 	var issued []string
 	note := func() string {
 		window := prepared[0].Expires.Sub(prepared[0].Issued)
-		return fmt.Sprintf("this call, and %s for the next %s", andList(issued), format.Duration(window))
+		return fmt.Sprintf("this call, and %s for the next %s", format.And(issued), format.Duration(window))
 	}
 	// The window starts now, as each grant is written, and not when the builder
 	// ran before the passphrase was asked for (Grant.StartingAt).

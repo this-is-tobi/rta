@@ -1044,7 +1044,7 @@ func (p *page) disjoint(rfc, reader string, levels ...headerLevel) {
 	}
 	subject := where[0] + " and " + where[1] + " both"
 	if len(where) > 2 {
-		subject = strings.Join(where[:len(where)-1], ", ") + " and " + where[len(where)-1] + " all"
+		subject = format.And(where) + " all"
 	}
 	p.note("%s%s name %s, which %s forbids: %s has to choose one, and which one is not written down.",
 		strings.ToUpper(subject[:1]), subject[1:], strings.Join(both, ", "), rfc, reader)

@@ -414,15 +414,15 @@ func (s Surface) SettingName(names ...string) string {
 		for i, n := range names {
 			quoted[i] = "`" + n + "`"
 		}
-		return "the operator's " + listed(quoted) + " " + format.Plural(len(names), "setting", "settings")
+		return "the operator's " + format.And(quoted) + " " + format.Plural(len(names), "setting", "settings")
 	case SurfaceTUI:
-		return "the " + listed(names) + " " + format.Plural(len(names), "box", "boxes")
+		return "the " + format.And(names) + " " + format.Plural(len(names), "box", "boxes")
 	}
 	flags := make([]string, len(names))
 	for i, n := range names {
 		flags[i] = s.InputName(n)
 	}
-	return listed(flags)
+	return format.And(flags)
 }
 
 // SettingTo is SettingName for one setting given value, the way the reader
@@ -602,14 +602,6 @@ func HostOf(endpoint string) string {
 		return host
 	}
 	return strings.TrimSuffix(strings.TrimPrefix(e, "["), "]")
-}
-
-// listed joins words as a sentence lists them: a, a and b, a, b and c.
-func listed(words []string) string {
-	if len(words) < 2 {
-		return strings.Join(words, "")
-	}
-	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
 }
 
 // spellsForCLI reports whether s reads the CLI's spelling: the CLI itself,
