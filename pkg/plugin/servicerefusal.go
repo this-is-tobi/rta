@@ -93,7 +93,7 @@ func (s Service) Refusal(req Request, err error) *view.Error {
 		if expired, ok := expiredSigner(ca, verifyErr); ok {
 			return view.Errorf(s.Namespace+".tls.ca.expired", "the CA in %s that signed the certificate behind %s expired on %s",
 				sf.SettingName("ca-file"), req.Reached(endpoint), expired.UTC().Format(time.DateOnly)).
-				WithHint(staleCopy(sf, "ca-file")).WithInput("ca-file")
+				WithHint(staleCopy(req, "ca-file")).WithInput("ca-file")
 		}
 	}
 	if CertUntrusted(err) {

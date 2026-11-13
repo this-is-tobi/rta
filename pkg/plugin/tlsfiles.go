@@ -102,9 +102,15 @@ func CAPool(req Request, namespace, setting string) (*x509.CertPool, *view.Error
 	// date and not its subject: a CA's subject can name a cluster and a
 	// namespace, which a refusal handed to an agent does not.
 	if last := lastExpiry(pem); !last.IsZero() && time.Now().After(last) {
+		// The setting rather than the path, for a file written for this call
+		// alone: the path names nothing once the call returns.
+		where := path
+		if req.Temporary(setting) {
+			where = sf.SettingName(setting)
+		}
 		return nil, view.Errorf(namespace+".tls.ca.expired", "every certificate in %s has expired, the last on %s",
-			path, last.UTC().Format(time.DateOnly)).
-			WithHint(staleCopy(sf, setting)).WithInput(setting)
+			where, last.UTC().Format(time.DateOnly)).
+			WithHint(staleCopy(req, setting)).WithInput(setting)
 	}
 	return pool, nil
 }
@@ -114,7 +120,16 @@ func CAPool(req Request, namespace, setting string) (*x509.CertPool, *view.Error
 // server's own self-signed certificate, which the setting holds as its own
 // CA, the certificate is renewed on the server, since exporting it again
 // would bring back the same expired one.
-func staleCopy(sf Surface, setting string) string {
+//
+// A CA the operator's profile reads from where it is kept, for each call
+// (Request.Temporary), is no copy, and exporting it again changes nothing:
+// what is kept there has expired, so whoever renews it is the one to ask.
+func staleCopy(req Request, setting string) string {
+	sf := req.Surface()
+	if req.Temporary(setting) {
+		return sf.SettingName(setting) + " is read for each call from where the CA is kept, and what is kept " +
+			"there has expired: whoever renews that CA is the one to ask"
+	}
 	return sf.SettingName(setting) + " names a copy, and a CA that renews in place leaves its copies behind: " +
 		"export the one in use again — or, when a server's own self-signed certificate is what expired, renew it there"
 }

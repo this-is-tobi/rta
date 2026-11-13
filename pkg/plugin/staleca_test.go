@@ -68,6 +68,33 @@ func TestACACopyWhoseEveryCertificateHasExpiredIsRefusedBeforeDialling(t *testin
 	}
 }
 
+// A CA a profile reads from where it is kept, for each call, is no copy: when
+// what is kept there has expired, the refusal says so of the setting, never of
+// a path that names nothing once the call returns, and sends the operator to
+// whoever renews the CA rather than to export it again.
+func TestACAReadForEachCallIsNotCalledACopy(t *testing.T) {
+	stale, _ := issue(t, nil, nil, -time.Minute, true)
+	path := bundle(t, stale)
+	req := asked(map[string]any{"address": "127.0.0.1:6379", "ca-file": path}).WithTemporary("ca-file")
+	_, verr := redisService.TLS(req)
+	if codeOf(verr) != "redis.tls.ca.expired" || strings.Contains(verr.Message, path) ||
+		!strings.Contains(verr.Message, "every certificate in --ca-file has expired") ||
+		!strings.Contains(verr.Hint, "read for each call from where the CA is kept") || strings.Contains(verr.Hint, "export") {
+		t.Errorf("every certificate expired: %+v", verr)
+	}
+
+	signer, signerKey := issue(t, nil, nil, time.Hour, true)
+	server, serverKey := issue(t, signer, signerKey, time.Hour, false)
+	other, _ := issue(t, nil, nil, time.Hour, true)
+	req = asked(map[string]any{"address": "127.0.0.1:6379",
+		"ca-file": bundle(t, copyOf(t, signerKey, time.Now().Add(-time.Minute)), other)}).WithTemporary("ca-file")
+	err := handshake(t, server, serverKey, planned(t, redisService, req))
+	if verr := redisService.Refusal(req, err); codeOf(verr) != "redis.tls.ca.expired" ||
+		!strings.Contains(verr.Hint, "read for each call from where the CA is kept") {
+		t.Errorf("the CA that signed the server expired: %+v (%v)", verr, err)
+	}
+}
+
 // With a CA named, a server it does not vouch for is never told to name a CA
 // in ca-file, nor offered to be trusted on first use. A copy of the CA that
 // signed the server's certificate, expired beside a CA that is current, is
