@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.62.0](https://github.com/this-is-tobi/rta/compare/v0.61.0...v0.62.0) (2026-11-13)
+
+
+### Features
+
+* **cli:** explain and completion name a CA setting a secret can fill ([ffe3752](https://github.com/this-is-tobi/rta/commit/ffe37529b63a4996312cf1de0e1d03fec2cf6454))
+* **profile:** a CA setting is read from a secret for each call ([444a8be](https://github.com/this-is-tobi/rta/commit/444a8be85a99eb2153e310542e13583f06eb6cce))
+* **sdk:** a certificate read for a call reaches the handler as a file ([24f875a](https://github.com/this-is-tobi/rta/commit/24f875a99a243ce145fb60f7eaed9961c7b4d990))
+* **sdk:** a setting can declare that the file it names holds certificates ([245c132](https://github.com/this-is-tobi/rta/commit/245c132854a34dfc1c5da97f02f4c3a64f9c33cc))
+
+
+### Bug Fixes
+
+* **plugin:** an unpinned section for a dev build no longer calls it installed ([768fb61](https://github.com/this-is-tobi/rta/commit/768fb61cf6c61e2ad4ffcdeabb8b6970c8d4c9da))
+* **sdk:** a CA read for each call that went stale is not called a copy ([fcf63b1](https://github.com/this-is-tobi/rta/commit/fcf63b1f7ae4c068f796ca1e7296f0f1719b5c72))
+* **sdk:** a copy of a CA that went stale is named by its date ([9c08063](https://github.com/this-is-tobi/rta/commit/9c0806361a1eed12268dd6e6bcc28c614f68cf4c))
+* **sdk:** a private key a profile gives a setting is refused unread ([485474b](https://github.com/this-is-tobi/rta/commit/485474bad325a5766055775d36c6ccbb4b07ae5b))
+* **tui:** a tile's refusal names where its settings are stated ([5263d4c](https://github.com/this-is-tobi/rta/commit/5263d4c0135ad618abc9be8195c948519db7f17f))
+
+
+### Code Refactoring
+
+* **format:** one join for a list a sentence reads with and ([93b4425](https://github.com/this-is-tobi/rta/commit/93b4425e6b7ea4f656ed9195f3fb65f8d28733f3))
+
 ## [0.61.0](https://github.com/this-is-tobi/rta/compare/v0.60.0...v0.61.0) (2026-11-13)
 
 
