@@ -402,12 +402,11 @@ func checkPin(key string, inst Installed) *view.Error {
 				WithHint("write it as `" + ns + ":`")
 		}
 	case !pinned:
-		hint := "write it as `" + ns + "@" + o.Short() + ":`"
+		what, hint := strconv.Quote(ns)+" is an installed plugin", "write it as `"+ns+"@"+o.Short()+":`"
 		if o.Dev {
-			hint = o.Which(ns) + "; pin the entry to the build you install"
+			what, hint = o.Called(ns)+" is not built in", o.Which(ns)+"; pin the entry to the build you install"
 		}
-		return view.Errorf("core.profile.unpinned",
-			"%q is an installed plugin, so a profile entry for it must name the artifact", ns).
+		return view.Errorf("core.profile.unpinned", "%s, so a profile entry for it must name the artifact", what).
 			WithHint(hint)
 	case len(pin) < registry.MinPinLen:
 		// Below the floor every digest-prefix match shares

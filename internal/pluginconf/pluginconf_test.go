@@ -446,7 +446,7 @@ func TestAProblemInADevRunNamesTheBuildTheRunUsesAndNotTheInstalledOne(t *testin
 				t.Errorf("%s: hint %q does not say %q", section, p.Hint, want)
 			}
 		}
-		if strings.Contains(p.Reason+" "+p.Hint, "the installed") {
+		if strings.Contains(p.Reason, "installed") || strings.Contains(p.Hint, "the installed") {
 			t.Errorf("%s: the build of a run is called installed: %q / %q", section, p.Reason, p.Hint)
 		}
 	}

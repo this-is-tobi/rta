@@ -1282,7 +1282,8 @@ func TestAPinRefusedInADevRunNamesTheBuildTheRunUsesAndOffersNoRepin(t *testing.
 				t.Errorf("%s: hint %q does not say %q", name, verr.Hint, want)
 			}
 		}
-		if text := verr.Message + " " + verr.Hint; strings.Contains(text, "installed one") || strings.Contains(text, "repin") {
+		if text := verr.Message + " " + verr.Hint; strings.Contains(verr.Message, "installed") ||
+			strings.Contains(text, "installed one") || strings.Contains(text, "repin") {
 			t.Errorf("%s: the refusal names the build of a run as installed, or offers to pin to it: %q", name, text)
 		}
 	}
