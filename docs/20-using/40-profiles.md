@@ -90,6 +90,8 @@ secrets:
 
 A config file is plaintext, read on every invocation, with nobody watching. So this block holds a **name**, and the value is fetched at resolution time — reaching neither this file, nor an environment variable, nor an argv. It does not reach an agent either: one granted the profile has the credential read on this machine for each call and never receives it, which is why a `kv.get` grant on the entry is never part of using the connection, and would be the one thing that hands it over.
 
+A setting the plugin declares as a file of certificates, a [CA](../95-reference/10-glossary.md#acronyms) bundle, takes a reference as well: the certificates are read for each call and handed to the plugin in a file, so a CA the cluster renews in place is never a stale copy. [A CA the cluster keeps](./42-reaching-private-services.md#a-ca-the-cluster-keeps) has the rest.
+
 A `kube:` reference needs to know *which* cluster and namespace to read from. A `kube:` coordinate answers that as a side effect of naming a forward — but a connection that reaches its service directly has no forward to name, and stating one purely to locate a Secret would drag the call through a port-forward it never needed and quietly override `set: host`. `secrets-from:` is that answer on its own:
 
 ```yaml
