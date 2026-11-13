@@ -26,6 +26,7 @@ package profile
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -620,11 +621,11 @@ func Fill(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 		}
 	}
 	// wanted records the inputs a reference would fill and nothing else
-	// already has, so the cluster read below fetches exactly those. Walked
-	// here rather than inside kubeSecrets because the precedence rules — a
-	// typed value wins, then an env var — are Fill's and apply to every
-	// scheme.
-	wanted := map[string]bool{}
+	// already has, with the reference, so the cluster read below fetches
+	// exactly those. Walked here rather than inside kubeSecrets because the
+	// precedence rules — a typed value wins, then an env var — are Fill's and
+	// apply to every scheme.
+	wanted := map[string]config.SecretRef{}
 	for _, ref := range conn.SecretRefs() {
 		if _, ok := fillable[ref.Input]; !ok {
 			// Refused rather than skipped. An operator who mapped a credential
@@ -648,7 +649,7 @@ func Fill(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 		}
 		switch ref.Scheme {
 		case "kube":
-			wanted[ref.Input] = true
+			wanted[ref.Input] = ref
 			continue
 		case "kv":
 		default:
@@ -667,7 +668,11 @@ func Fill(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 				"profile %q: reading %s for %s: %s", name, ref.Ref, ref.Input, verr.Message).
 				WithHint(verr.Hint)
 		}
-		out[ref.Input] = v
+		value, verr := referenced(name, c, fillable[ref.Input], ref, v)
+		if verr != nil {
+			return nil, verr
+		}
+		out[ref.Input] = value
 	}
 	// The cluster, in the order argued at the top: credentials first, so a
 	// refusal costs no forward.
@@ -676,13 +681,20 @@ func Fill(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 		if verr != nil {
 			return nil, verr
 		}
-		for input, v := range fromCluster {
-			// Only the ones nothing more explicit already answered. kubeSecrets
-			// reads a whole Secret per call, so it can return an input a typed
-			// value or an env var has already won.
-			if wanted[input] {
-				out[input] = v
+		// Only the ones nothing more explicit already answered: kubeSecrets
+		// reads a whole Secret per call, so it can return an input a typed value
+		// or an env var has already won. In order, so a connection mapping two
+		// that are refused names the same one each run.
+		for _, input := range slices.Sorted(maps.Keys(wanted)) {
+			v, read := fromCluster[input]
+			if !read {
+				continue
 			}
+			value, verr := referenced(name, c, fillable[input], wanted[input], v)
+			if verr != nil {
+				return nil, verr
+			}
+			out[input] = value
 		}
 	}
 	return out, nil

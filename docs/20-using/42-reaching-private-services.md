@@ -72,7 +72,7 @@ profiles:
 
 Keep the `ca-file` outside rta's own directories (`~/.config/rta` and `~/.local/share/rta`): a plugin runs in a sandbox that cannot read them, and the call fails with the file unreadable.
 
-A copy keeps the dates it was copied with, and a [CA](../95-reference/10-glossary.md#acronyms) that renews in place — CloudNativePG's own lasts ninety days — leaves the copy behind. A plugin that declares its connection with the SDK's `plugin.Service` says so rather than calling the server untrusted: a `ca-file` whose every certificate has expired is refused before anything is dialled, and a server signed by a CA whose copy there has expired is refused by that copy's date, both as `<plugin>.tls.ca.expired`. Export the CA again from where it is kept.
+A copy keeps the dates it was copied with, and a [CA](../95-reference/10-glossary.md#acronyms) that renews in place — CloudNativePG's own lasts ninety days — leaves the copy behind. A plugin that declares its connection with the SDK's `plugin.Service` says so rather than calling the server untrusted: a `ca-file` whose every certificate has expired is refused before anything is dialled, and a server signed by a CA whose copy there has expired is refused by that copy's date, both as `<plugin>.tls.ca.expired`. Export the CA again from where it is kept, or have the profile read it from there for each call, as [A CA the cluster keeps](#a-ca-the-cluster-keeps) says.
 
 `tunnel-tls: true` says the far end terminates TLS itself, so the forward should be addressed as `https://` — refused if the connection states neither `kube:` nor `ssh:`, since there is then no forward for it to describe, and for a plugin that takes no URL, since a URL is all it changes: etcd, redis and the databases turn TLS on through a forward with their own `tls-server-name` or `ca-file`. It changes *scheme only*. Certificate verification still runs as normal, against whatever this machine already trusts or the `ca-file` the connection names, and `tunnel-tls: true` does not become `--insecure` under any configuration: a self-signed or cluster-internal [CA](../95-reference/10-glossary.md#acronyms) (an operator-generated root, a private issuer) is a certificate nothing here vouches for, which a plugin that declares its connection with the SDK's `plugin.Service` trusts on first use through a `kube:` forward, as [below](#a-certificate-nothing-here-vouches-for) says, and any other refuses.
 
@@ -91,7 +91,7 @@ A CA named is the only issuer that vouches on its connection: nothing trusted st
 
 **Named apart from any plugin's own `tls` or `sslmode`.** etcd, qdrant and s3 each read `set: {tls: ...}`; pg reads `set: {sslmode: ...}` — that is the plugin's *own* on/off toggle, in its own client library's vocabulary, and the host forces it off over a tunnel (see [Types are part of the declaration](./41-profiles-in-depth.md#types-are-part-of-the-declaration) for that mechanism). `tunnel-tls` is a different fact at a different layer: not a plugin's setting, but what the host must know about the coordinate itself to address it correctly, before any plugin config is even read. The two can sit beside each other in the same entry without conflict — they answer different questions — but they would not if they shared a word.
 
-Where that CA lives is a plugin's own concern rather than the tunnel's, because reading it is a file-read primitive and the plugin declares — or does not — that it trusts a caller-named path for it: a PEM bundle read from this machine, never from the cluster, and never fillable by an [MCP](../95-reference/10-glossary.md#acronyms) caller. `rta explain <capability>` lists whether a given plugin offers one. Not a secret either — a CA certificate is the public half of a key pair, the half a CA hands out for wide distribution so anyone can verify what it signed, the same reason an OS trust store ships thousands of them in the clear. It needs no more protection than `address` does, and reading it through `kv:`/`kube:` the way a credential is would be reaching for the wrong tool.
+Where that CA lives is a plugin's own concern rather than the tunnel's, because reading it is a file-read primitive and the plugin declares — or does not — that it trusts a path for it: a PEM bundle on this machine, or read for each call from where the CA is kept, and never fillable by an [MCP](../95-reference/10-glossary.md#acronyms) caller. `rta explain <capability>` lists whether a given plugin offers one. Not a secret either — a CA certificate is the public half of a key pair, the half a CA hands out for wide distribution so anyone can verify what it signed, the same reason an OS trust store ships thousands of them in the clear. It needs no more protection than `address` does. A profile reading it through `kube:` or `kv:` does so to keep it current, not to keep it hidden, as [A CA the cluster keeps](#a-ca-the-cluster-keeps) says.
 
 The field is named for what it mirrors, plugin by plugin, rather than one word forced everywhere:
 
@@ -118,6 +118,30 @@ profiles:
 A client certificate and key are `sslcert` and `sslkey`, named the same way. `ssl-home: true` is the opt-in for the habit libpq has of looking under `~/.postgresql` for all three when they are not named: with it on, `pg` uses what is there, resolved once and handed both the driver and `pg_dump`, `psql` and `pg_restore`, so they cannot disagree; it is off by default so that no file is read that a setting did not name, and it is never fillable by an MCP caller.
 
 **`sslmode` does not follow `sslrootcert`, and a CA beside a mode that would not verify against it is refused.** `sslmode`'s own default, `prefer`, never verifies the server in pgx whatever CA it is given, and libpq — which `pg_dump`, `psql` and `pg_restore` run on — verifies under it and then retries in plaintext when verification fails; `require` verifies only because a file is there, and stops without a word the day the file is dropped. So a CA beside either is refused before anything dials, as `pg.tls.ca.unused` and `pg.tls.ca.implied`, naming the mode to set instead: `verify-ca` checks the server's chain against the CA, and `verify-full` its name as well. `verify-ca` with no `sslrootcert` is refused too, since pgx would then check the chain against this machine's own store and read no name, and `sslrootcert: system`, this machine's own store, is taken beside `verify-full` alone. This is deliberate rather than a gap: which axis to move — the CA, how strict to be about it — is two separate decisions, and silently elevating one because the other was set would be a second, undocumented way `sslmode`'s value changes (the codebase already argues against exactly that kind of surprise — see [Types are part of the declaration](./41-profiles-in-depth.md#types-are-part-of-the-declaration)), so the refusal says which mode to set rather than setting it. Set both, as above.
+
+### A CA the cluster keeps
+
+A CA a cluster keeps renews itself in place, and a copy exported to a file keeps the dates it was copied with: CloudNativePG renews the CA it makes for a cluster a week before its ninety days are up, and every call that checks against the copy fails from the day the old one expires. A profile can read the CA from where the cluster keeps it instead, for each call, the way it reads a credential:
+
+```yaml
+profiles:
+  homelab:
+    plugins:
+      pg:
+        set:
+          host: pg.homelab.internal
+          sslmode: verify-full
+        secrets:
+          password: kube:pg-app/password
+          sslrootcert: kube:pg-ca/ca.crt
+        secrets-from: homelab/databases
+```
+
+The certificates are checked before anything is dialled — certificates and nothing else, at least one, not every one expired — and the plugin is handed the path of a file holding them, written in its own temporary directory for the call and removed when the call returns. A refusal names the reference and what was wrong with it (`core.profile.secret.certificate`, `core.profile.secret.expired`), and a private key is refused wherever a reference delivers one to a setting that is no credential (`core.profile.secret.key`): rta writes no key to a file. Over [MCP](../95-reference/10-glossary.md#acronyms) the agent is told that the connection's credentials could not be read, and the reason goes to [the record](../30-boundary/40-audit-trail.md), as for any reference.
+
+**Only a setting the plugin declares as a file of certificates takes a reference.** Mapped onto any other, the PEM is refused (`core.profile.secret.pem`), since that setting would read it as a path: the plugin has to say the setting names a file it can be handed. `plugin.Service` declares its `ca-file` so, and a plugin built on an earlier SDK does not, so write the CA to a file and name the file in `set:` until it does.
+
+**Reading `<cluster>-ca` reads its key too.** Kubernetes grants a Secret, not one key of it, and CloudNativePG keeps the CA's private key beside its certificate in that Secret. rta hands on the key the profile named and nothing else, but whoever may read `ca.crt` may read `ca.key`, which signs the client certificate CloudNativePG's `streaming_replica` role logs in with, and that role reads every database to replicate it. On an administrator's kubeconfig that changes nothing. On a least-privileged one it is a grant to weigh before it is given: a Secret holding the certificate alone is the narrower thing to read: the one CloudNativePG is told to use with `serverCASecret` when cert-manager issues its server certificate, or a copy trust-manager keeps in a Secret.
 
 ## Related
 
