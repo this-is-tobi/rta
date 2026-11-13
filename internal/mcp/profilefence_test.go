@@ -89,15 +89,7 @@ func newScopedFenceFixture(t *testing.T, yaml, dir, scope string) *fenceFixture 
 	server := NewServer(reg, "test", Options{
 		Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: (&config.Loader{}).Load,
 	})
-	st, ct := sdk.NewInMemoryTransports()
-	if _, err := server.Connect(context.Background(), st, nil); err != nil {
-		t.Fatal(err)
-	}
-	session, err := sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, nil).Connect(context.Background(), ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { session.Close() })
+	session := serve(t, server, sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, nil))
 	return &fenceFixture{session: session, profiles: cfg, dir: dir, ran: &ran, sawNS: &ns, sawAll: &all}
 }
 

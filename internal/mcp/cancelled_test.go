@@ -31,16 +31,7 @@ func TestACallTheClientCancelsIsRecordedAsCancelled(t *testing.T) {
 	}}}); err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(reg, "test", Options{Origin: reg.Origin})
-	st, ct := sdk.NewInMemoryTransports()
-	if _, err := server.Connect(context.Background(), st, nil); err != nil {
-		t.Fatal(err)
-	}
-	session, err := sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, nil).Connect(context.Background(), ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { session.Close() })
+	session := serve(t, NewServer(reg, "test", Options{Origin: reg.Origin}), sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, nil))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

@@ -243,18 +243,45 @@ func connect(t *testing.T, opts Options) *sdk.ClientSession {
 // that need a capability instrumented rather than the shared fixture.
 func connectWith(t *testing.T, reg *registry.Registry, opts Options) *sdk.ClientSession {
 	t.Helper()
-	server := NewServer(reg, "test", opts)
+	return serve(t, NewServer(reg, "test", opts), sdk.NewClient(&sdk.Implementation{Name: "test-client", Version: "0"}, nil))
+}
+
+// serve connects client to server over an in-memory transport, and ends both
+// with the test: the client closed, then the server waited on until no call it
+// was running is left (ServerSession.Wait).
+//
+// **The wait keeps every call inside the test that made it.** A client stops
+// waiting on a call it cancels while the server goes on running it, and the
+// call ends by writing its record through paths.Data(), which reads
+// RTA_DATA_DIR at each step: the row, then the record's end mark. A test that
+// ended on seeing its row let the mark land in the directory the next test had
+// set by then, a mark with no key beside it, which is a record whose key is
+// missing — and that test's calls were refused ("agent-log.key is missing
+// beside an existing record") for something it never did. Tests waited for
+// their own writes one by one (settleRecord), and the one that did not was the
+// flake. Registered after the test's own t.Setenv, this runs before the
+// variable is put back.
+func serve(t *testing.T, server *sdk.Server, client *sdk.Client) *sdk.ClientSession {
+	t.Helper()
 	st, ct := sdk.NewInMemoryTransports()
-	ctx := context.Background()
-	if _, err := server.Connect(ctx, st, nil); err != nil {
-		t.Fatal(err)
-	}
-	client := sdk.NewClient(&sdk.Implementation{Name: "test-client", Version: "0"}, nil)
-	session, err := client.Connect(ctx, ct, nil)
+	served, err := server.Connect(context.Background(), st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = session.Close() })
+	session, err := client.Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = session.Close()
+		ended := make(chan struct{})
+		go func() { _ = served.Wait(); close(ended) }()
+		select {
+		case <-ended:
+		case <-time.After(30 * time.Second):
+			t.Error("a call the server was running had not returned 30s after its test ended")
+		}
+	})
 	return session
 }
 
@@ -1858,18 +1885,7 @@ func TestNewServerDefaultsTheGateToItsRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
-	server := NewServer(reg, "test", Options{})
-	st, ct := sdk.NewInMemoryTransports()
-	ctx := context.Background()
-	if _, err := server.Connect(ctx, st, nil); err != nil {
-		t.Fatal(err)
-	}
-	client := sdk.NewClient(&sdk.Implementation{Name: "test-client", Version: "0"}, nil)
-	session, err := client.Connect(ctx, ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = session.Close() })
+	session := serve(t, NewServer(reg, "test", Options{}), sdk.NewClient(&sdk.Implementation{Name: "test-client", Version: "0"}, nil))
 
 	if _, ok := listTools(t, session)[plugin.ToolName("kv.rm")]; !ok {
 		t.Error("an allowed built-in destructive was not exposed, so the gate was not wired to the registry")
