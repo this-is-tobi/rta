@@ -79,8 +79,8 @@ func ExitCode(err error) int {
 }
 
 // codeInputFamily is what the codes of the host's check of a call's inputs
-// begin with: core.input.type, .option, .range and .missing, refused before any
-// handler runs. Every surface refuses with them, so one that arrives from the
+// begin with: core.input.type, .option, .range, .missing and .privatekey,
+// refused before any handler runs. Every surface refuses with them, so one that arrives from the
 // operator's config or a profile — worded as that layer's, by
 // plugin.CheckInputs — exits 2 as well, as an --output nobody typed does
 // (CodeOutputInvalid): nothing ran, and it is the arguments, or the values

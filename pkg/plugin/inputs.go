@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -70,12 +71,46 @@ func CheckInputs(c Capability, req Request) *view.Error {
 		if verr == nil {
 			verr = checkBoundsOf(c, f, v, s)
 		}
+		if _, stated := req.origins[f.Name]; verr == nil && stated {
+			verr, how = checkKeyText(c, f, v, s)
+		}
 		if verr != nil {
 			return fromSource(verr.WithInput(f.Name), how, c, f, req)
 		}
 	}
 	return nil
 }
+
+// checkKeyText refuses a PEM private key that the operator's config or a
+// profile gives an input that is no credential, before any handler reads it.
+//
+// **A key read as a setting is a key repeated in an error.** A `secrets:`
+// reference delivers text, and mapped onto a file setting — a `key-file`, pg's
+// `sslkey` — the key's whole text was read as the file's path, and the open
+// that failed on it put that text into its refusal. A refusal reaches the
+// person who made the call, the agent when an agent made it, and the agent log,
+// which keeps a failure's message. Refused here, for every plugin and on every
+// surface, before a handler can repeat it, and named by its shape and never by
+// its text.
+//
+// Only a value the operator's config or a profile states. A person who types a
+// key at their own terminal reads it back on their own screen, an agent that
+// sends one already holds it, and an input that carries a payload — the text a
+// call stores — is a caller's to fill. And only an input that is no credential:
+// a Secret input is where a key belongs, and its value is never shown.
+func checkKeyText(c Capability, f Field, v any, s Surface) (*view.Error, string) {
+	text, ok := v.(string)
+	if !ok || f.Type.Sensitive() || !pemPrivateKey.MatchString(text) {
+		return nil, ""
+	}
+	return view.Errorf("core.input.privatekey", "%s takes no credential for %s, and was given a PEM private key",
+		s.CapabilityName(c.ID), refusedInput(s, f)), "name the file that holds the key there instead"
+}
+
+// pemPrivateKey is the line a PEM private key opens with, of every kind —
+// PRIVATE KEY, RSA, EC, ENCRYPTED, OPENSSH — matched on that line alone, so a
+// key whose line breaks did not survive the way to the setting is still one.
+var pemPrivateKey = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`)
 
 // fromSource readdresses a refusal of a value the caller did not send.
 // Worded for the caller, it read as a flag somebody typed — `encoding: b64`
