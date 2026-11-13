@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -561,6 +563,102 @@ func tileNeeds(verr *view.Error, c plugin.Capability, values map[string]any) *vi
 	return &out
 }
 
+// tileWorded names, in a refusal a tile shows, each of c's inputs where the
+// tile's value for it is stated, where the refusal named it as a form's box.
+//
+// **A tile has no box, and the refusal was worded for one.** A tile runs on
+// the TUI's surface, so a plugin's hint said "the ca-file box names a copy"
+// while the copy was named in the profile the tile runs against, and the
+// person went looking for a form nobody had opened. Only the host can say
+// where a value is stated — a handler never learns which layer filled an input
+// — so the host words it, here, the way tileNeeds words a missing input:
+// profile ohmlab's `ca-file`, the config's `plugins.pg@1a2b3c4d.port`, the
+// tile's `limit` for what its entry's with: states, and the variable a
+// credential is read from where nothing else states one. Possessive, so the
+// sentence around it still reads: "clear profile ohmlab's `ca-file`", "point
+// the config's `plugins.vault.address` at the active node".
+//
+// A form's spelling of an input is Surface.InputName's and SettingName's,
+// "the host box" and "the cert-file and key-file boxes", so a phrase of that
+// shape naming only c's own inputs is reworded and nothing else is. The host's
+// own way out of a stated value, "or fill in the host box to override it for one
+// run" (plugin.CheckInputs), is dropped: a tile has no run of one to override,
+// and the sentence before it already names where the value is set.
+func tileWorded(verr *view.Error, c plugin.Capability, with map[string]any, profileName, section string) *view.Error {
+	if verr == nil || len(c.Inputs) == 0 {
+		return verr
+	}
+	byName := make(map[string]plugin.Field, len(c.Inputs))
+	names := make([]string, 0, len(c.Inputs))
+	for _, f := range c.Inputs {
+		byName[f.Name] = f
+		names = append(names, regexp.QuoteMeta(f.Name))
+	}
+	one := "(?:" + strings.Join(names, "|") + ")"
+	boxes := regexp.MustCompile(`\bthe (` + one + `(?:(?:, | and )` + one + `)*) box(?:es)?\b`)
+	reword := func(text string) string {
+		for _, f := range c.Inputs {
+			text = strings.ReplaceAll(text, " — or fill in "+plugin.SurfaceTUI.InputName(f.Name)+" to override it for one run", "")
+		}
+		return boxes.ReplaceAllStringFunc(text, func(phrase string) string {
+			listed := boxes.FindStringSubmatch(phrase)[1]
+			spelled := strings.Split(strings.ReplaceAll(listed, " and ", ", "), ", ")
+			return tileWhere(c, byName, spelled, with, profileName, section)
+		})
+	}
+	out := *verr
+	out.Message, out.Hint = reword(verr.Message), reword(verr.Hint)
+	return &out
+}
+
+// tileWhere spells names, inputs of c, as possessives of where a tile states
+// each: grouped by owner when they share one — "profile ohmlab's `cert-file`
+// and `key-file`" — and one owner each otherwise.
+func tileWhere(c plugin.Capability, byName map[string]plugin.Field, names []string, with map[string]any,
+	profileName, section string) string {
+	type owned struct{ owner, key string }
+	parts := make([]owned, 0, len(names))
+	for _, n := range names {
+		f := byName[n]
+		key := n
+		if f.Config != "" {
+			key = f.Config
+		}
+		_, given := with[n]
+		switch {
+		case given:
+			parts = append(parts, owned{"the tile's", n})
+		case profileName != "" && plugin.ProfileFillable(c, f):
+			parts = append(parts, owned{"profile " + profileName + "'s", key})
+		case f.Config != "":
+			if section == "" {
+				section = plugin.Namespace(c.ID)
+			}
+			parts = append(parts, owned{"the config's", "plugins." + section + "." + f.Config})
+		case f.Local && f.EnvFallback:
+			parts = append(parts, owned{"", plugin.LocalEnvVar(c.ID, n)})
+		default:
+			parts = append(parts, owned{"the tile's", n})
+		}
+	}
+	shared := true
+	for _, p := range parts[1:] {
+		shared = shared && p.owner == parts[0].owner
+	}
+	keys := make([]string, len(parts))
+	for i, p := range parts {
+		keys[i] = "`" + p.key + "`"
+		if !shared && p.owner != "" {
+			keys[i] = p.owner + " " + keys[i]
+		}
+	}
+	joined := format.And(keys)
+	if shared && parts[0].owner != "" {
+		return parts[0].owner + " " + joined
+	}
+	return joined
+}
+
 // arrange applies the user's adjustments: drop what they hid, lead with
 // what they ordered. A `hidden:` line is a capability ID, which hides an
 // automatic tile and every panel it expanded into, or a tile key, which
@@ -1076,10 +1174,13 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 		// asked of the connection, whoever wrote the tile, and a refused tile is
 		// a visible error in its panel rather than a quiet read of somewhere
 		// the profile says it does not reach.
+		worded := func(verr *view.Error) *view.Error {
+			return tileWorded(verr, t.cap, t.values, profileName, cfg.section)
+		}
 		if verr := profile.Fenced(profileName, conn, t.cap, cfg.inputs(plugin.Inputs{
 			Caller: t.values,
 		}), os.LookupEnv, plugin.SurfaceTUI); verr != nil {
-			return tileMsg{key: key, idx: idx, err: verr}
+			return tileMsg{key: key, idx: idx, err: worded(verr)}
 		}
 		dialled, via, closeTunnel, verr := profile.Dial(ctx, profileName, conn, t.cap, t.values, plugin.SurfaceTUI)
 		defer closeTunnel()
@@ -1090,7 +1191,7 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 			// Reported, never fallen back from. A tile is where a fallback
 			// would be least visible: nobody typed a command to go and look
 			// at, so the number on screen would simply be somebody else's.
-			return tileMsg{key: key, idx: idx, err: verr}
+			return tileMsg{key: key, idx: idx, err: worded(verr)}
 		}
 		if len(dialled) > 0 {
 			// Copied, not written through: filled is the shared environment
@@ -1115,7 +1216,7 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 				return tileMsg{key: key, idx: idx, err: timed}
 			}
 			return tileMsg{key: key, idx: idx,
-				err: tileNeeds(view.AsError(err, t.cap.ID+".failed"), t.cap, req.Values())}
+				err: worded(tileNeeds(view.AsError(err, t.cap.ID+".failed"), t.cap, req.Values()))}
 		}
 		return tileMsg{key: key, idx: idx, v: v}
 	}
