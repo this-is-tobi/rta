@@ -278,6 +278,12 @@ func cardOf(reg *registry.Registry, c plugin.Capability) view.KeyValue {
 		if f.Widens != "" {
 			detail += ", widens --" + f.Widens + " (refused while a profile fences it)"
 		}
+		// Said on the card the docs send an operator to, to learn whether this
+		// plugin's CA can be read from where the CA is kept rather than from a
+		// copy: only a setting declared so takes a reference.
+		if f.File == plugin.FileCertificates {
+			detail += ", a file of certificates, which a profile's secrets: can read for each call"
+		}
 		if f.Local {
 			// Worth stating plainly: this input exists here and not over MCP,
 			// which is otherwise a surprising asymmetry to discover by hand.
