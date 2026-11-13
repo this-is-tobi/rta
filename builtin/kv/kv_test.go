@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"filippo.io/age"
@@ -1672,6 +1673,37 @@ func TestInitNeedsToBeToldSomething(t *testing.T) {
 // writeLockedSSHKey writes a passphrase-protected ed25519 key.
 func writeLockedSSHKey(t *testing.T, dir, name, passphrase string) string {
 	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, lockedSSHKey(t, passphrase), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// lockedKeys holds what lockedSSHKey made, by passphrase.
+var lockedKeys = struct {
+	sync.Mutex
+	pem map[string][]byte
+}{pem: map[string][]byte{}}
+
+// lockedSSHKey is a passphrase-protected ed25519 key in the format ssh-keygen
+// writes, made the first time a passphrase is asked for and handed to every
+// later test that asks with the same one.
+//
+// x/crypto/ssh protects a key with sixteen rounds of bcrypt_pbkdf, a count it
+// fixes, and opening the key runs them again. Under the race detector each
+// run took more than a second on a laptop, and nearly half of what this
+// package's race pass spent went on making and opening locked keys, a new one
+// in every test that wanted one. The opening is what those tests are about;
+// the making is not. No test needs its locked key to be new, only locked, and
+// none needs two that share a passphrase.
+func lockedSSHKey(t *testing.T, passphrase string) []byte {
+	t.Helper()
+	lockedKeys.Lock()
+	defer lockedKeys.Unlock()
+	if data, ok := lockedKeys.pem[passphrase]; ok {
+		return data
+	}
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -1680,11 +1712,9 @@ func writeLockedSSHKey(t *testing.T, dir, name, passphrase string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	data := pem.EncodeToMemory(block)
+	lockedKeys.pem[passphrase] = data
+	return data
 }
 
 // stubKeyPrompt makes the key prompt reachable and counts how often it is
@@ -2254,20 +2284,7 @@ func TestSetCannotChangeTheLock(t *testing.T) {
 // cannot help — the refusal has to say so rather than let them try.
 func TestLockedKeyExplainsThatTheAgentCannotHelp(t *testing.T) {
 	setupWithConfig(t)
-	keys := t.TempDir()
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = pub
-	block, err := ssh.MarshalPrivateKeyWithPassphrase(priv, "", []byte("locked"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(keys, "id_locked")
-	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	path := writeLockedSSHKey(t, t.TempDir(), "id_locked", "hunter2")
 	_, verr := parseIdentities(plugin.NewRequest(nil, false, false), path)
 	if verr == nil || verr.Code != "kv.identity.locked" {
 		t.Fatalf("verr = %+v", verr)
