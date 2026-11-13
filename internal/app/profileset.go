@@ -318,10 +318,15 @@ func completeSecretInputs(cmd *cobra.Command, _ []string, prefix string) ([]cobr
 			}
 			seen[f.Name] = true
 			desc := f.Help
-			if f.Type.Sensitive() {
+			switch {
+			case f.Type.Sensitive():
 				// The same test profileSecrets applies, asked here because
 				// this loop already has the declaration in hand.
 				desc = "credential — " + desc
+			case f.File == plugin.FileCertificates:
+				// The other mapping somebody comes here for: a CA read from
+				// where it is kept, which only a setting declared so takes.
+				desc = "certificates, read into a file for each call — " + desc
 			}
 			out = append(out, cobra.CompletionWithDesc(f.Name+"=", desc))
 		}
