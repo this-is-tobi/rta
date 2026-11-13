@@ -105,6 +105,8 @@ Two segments, `context/namespace` — a service and a port belong in `kube:`, wh
 
 You write the mapping; a plugin never does. A plugin that could name the entry it wanted could name *any* entry in your store. All it declares is that it has a secret input.
 
+**A private key is refused in any setting that is not a credential.** A reference that fills `key-file`, or pg's `sslkey`, with a PEM private key — and a key pasted into `set:` — is refused before the plugin runs, as `core.input.privatekey`: such a setting names a file, and a key read as the name of one would be repeated in the refusal that no such file exists, which an agent that made the call and the agent log would both keep. Keep the key in a file and name the file.
+
 **A stated value wins over a mapping**, so the two blocks must not target the same input:
 
 ```yaml
