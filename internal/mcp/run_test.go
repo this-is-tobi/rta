@@ -42,8 +42,9 @@ func blockingRegistry(t *testing.T, honoursContext bool, started chan<- struct{}
 }
 
 // settleRecord waits for the write of a row the test has just seen in the
-// record to end, for a test whose call finishes after the test has stopped
-// waiting on it: the client hung up, or the server stopped without it.
+// record to end, for a test whose server stopped without the call: Run
+// returned within its grace, and no session is left to wait on, as serve
+// waits on its own.
 //
 // **The row is not the end of the write.** agentlog.Append writes the record's
 // end mark after the row, and a test that ended on seeing the row let the mark

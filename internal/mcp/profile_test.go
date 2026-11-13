@@ -124,12 +124,6 @@ func newProfileFixtureIn(t *testing.T, yaml, dir string, tweaks ...func(*Options
 	for _, tweak := range tweaks {
 		tweak(&opts)
 	}
-	server := NewServer(reg, "test", opts)
-	st, ct := sdk.NewInMemoryTransports()
-	ctx := context.Background()
-	if _, err := server.Connect(ctx, st, nil); err != nil {
-		t.Fatal(err)
-	}
 	listChanged := make(chan struct{}, 8)
 	client := sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, &sdk.ClientOptions{
 		ToolListChangedHandler: func(context.Context, *sdk.ToolListChangedRequest) {
@@ -139,11 +133,7 @@ func newProfileFixtureIn(t *testing.T, yaml, dir string, tweaks ...func(*Options
 			}
 		},
 	})
-	session, err := client.Connect(ctx, ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { session.Close() })
+	session := serve(t, NewServer(reg, "test", opts), client)
 	return &profileFixture{session: session, sawHost: &host, sawPass: &pass, sawSQL: &sql,
 		ranOther: &ran, ranGated: &ranGated, profiles: cfg, dir: dir, listChanged: listChanged}
 }

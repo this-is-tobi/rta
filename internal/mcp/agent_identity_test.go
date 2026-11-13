@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -31,19 +30,7 @@ import (
 // point of keeping the two apart.
 func asAgent(t *testing.T, reg *registry.Registry, opts Options, claims string) *sdk.ClientSession {
 	t.Helper()
-	server := NewServer(reg, "test", opts)
-	st, ct := sdk.NewInMemoryTransports()
-	ctx := context.Background()
-	if _, err := server.Connect(ctx, st, nil); err != nil {
-		t.Fatal(err)
-	}
-	client := sdk.NewClient(&sdk.Implementation{Name: claims, Version: "1.0"}, nil)
-	session, err := client.Connect(ctx, ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = session.Close() })
-	return session
+	return serve(t, NewServer(reg, "test", opts), sdk.NewClient(&sdk.Implementation{Name: claims, Version: "1.0"}, nil))
 }
 
 func TestAGrantForOneAgentDoesNotAuthorizeAnother(t *testing.T) {

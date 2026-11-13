@@ -57,18 +57,8 @@ func TestAnAgentCannotChooseWhereACallGoes(t *testing.T) {
 	t.Setenv(plugin.LocalEnvVar("svc.table.list", "password"), "operator-production-password")
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 
-	server := NewServer(reg, "test", Options{})
-	st, ct := sdk.NewInMemoryTransports()
+	session := serve(t, NewServer(reg, "test", Options{}), sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, nil))
 	ctx := context.Background()
-	if _, err := server.Connect(ctx, st, nil); err != nil {
-		t.Fatal(err)
-	}
-	client := sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, nil)
-	session, err := client.Connect(ctx, ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer session.Close()
 
 	// The connection input must not be advertised to the model at all: an
 	// input a model can see is one it will try to fill.

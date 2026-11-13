@@ -72,15 +72,7 @@ func TestAHandlerCannotRewriteWhatTheNextCallIsHanded(t *testing.T) {
 			}
 			resolver, _ := pluginconf.Resolve(cfg, reg)
 			server := NewServer(reg, "test", Options{Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: loader.Load})
-			st, ct := sdk.NewInMemoryTransports()
-			if _, err := server.Connect(context.Background(), st, nil); err != nil {
-				t.Fatal(err)
-			}
-			session, err := sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, nil).Connect(context.Background(), ct, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { session.Close() })
+			session := serve(t, server, sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, nil))
 			for range 3 {
 				res, err := session.CallTool(context.Background(), &sdk.CallToolParams{Name: "pg_query", Arguments: tc.args})
 				if err != nil || res.IsError {

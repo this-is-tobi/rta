@@ -738,23 +738,15 @@ func TestACancelledCallStopsWaiting(t *testing.T) {
 		t.Fatal("the parked call ignored its cancelled context")
 	}
 	// CallTool returning is the *client* giving up; the handler on the other
-	// side is still unwinding. Ending the test there leaves its writes racing
-	// t.TempDir's RemoveAll, which surfaces as "directory not empty" against
-	// whichever test the cleanup happens to run under.
-	//
-	// The ledger entry is what to wait for, and picking it took two goes: the
-	// request file leaving the queue looked like the end of the handler and
-	// is not, because closing the request comes *before* recording the call.
-	// Waiting on the earlier of the two put the race straight back. This is
-	// also the assertion worth making — a call nobody answered is still a
-	// call that happened, and it belongs in the record. The row is not the
-	// end of the write either (settleRecord).
+	// side is still unwinding, which the fixture's cleanup waits out (serve).
+	// A call nobody answered is still a call that happened, and it belongs in
+	// the record: the request file leaving the queue is not that, since the
+	// request is closed *before* the call is recorded.
 	deadline = time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		entries, _ := agentlog.Read(0)
 		for _, e := range entries {
 			if e.Cap == "demo.item.reveal" && e.Outcome == agentlog.Refused {
-				settleRecord(t)
 				return
 			}
 		}
