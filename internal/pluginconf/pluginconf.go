@@ -221,13 +221,13 @@ func Resolve(cfg config.Config, cat Catalogue) (*Resolver, []Problem) {
 			}
 			apply(ns, section)
 		case !pinned:
+			reason := fmt.Sprintf("%q is an installed plugin, so its config must name the artifact it is for", ns)
 			hint := "write it as `" + ns + "@" + o.Short() + ":`" + repinTail(ns, o)
 			if o.Dev {
+				reason = o.Called(ns) + " is not built in, so its config must name the artifact it is for"
 				hint = o.Which(ns) + "; pin the section to the build you install"
 			}
-			refuse(ns, Problem{Section: section,
-				Reason: fmt.Sprintf("%q is an installed plugin, so its config must name the artifact it is for", ns),
-				Hint:   hint})
+			refuse(ns, Problem{Section: section, Reason: reason, Hint: hint})
 		case len(pin) < registry.MinPinLen:
 			// Below the floor every digest-prefix match shares
 			// (registry.MinPinLen): short enough to be cheap to grind, which
