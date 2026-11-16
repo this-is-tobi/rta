@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.62.1](https://github.com/this-is-tobi/rta/compare/v0.62.0...v0.62.1) (2026-11-16)
+
+
+### Dependencies
+
+* **deps:** update gcr.io/distroless/static-debian13 to aafe993 ([80f2bcc](https://github.com/this-is-tobi/rta/commit/80f2bcc32dc4038977999ecf2542debbcf7a9357))
+* **deps:** update go modules ([98c9eb3](https://github.com/this-is-tobi/rta/commit/98c9eb35771e8e61b632285ff503b61ebd53d1f7))
+
 ## [0.62.0](https://github.com/this-is-tobi/rta/compare/v0.61.0...v0.62.0) (2026-11-13)
 
 
