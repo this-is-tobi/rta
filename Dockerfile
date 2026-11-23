@@ -49,7 +49,7 @@ RUN mkdir /rta-home && chown 65532:65532 /rta-home
 # on it cleared nothing and the weekly scan of the released image stayed red.
 # The binary is static, so the base's libc never mattered; what the move buys
 # is a base that is still rebuilt on Debian's regular security releases.
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:aafe993665bf6200db38a02c11a9351e782a84b6a45e7f33b6695638c88e3931
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 
 COPY --from=build /out/rta /usr/local/bin/rta
 COPY --from=build /rta-home /rta-home
