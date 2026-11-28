@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.62.2](https://github.com/this-is-tobi/rta/compare/v0.62.1...v0.62.2) (2026-11-28)
+
+
+### Bug Fixes
+
+* **tui:** bubbles 2.2.2 ends the panic on a word-forward delete, so the keys reach every box ([2932973](https://github.com/this-is-tobi/rta/commit/2932973bad26ac5b08b22a1302f07b574a840932))
+
+
+### Dependencies
+
+* **deps:** update gcr.io/distroless/static-debian13 to 8ce6dd8 ([5f82a71](https://github.com/this-is-tobi/rta/commit/5f82a71c3e8f64ce279c4fc1510f7f6a17c3bdb3))
+* **deps:** update go modules ([efd6c6f](https://github.com/this-is-tobi/rta/commit/efd6c6f331beb9822e0f673518bf8777549d3c97))
+
 ## [0.62.1](https://github.com/this-is-tobi/rta/compare/v0.62.0...v0.62.1) (2026-11-16)
 
 
